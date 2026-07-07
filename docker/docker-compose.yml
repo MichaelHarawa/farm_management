@@ -2,7 +2,7 @@ services:
   backend:
     build:
       context: ..
-      dockerfile: ./docker/Dockerfile
+      dockerfile: docker/Dockerfile
     container_name: django_app
     command: sh -c "python manage.py migrate && python manage.py runserver 0.0.0.0:6000"
     env_file:
@@ -21,9 +21,9 @@ services:
       POSTGRES_PORT: 5432
       POSTGRES_SSLMODE: disable
       POSTGRES_CONNECT_TIMEOUT: 5
-      AUTH_BYPASS_ENABLED: ${AUTH_BYPASS_ENABLED:-}
-      AUTH_BYPASS_USERNAME: ${AUTH_BYPASS_USERNAME:-}
-      AUTH_BYPASS_EMAIL: ${AUTH_BYPASS_EMAIL:-}
+      # AUTH_BYPASS_ENABLED: ${AUTH_BYPASS_ENABLED:-}
+      # AUTH_BYPASS_USERNAME: ${AUTH_BYPASS_USERNAME:-}
+      # AUTH_BYPASS_EMAIL: ${AUTH_BYPASS_EMAIL:-}
       DJANGO_DEBUG: ${DJANGO_DEBUG:-}
       DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
