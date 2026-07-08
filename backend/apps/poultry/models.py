@@ -84,6 +84,7 @@ class InputCosts(models.Model):
     category = models.CharField(max_length=200)
     quantity = models.PositiveIntegerField()
     unit_measurement = models.CharField(max_length=200)
+    unit = models.PositiveIntegerField(default = 0)
     unit_cost = models.PositiveIntegerField()
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

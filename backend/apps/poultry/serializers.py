@@ -28,6 +28,7 @@ class InputCostsSerializer(serializers.ModelSerializer):
     model = InputCosts
     # created_by_username = serializers.CharField(source = "created_by.username", read_only = True)
     class Meta:
+        model = InputCosts
         fields = (
             "id",
             "batch",
@@ -35,6 +36,7 @@ class InputCostsSerializer(serializers.ModelSerializer):
             "category",
             "quantity",
             "unit_measurement",
+            "unit",
             "unit_cost",
             "created_at",
             "updated_at",
