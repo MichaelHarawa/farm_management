@@ -21,15 +21,16 @@ from .serializers import(
 
 class BatchViewset(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
     serializer_class = BatchSerializer
+    queryset = Batch.objects.all()
 
     @action(detail = True, methods=["get","post"], url_path="input_costs")
     def input_costs(self, request, pk=None):
         poultry_batch = self.get_object()
 
         if request.method == "GET":
-        input_costs = poultry_batch.input_costs.all().order_by("-created_at")
-        serializer = InputCostsSerializer(input_costs, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+            input_costs = poultry_batch.input_costs.all().order_by("-created_at")
+            serializer = InputCostsSerializer(input_costs, many=True)
+            return Response(serializer.data, status=status.HTTP_200_OK)
 
         serializer = InputCostsSerializer(
             data = request.data,
@@ -38,7 +39,7 @@ class BatchViewset(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retrie
 
         input_cost = serializer.save(
             batch=poultry_batch,
-            created_by=request.user if request.user.is_authenticated else None,
+          #  created_by=request.user if request.user.is_authenticated else None,
         )
         return Response(
             InputCostsSerializer(input_cost).data, 

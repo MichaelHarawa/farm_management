@@ -13,7 +13,7 @@ class BatchSerializer(serializers.ModelSerializer):
         model = Batch
         fields = (
             "id",
-            "batch_id"
+            "batch_id",
             "bird_type",
             "entry_date",
             "expected_maturity_date",
@@ -28,17 +28,17 @@ class InputCostsSerializer(serializers.ModelSerializer):
     model = InputCosts
     # created_by_username = serializers.CharField(source = "created_by.username", read_only = True)
     class Meta:
-    fields = (
-        "id",
-        "batch",
-        "item",
-        "category",
-        "quantity",
-        "unit_measurement",
-        "unit_cost",
-        "created_at",
-        "updated_at",
-        # "created_by_username",
-    )
-    read_only_fields = ("id", "batch","created_at","updated_at")
+        fields = (
+            "id",
+            "batch",
+            "item",
+            "category",
+            "quantity",
+            "unit_measurement",
+            "unit_cost",
+            "created_at",
+            "updated_at",
+            # "created_by_username",
+        )
+        read_only_fields = ("id", "batch","created_at","updated_at")
 
