@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 from django.db import models, transaction
 from django.utils import timezone
 from django.conf import settings
@@ -29,6 +28,11 @@ class Batch(models.Model):
     quantity = models.PositiveIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(
+    settings.AUTH_USER_MODEL,
+    on_delete=models.PROTECT,
+    related_name="created_batch",
+    )
 
     class Meta:
         ordering = ["-created_at"]
@@ -51,9 +55,14 @@ class InputCosts(models.Model):
     unit_cost = models.PositiveIntegerField()
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(
+    settings.AUTH_USER_MODEL,
+    on_delete=models.PROTECT,
+    related_name="created_inputs",
+    )
 
     def __str__(self) -> str:
         return f"{self.batch} costs"
-        
+
 
 
