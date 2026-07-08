@@ -49,8 +49,11 @@ class InputCosts(models.Model):
         max_length=200,
     choices=UnitMeasurement.choices,)
     unit_cost = models.PositiveIntegerField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self) -> str:
         return f"{self.batch} costs"
+        
 
 
