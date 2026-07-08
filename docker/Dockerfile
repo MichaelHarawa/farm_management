@@ -11,5 +11,5 @@ RUN pip install --trusted-host pypi.org \
 
 COPY . .
 
-CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
+CMD ["python", "manage.py", "runserver", "0.0.0.0:7070"]
 
