@@ -31,6 +31,12 @@ class PaymentMethod(models.TextChoices):
     BANK_TRANSFER = "bank_transfer", "Bank Transfer" 
     CREDIT = "credit", "Credit"
 
+class BuyerType(models.TextChoices):
+    MARKET_VENDOR = "market_vendor", "Market Vendor"
+    RETAIL = "retail", "Retail"
+    RETAIL_SUPPLY = "retail_supply", "Retail Supply" 
+    BULK_ORDER = "bulk_order", "Bulk Order"
+
 # class UnitMeasurement(models.TextChoices):
 #     KGS = "kg", "KG"
 #     METERS = "meters", "Meters"
@@ -144,6 +150,10 @@ class Sales(models.Model):
     quantity_sold = models.PositiveIntegerField()
     unit_price = models.PositiveIntegerField()
     buyer_name = models.CharField(max_length=200)
+    buyer_type = models.CharField(
+        max_length=20,
+        choices = BuyerType.choices,
+    )
     payment_status = models.CharField(
         max_length=20,
         choices = PaymentStatus.choices,
@@ -184,8 +194,10 @@ class Sales(models.Model):
             sequence.last_number += 1
             sequence.save(update_fields=["last_number", "updated_at"])
 
+            return f"SALE-{today:%Y%m%d}-{sequence.last_number:04d}"
+
     def __str__(self) -> str:
-        return f"{self.batch} of sale {sale_id} sold at {sale_date}"
+        return f"{self.batch} of sale {self.sale_id} sold at {self.sale_date}"
 
 
 

@@ -12,11 +12,13 @@ from rest_framework.response import Response
 from .models import(
     Batch,
     InputCosts,
+    Sales,
 )
 
 from .serializers import(
     BatchSerializer,
     InputCostsSerializer,
+    SalesSerializer,
 )
 
 class BatchViewset(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
@@ -26,6 +28,8 @@ class BatchViewset(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retrie
     def get_serializer_class(self):
         if self.action == "input_costs":
             return InputCostsSerializer
+        elif self.action == "sales":
+            return SalesSerializer
         return BatchSerializer
 
     @action(detail=True, methods=["get", "post"], url_path="input_costs")
@@ -44,6 +48,26 @@ class BatchViewset(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retrie
 
         return Response(
             self.get_serializer(input_cost).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+
+    @action(detail=True, methods=["get", "post"], url_path="sales")
+    def sales(self, request, pk=None):
+        poultry_batch = self.get_object()
+
+        if request.method == "GET":
+            sales = poultry_batch.sales_row.all().order_by("-created_at")
+            serializer = self.get_serializer(sales, many=True)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        sale = serializer.save(batch=poultry_batch)
+
+        return Response(
+            self.get_serializer(sale).data,
             status=status.HTTP_201_CREATED,
         )
 

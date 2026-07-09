@@ -4,6 +4,7 @@ from rest_framework import serializers
 from .models import(
     Batch,
     InputCosts,
+    Sales,
 )
 
 class BatchSerializer(serializers.ModelSerializer):
@@ -44,7 +45,7 @@ class InputCostsSerializer(serializers.ModelSerializer):
         read_only_fields = ("id", "batch","created_at","updated_at")
 
 class SalesSerializer(serializers.ModelSerializer):
-    created_by_username = serializers.CharField(source = "created_by.username", read_only = True)
+    # created_by_username = serializers.CharField(source = "created_by.username", read_only = True)
     class Meta:
         model = Sales
         fields = (
@@ -56,6 +57,7 @@ class SalesSerializer(serializers.ModelSerializer):
             "quantity_sold",
             "unit_price",
             "buyer_name",
+            "buyer_type",
             "payment_status",
             "payment_method",
             "amount_paid",
@@ -65,9 +67,9 @@ class SalesSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
             "created_by",
-            "created_by_username",
+            # "created_by_username",
         )
-        read_only_fields = ("id", "batch","sale_id","created_at","updated_at")
+        read_only_fields = ("id", "batch","sale_id","created_at","updated_at","created_by")
 
 
 
