@@ -47,6 +47,12 @@ class FeedType(models.TextChoices):
     LAYERS_MARSH = "layers_marsh", "Layers Marsh"
     LAYERS_FINISHER = "layers_finisher", "Layers Finisher"
 
+class FeedSource(models.TextChoices):
+    CP_FEED = "cp_feed", "CP Feed"
+    PROTO_FEED = "proto_feed", "Proto Feed"
+    CONCENTRATES_FEED = "concentrates_feed", "Concentrates Feed"
+    SELF_MADE = "self_made", "Self Made"
+
 # class UnitMeasurement(models.TextChoices):
 #     KGS = "kg", "KG"
 #     METERS = "meters", "Meters"
@@ -247,7 +253,10 @@ class FeedUsage(models.Model):
         max_length=200,
         choices = FeedType.choices,
     )
-    feed_source = models.CharField(max_length=200)
+    feed_source = models.CharField(
+        max_length=200,
+        choices = FeedSource.choices,
+    )
     quantity_given = models.PositiveIntegerField()
     unit_of_measurement = models.CharField(max_length=200)    
     current_number_of_birds = models.PositiveIntegerField()
