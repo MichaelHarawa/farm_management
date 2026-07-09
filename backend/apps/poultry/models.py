@@ -37,6 +37,16 @@ class BuyerType(models.TextChoices):
     RETAIL_SUPPLY = "retail_supply", "Retail Supply" 
     BULK_ORDER = "bulk_order", "Bulk Order"
 
+class FeedType(models.TextChoices):
+    PRE_STARTER = "pre_starter", "Pre-Starter"
+    STARTER = "starter", "STARTER"
+    GROWER = "grower", "Grower"
+    FINISHER = "finisher", "Finisher"
+    PULLET_STARTER = "pullet_starter", "Pullet Starter"
+    PULLET_GROWER = "pullet_grower", "Pullet Grower"
+    LAYERS_MARSH = "layers_marsh", "Layers Marsh"
+    LAYERS_FINISHER = "layers_finisher", "Layers Finisher"
+
 # class UnitMeasurement(models.TextChoices):
 #     KGS = "kg", "KG"
 #     METERS = "meters", "Meters"
@@ -223,5 +233,37 @@ class Mortality(models.Model):
 
     def __str__(self) -> str:
         return f"{self.batch} {self.quantity_dead} died on {self.created_at}"
+
+
+class FeedUsage(models.Model):
+    batch = models.ForeignKey(
+    Batch,
+    on_delete=models.CASCADE,
+    related_name="feed_usage_row",)
+    initial_age = models.PositiveIntegerField()
+    feeding_start_date = models.DateTimeField(auto_now_add=True)
+    feeding_end_date = models.DateTimeField(auto_now_add=True)
+    feed_type = models.CharField(
+        max_length=200,
+        choices = FeedType.choices,
+    )
+    feed_source = models.CharField(max_length=200)
+    quantity_given = models.PositiveIntegerField()
+    unit_of_measurement = models.CharField(max_length=200)    
+    current_number_of_birds = models.PositiveIntegerField()
+    notes = models.TextField()
+    reported_by_name = models.CharField(max_length=200)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(
+    settings.AUTH_USER_MODEL,
+    on_delete=models.SET_NULL,
+    null=True,
+    blank=True,
+    related_name="created_feed_usage",
+    )
+
+    def __str__(self) -> str:
+        return f"{self.batch} consumed {self.quantity_given} {self.unit_of_measurement}"
 
 
