@@ -199,5 +199,29 @@ class Sales(models.Model):
     def __str__(self) -> str:
         return f"{self.batch} of sale {self.sale_id} sold at {self.sale_date}"
 
+class Mortality(models.Model):
+    batch = models.ForeignKey(
+    Batch,
+    on_delete=models.CASCADE,
+    related_name="mortality_row",)
+    mortality_date = models.DateTimeField(auto_now_add=True)
+    quantity_dead = models.PositiveIntegerField()
+    age_in_days = models.PositiveIntegerField()
+    suspected_cause = models.CharField(max_length=200)
+    description = models.TextField()
+    action_taken = models.TextField()
+    reported_by_name = models.CharField(max_length=200)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(
+    settings.AUTH_USER_MODEL,
+    on_delete=models.SET_NULL,
+    null=True,
+    blank=True,
+    related_name="created_mortality",
+    )
+
+    def __str__(self) -> str:
+        return f"{self.batch} {self.quantity_dead} died on {self.created_at}"
 
 
