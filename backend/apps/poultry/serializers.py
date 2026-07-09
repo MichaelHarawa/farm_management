@@ -6,6 +6,7 @@ from .models import(
     InputCosts,
     Sales,
     Mortality,
+    FeedUsage,
 )
 
 class BatchSerializer(serializers.ModelSerializer):
@@ -90,6 +91,26 @@ class MortalitySerializer(serializers.ModelSerializer):
         )
         read_only_fields = ("id", "batch","created_at","updated_at","created_by")
 
+class FeedUsage(serializers.ModelSerializer):
+    class Meta:
+        model = FeedUsage
+        fields = (
+                "id",
+                "batch",
+                "initial_age",
+                "feeding_start_date",
+                "feeding_end_date",
+                "feed_type",
+                "feed_source",
+                "quantity_given",
+                "unit_of_measurement",
+                "current_number_of_birds",
+                "notes",
+                "reported_by_name",
+                "created_at",
+                "updated_at"
 
+        )
+        read_only_fields = ("id", "batch","created_at","updated_at","created_by")
 
 
