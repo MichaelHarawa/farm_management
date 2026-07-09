@@ -134,7 +134,7 @@ class Sales(models.Model):
     batch = models.ForeignKey(
     Batch,
     on_delete=models.CASCADE,
-    related_name="input_costs",)
+    related_name="sales_row",)
     sale_id = models.CharField(max_length=32, unique=True, editable=False, db_index=True)
     sale_date = models.DateTimeField()
     product_type = models.CharField(
@@ -163,7 +163,7 @@ class Sales(models.Model):
     on_delete=models.SET_NULL,
     null=True,
     blank=True,
-    related_name="created_inputs",
+    related_name="created_sales",
     )
 
     def save(self, *args, **kwargs):
@@ -185,7 +185,7 @@ class Sales(models.Model):
             sequence.save(update_fields=["last_number", "updated_at"])
 
     def __str__(self) -> str:
-        return f"{self.batch} of sale {sale_id} sold at {sale_date}
+        return f"{self.batch} of sale {sale_id} sold at {sale_date}"
 
 
 

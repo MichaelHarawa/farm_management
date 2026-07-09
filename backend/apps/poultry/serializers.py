@@ -25,7 +25,6 @@ class BatchSerializer(serializers.ModelSerializer):
         read_only_fields = ("id", "batch_id", "created_at", "updated_at",)
 
 class InputCostsSerializer(serializers.ModelSerializer):
-    model = InputCosts
     # created_by_username = serializers.CharField(source = "created_by.username", read_only = True)
     class Meta:
         model = InputCosts
@@ -43,4 +42,33 @@ class InputCostsSerializer(serializers.ModelSerializer):
             # "created_by_username",
         )
         read_only_fields = ("id", "batch","created_at","updated_at")
+
+class SalesSerializer(serializers.ModelSerializer):
+    created_by_username = serializers.CharField(source = "created_by.username", read_only = True)
+    class Meta:
+        model = Sales
+        fields = (
+            "id",
+            "batch",
+            "sale_id",
+            "sale_date",
+            "product_type",
+            "quantity_sold",
+            "unit_price",
+            "buyer_name",
+            "payment_status",
+            "payment_method",
+            "amount_paid",
+            "balance",
+            "sold_by_name",
+            "notes",
+            "created_at",
+            "updated_at",
+            "created_by",
+            "created_by_username",
+        )
+        read_only_fields = ("id", "batch","sale_id","created_at","updated_at")
+
+
+
 
