@@ -53,8 +53,9 @@ class FeedSource(models.TextChoices):
     CONCENTRATES_FEED = "concentrates_feed", "Concentrates Feed"
     SELF_MADE = "self_made", "Self Made"
 
-# class UnitMeasurement(models.TextChoices):
-#     KGS = "kg", "KG"
+class UnitMeasurement(models.TextChoices):
+    KGS = "kg", "KG"
+    GMS = "g", "Grams"
 #     METERS = "meters", "Meters"
 #     INCHES = "inches", "Inches"
 #     GAUGE = "gauge", "Gauge"
@@ -247,8 +248,8 @@ class FeedUsage(models.Model):
     on_delete=models.CASCADE,
     related_name="feed_usage_row",)
     initial_age = models.PositiveIntegerField()
-    feeding_start_date = models.DateTimeField(auto_now_add=True)
-    feeding_end_date = models.DateTimeField(auto_now_add=True)
+    feeding_start_date = models.DateTimeField()
+    feeding_end_date = models.DateTimeField()
     feed_type = models.CharField(
         max_length=200,
         choices = FeedType.choices,
@@ -258,7 +259,10 @@ class FeedUsage(models.Model):
         choices = FeedSource.choices,
     )
     quantity_given = models.PositiveIntegerField()
-    unit_of_measurement = models.CharField(max_length=200)    
+    unit_of_measurement = models.CharField(
+        max_length=200,
+        choices = UnitMeasurement.choices,
+        )    
     current_number_of_birds = models.PositiveIntegerField()
     notes = models.TextField()
     reported_by_name = models.CharField(max_length=200)
