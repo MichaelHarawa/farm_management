@@ -91,7 +91,7 @@ class MortalitySerializer(serializers.ModelSerializer):
         )
         read_only_fields = ("id", "batch","created_at","updated_at","created_by")
 
-class FeedUsage(serializers.ModelSerializer):
+class FeedUsageSerializer(serializers.ModelSerializer):
     class Meta:
         model = FeedUsage
         fields = (

@@ -14,6 +14,7 @@ from .models import(
     InputCosts,
     Sales,
     Mortality,
+    FeedUsage,
 )
 
 from .serializers import(
@@ -21,6 +22,7 @@ from .serializers import(
     InputCostsSerializer,
     SalesSerializer,
     MortalitySerializer,
+    FeedUsageSerializer
 )
 
 class BatchViewset(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
@@ -34,6 +36,8 @@ class BatchViewset(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retrie
             return SalesSerializer
         elif self.action == "mortality":
             return MortalitySerializer
+        elif self.action == "feed_usage":
+            return FeedUsageSerializer
         return BatchSerializer
 
     @action(detail=True, methods=["get", "post"], url_path="input_costs")
@@ -94,6 +98,24 @@ class BatchViewset(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retrie
             status=status.HTTP_201_CREATED,
         )
 
+    @action(detail=True, methods=["get", "post"], url_path="feed_usage")
+    def feed_usage(self, request, pk=None):
+        poultry_batch = self.get_object()
+
+        if request.method == "GET":
+            feed_usages = poultry_batch.feed_usage_row.all().order_by("-created_at")
+            serializer = self.get_serializer(feed_usages, many=True)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        feed_usage = serializer.save(batch=poultry_batch)
+
+        return Response(
+            self.get_serializer(feed_usage).data,
+            status=status.HTTP_201_CREATED,
+        )
 
 
 
