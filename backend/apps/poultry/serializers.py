@@ -5,6 +5,7 @@ from .models import(
     Batch,
     InputCosts,
     Sales,
+    Mortality,
 )
 
 class BatchSerializer(serializers.ModelSerializer):
@@ -70,6 +71,24 @@ class SalesSerializer(serializers.ModelSerializer):
             # "created_by_username",
         )
         read_only_fields = ("id", "batch","sale_id","created_at","updated_at","created_by")
+
+class MortalitySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Mortality
+        fields= (
+                "id",
+                "batch",
+                "mortality_date",
+                "quantity_dead",
+                "age_in_days",
+                "suspected_cause",
+                "description",
+                "action_taken",
+                "reported_by_name",
+                "created_at",
+                "updated_at"
+        )
+        read_only_fields = ("id", "batch","created_at","updated_at","created_by")
 
 
 
