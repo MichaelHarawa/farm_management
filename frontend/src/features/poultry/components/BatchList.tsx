@@ -13,76 +13,135 @@ function formatDate(value: string): string {
   }).format(new Date(value));
 }
 
+function formatBirdType(value: string): string {
+  return value
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
 export function BatchList({ batches }: BatchListProps) {
   if (batches.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed border-gray-300 p-6 text-center">
-        <h2 className="text-lg font-semibold text-gray-900">
-          No poultry batches yet
+      <div className="rounded-[1.7rem] border border-[var(--line)] bg-[var(--surface-cream)] p-10 text-center shadow-[var(--shadow-card)]">
+        <p className="text-label text-[var(--navy-muted)]">
+          Batch Register / Empty
+        </p>
+
+        <h2 className="font-display mt-4 text-4xl tracking-[-0.04em] text-[var(--navy)]">
+          No batch records yet.
         </h2>
-        <p className="mt-2 text-sm text-gray-600">
-          Once you create a batch, it will appear here.
+
+        <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-[var(--navy-muted)]">
+          Once you create a poultry batch, it will appear in this workspace.
         </p>
       </div>
     );
   }
 
   return (
-    <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
-      <table className="min-w-full divide-y divide-gray-200">
-        <thead className="bg-gray-50">
-          <tr>
-            <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">
-              Batch ID
-            </th>
-            <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">
-              Bird Type
-            </th>
-            <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">
-              Quantity
-            </th>
-            <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">
-              Entry Date
-            </th>
-            <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">
-              Maturity Date
-            </th>
-            <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">
-              Action
-            </th>
-          </tr>
-        </thead>
+    <div className="overflow-hidden rounded-[1.7rem] border border-[var(--line)] bg-[var(--surface-cream)] shadow-[var(--shadow-card)]">
+      <div className="flex flex-col gap-4 border-b border-[var(--line)] px-7 py-6 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-label text-[var(--navy-muted)]">
+            Live Workspace / 01
+          </p>
 
-        <tbody className="divide-y divide-gray-200">
-          {batches.map((batch) => (
-            <tr key={batch.id} className="hover:bg-gray-50">
-              <td className="px-4 py-3 text-sm font-medium text-gray-900">
-                {batch.batch_id}
-              </td>
-              <td className="px-4 py-3 text-sm capitalize text-gray-700">
-                {batch.bird_type}
-              </td>
-              <td className="px-4 py-3 text-right text-sm text-gray-700">
-                {batch.quantity.toLocaleString()}
-              </td>
-              <td className="px-4 py-3 text-sm text-gray-700">
-                {formatDate(batch.entry_date)}
-              </td>
-              <td className="px-4 py-3 text-sm text-gray-700">
-                {formatDate(batch.expected_maturity_date)}
-              </td>
-              <td className="px-4 py-3 text-right text-sm">
-                <Link
-                  href={`/poultry/batches/${batch.id}`}
-                  className="font-medium text-blue-600 hover:text-blue-800"
-                >
-                  View details
-                </Link>
-              </td>
+          <h2 className="font-display mt-3 text-4xl leading-none tracking-[-0.05em] text-[var(--navy)] sm:text-5xl">
+            Your batches, in motion.
+          </h2>
+        </div>
+
+        <div className="flex gap-3">
+          <button
+            type="button"
+            className="rounded-full border border-[var(--line)] px-5 py-2 text-[0.68rem] font-bold uppercase tracking-[0.18em] text-[var(--navy)]"
+          >
+            Last 30 Days
+          </button>
+
+          <button
+            type="button"
+            className="rounded-full bg-[var(--gold)] px-5 py-2 text-[0.68rem] font-bold uppercase tracking-[0.18em] text-[var(--navy)]"
+          >
+            Export View
+          </button>
+        </div>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="min-w-full border-collapse">
+          <thead>
+            <tr className="border-b border-[var(--line)]">
+              <th className="px-7 py-4 text-left text-[0.68rem] font-bold uppercase tracking-[0.2em] text-[var(--navy-muted)]">
+                Batch ID
+              </th>
+              <th className="px-7 py-4 text-left text-[0.68rem] font-bold uppercase tracking-[0.2em] text-[var(--navy-muted)]">
+                Bird Type
+              </th>
+              <th className="px-7 py-4 text-right text-[0.68rem] font-bold uppercase tracking-[0.2em] text-[var(--navy-muted)]">
+                Quantity
+              </th>
+              <th className="px-7 py-4 text-left text-[0.68rem] font-bold uppercase tracking-[0.2em] text-[var(--navy-muted)]">
+                Entry Date
+              </th>
+              <th className="px-7 py-4 text-left text-[0.68rem] font-bold uppercase tracking-[0.2em] text-[var(--navy-muted)]">
+                Maturity Date
+              </th>
+              <th className="px-7 py-4 text-right text-[0.68rem] font-bold uppercase tracking-[0.2em] text-[var(--navy-muted)]">
+                Readout
+              </th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+
+          <tbody>
+            {batches.map((batch) => (
+              <tr
+                key={batch.id}
+                className="border-b border-[var(--line)] transition hover:bg-[var(--surface-cream-soft)]"
+              >
+                <td className="whitespace-nowrap px-7 py-5 text-sm font-semibold text-[var(--navy)]">
+                  {batch.batch_id}
+                </td>
+
+                <td className="whitespace-nowrap px-7 py-5 text-sm text-[var(--navy-soft)]">
+                  {formatBirdType(batch.bird_type)}
+                </td>
+
+                <td className="whitespace-nowrap px-7 py-5 text-right text-sm font-semibold text-[var(--navy)]">
+                  {batch.quantity.toLocaleString()}
+                </td>
+
+                <td className="whitespace-nowrap px-7 py-5 text-sm text-[var(--navy-soft)]">
+                  {formatDate(batch.entry_date)}
+                </td>
+
+                <td className="whitespace-nowrap px-7 py-5 text-sm text-[var(--navy-soft)]">
+                  {formatDate(batch.expected_maturity_date)}
+                </td>
+
+                <td className="whitespace-nowrap px-7 py-5 text-right">
+                  <Link
+                    href={`/poultry/batches/${batch.id}`}
+                    className="inline-flex rounded-full bg-[var(--gold-soft)] px-4 py-1.5 text-[0.68rem] font-bold uppercase tracking-[0.16em] text-[var(--navy)] transition hover:bg-[var(--gold)]"
+                  >
+                    Open
+                  </Link>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="flex items-center justify-between px-7 py-4">
+        <p className="text-[0.68rem] font-bold uppercase tracking-[0.2em] text-[var(--navy-muted)]">
+          {batches.length} of {batches.length} records shown
+        </p>
+
+        <p className="text-[0.68rem] font-bold uppercase tracking-[0.2em] text-[var(--navy-muted)]">
+          Updated live
+        </p>
+      </div>
     </div>
   );
 }
