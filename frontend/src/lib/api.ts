@@ -6,6 +6,7 @@ export class ApiError extends Error {
 
   constructor(message: string, status: number, details?: unknown) {
     super(message);
+
     this.name = "ApiError";
     this.status = status;
     this.details = details;
@@ -27,40 +28,55 @@ type ApiFetchOptions = RequestInit & {
   };
 };
 
+async function readResponseBody(response: Response): Promise<unknown> {
+  const bodyText = await response.text();
+
+  if (!bodyText) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(bodyText) as unknown;
+  } catch {
+    return bodyText;
+  }
+}
+
 export async function apiFetch<T>(
   path: string,
   options: ApiFetchOptions = {}
 ): Promise<T> {
-  const url = `${getApiBaseUrl()}${path.startsWith("/") ? path : `/${path}`}`;
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  const url = `${getApiBaseUrl()}${normalizedPath}`;
+
+  const headers = new Headers(options.headers);
+
+  if (!headers.has("Accept")) {
+    headers.set("Accept", "application/json");
+  }
+
+  if (options.body && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
 
   const response = await fetch(url, {
     ...options,
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/json",
-      ...options.headers,
-    },
+    headers,
   });
-
-  if (!response.ok) {
-    let details: unknown = null;
-
-    try {
-      details = await response.json();
-    } catch {
-      details = await response.text();
-    }
-
-    throw new ApiError(
-      `API request failed with status ${response.status}`,
-      response.status,
-      details
-    );
-  }
 
   if (response.status === 204) {
     return null as T;
   }
 
-  return response.json() as Promise<T>;
+  const responseData = await readResponseBody(response);
+
+  if (!response.ok) {
+    throw new ApiError(
+    `API request failed with status ${response.status} for ${url}`,
+    response.status,
+    responseData
+    );
+  }
+
+  return responseData as T;
 }

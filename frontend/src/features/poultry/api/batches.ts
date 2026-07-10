@@ -7,7 +7,7 @@ import type {
   PoultrySale,
 } from "../types";
 
-const POULTRY_BATCHES_PATH = "/poulty-management/";
+const POULTRY_BATCHES_PATH = "/poultry-management/";
 
 function normalizeList<T>(data: T[] | PaginatedResponse<T>): T[] {
   if (Array.isArray(data)) {
@@ -29,7 +29,7 @@ export async function getPoultryBatches(): Promise<PoultryBatch[]> {
 }
 
 export async function getPoultryBatch(id: number): Promise<PoultryBatch> {
-  return apiFetch<PoultryBatch>(`${POULTRY_BATCHES_PATH}${id}/`, {
+  return apiFetch<PoultryBatch>(`${POULTRY_BATCHES_PATH}${id}`, {
     cache: "no-store",
   });
 }
