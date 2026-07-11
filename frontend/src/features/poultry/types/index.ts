@@ -44,7 +44,13 @@ export type PaymentMethod =
   | "cash"
   | "mobile_money"
   | "bank_transfer"
-  | "credit"
+  | "credit";
+
+export type BuyerType =
+  | "market_vendor"
+  | "retail"
+  | "retail_supply"
+  | "bulk_order";
 
 export type PoultrySale = {
   id: number;
@@ -55,6 +61,7 @@ export type PoultrySale = {
   quantity_sold: number;
   unit_price: number;
   buyer_name: string;
+  buyer_type: BuyerType;
   payment_status: PaymentStatus;
   payment_method: PaymentMethod;
   amount_paid: number;
@@ -79,4 +86,19 @@ export type CreateInputCostPayload = {
   unit: number;
   unit_measurement: string;
   unit_cost: number;
+};
+
+export type CreateSalePayload = {
+  sale_date: string;
+  product_type: ProductType;
+  quantity_sold: number;
+  unit_price: number;
+  buyer_name: string;
+  buyer_type: BuyerType;
+  payment_status: PaymentStatus;
+  payment_method: PaymentMethod;
+  amount_paid: number;
+  balance: number;
+  sold_by_name: string;
+  notes: string;
 };

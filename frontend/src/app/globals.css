@@ -61,3 +61,19 @@ a {
   letter-spacing: 0.22em;
   text-transform: uppercase;
 }
+
+.form-input {
+  width: 100%;
+  min-height: 2.9rem;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  background: var(--surface-cream);
+  padding: 0.7rem 0.85rem;
+  color: var(--navy);
+  outline: none;
+}
+
+.form-input:focus {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px rgba(242, 189, 66, 0.22);
+}

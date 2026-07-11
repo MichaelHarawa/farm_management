@@ -10,6 +10,10 @@ export const metadata: Metadata = {
 
 const navigationItems = [
   {
+    label: "Modules",
+    href: "/",
+  },
+  {
     label: "Poultry",
     href: "/poultry",
   },
@@ -24,12 +28,10 @@ export default function RootLayout({ children }: RootLayoutProps) {
     <html lang="en">
       <body>
         <div className="min-h-screen bg-[var(--page-cream)] text-[var(--navy)]">
-          <div className="h-9 border-b border-black/30 bg-[#2c2c2c]" />
-
           <header className="border-b border-[var(--line)] bg-[var(--surface-cream)]">
-            <div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-5 sm:px-8">
+            <div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-3 sm:px-8">
               <Link href="/" className="flex items-center gap-3">
-                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--navy)] text-xs font-bold text-[var(--surface-cream)]">
+                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--navy)] text-[0.68rem] font-bold text-[var(--surface-cream)]">
                   F
                 </div>
 
@@ -52,9 +54,9 @@ export default function RootLayout({ children }: RootLayoutProps) {
 
               <Link
                 href="/poultry"
-                className="rounded-full bg-[var(--navy)] px-5 py-2 text-[0.68rem] font-bold uppercase tracking-[0.2em] text-[var(--surface-cream)] transition hover:bg-[var(--navy-soft)]"
+                className="rounded-full bg-[var(--navy)] px-4 py-1.5 text-[0.68rem] font-bold uppercase tracking-[0.18em] text-[var(--surface-cream)] transition hover:bg-[var(--navy-soft)]"
               >
-                Open Data
+                Open Poultry
               </Link>
             </div>
           </header>

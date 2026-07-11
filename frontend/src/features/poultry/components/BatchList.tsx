@@ -22,12 +22,12 @@ function formatBirdType(value: string): string {
 export function BatchList({ batches }: BatchListProps) {
   if (batches.length === 0) {
     return (
-      <div className="rounded-[1.7rem] border border-[var(--line)] bg-[var(--surface-cream)] p-10 text-center shadow-[var(--shadow-card)]">
+      <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-cream)] p-8 text-center shadow-[var(--shadow-card)]">
         <p className="text-label text-[var(--navy-muted)]">
           Batch Register / Empty
         </p>
 
-        <h2 className="font-display mt-4 text-4xl tracking-[-0.04em] text-[var(--navy)]">
+        <h2 className="font-display mt-4 text-4xl text-[var(--navy)]">
           No batch records yet.
         </h2>
 
@@ -39,14 +39,14 @@ export function BatchList({ batches }: BatchListProps) {
   }
 
   return (
-    <div className="overflow-hidden rounded-[1.7rem] border border-[var(--line)] bg-[var(--surface-cream)] shadow-[var(--shadow-card)]">
-      <div className="flex flex-col gap-4 border-b border-[var(--line)] px-7 py-6 sm:flex-row sm:items-end sm:justify-between">
+    <div className="overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--surface-cream)] shadow-[var(--shadow-card)]">
+      <div className="flex flex-col gap-4 border-b border-[var(--line)] px-6 py-5 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-label text-[var(--navy-muted)]">
             Live Workspace / 01
           </p>
 
-          <h2 className="font-display mt-3 text-4xl leading-none tracking-[-0.05em] text-[var(--navy)] sm:text-5xl">
+          <h2 className="font-display mt-3 text-4xl leading-none text-[var(--navy)]">
             Your batches, in motion.
           </h2>
         </div>
