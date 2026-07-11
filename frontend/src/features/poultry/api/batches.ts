@@ -6,10 +6,11 @@ import type {
   PoultryBatch,
   PoultrySale,
 } from "../types";
+import { poultryApiPaths } from "./paths";
 
-const POULTRY_BATCHES_PATH = "/poultry-management/";
-
-function normalizeList<T>(data: T[] | PaginatedResponse<T>): T[] {
+function normalizeList<T>(
+  data: T[] | PaginatedResponse<T>
+): T[] {
   if (Array.isArray(data)) {
     return data;
   }
@@ -18,40 +19,46 @@ function normalizeList<T>(data: T[] | PaginatedResponse<T>): T[] {
 }
 
 export async function getPoultryBatches(): Promise<PoultryBatch[]> {
-  const data = await apiFetch<PoultryBatch[] | PaginatedResponse<PoultryBatch>>(
-    POULTRY_BATCHES_PATH,
-    {
-      cache: "no-store",
-    }
-  );
-
-  return normalizeList(data);
-}
-
-export async function getPoultryBatch(id: number): Promise<PoultryBatch> {
-  return apiFetch<PoultryBatch>(`${POULTRY_BATCHES_PATH}${id}`, {
+  const data = await apiFetch<
+    PoultryBatch[] | PaginatedResponse<PoultryBatch>
+  >(poultryApiPaths.batches, {
     cache: "no-store",
   });
-}
-
-export async function getBatchInputCosts(id: number): Promise<InputCost[]> {
-  const data = await apiFetch<InputCost[] | PaginatedResponse<InputCost>>(
-    `${POULTRY_BATCHES_PATH}${id}/input_costs`,
-    {
-      cache: "no-store",
-    }
-  );
 
   return normalizeList(data);
 }
 
-export async function getBatchSales(id: number): Promise<PoultrySale[]> {
-  const data = await apiFetch<PoultrySale[] | PaginatedResponse<PoultrySale>>(
-    `${POULTRY_BATCHES_PATH}${id}/sales`,
+export async function getPoultryBatch(
+  id: number
+): Promise<PoultryBatch> {
+  return apiFetch<PoultryBatch>(
+    poultryApiPaths.batch(id),
     {
       cache: "no-store",
     }
   );
+}
+
+export async function getBatchInputCosts(
+  id: number
+): Promise<InputCost[]> {
+  const data = await apiFetch<
+    InputCost[] | PaginatedResponse<InputCost>
+  >(poultryApiPaths.inputCosts(id), {
+    cache: "no-store",
+  });
+
+  return normalizeList(data);
+}
+
+export async function getBatchSales(
+  id: number
+): Promise<PoultrySale[]> {
+  const data = await apiFetch<
+    PoultrySale[] | PaginatedResponse<PoultrySale>
+  >(poultryApiPaths.sales(id), {
+    cache: "no-store",
+  });
 
   return normalizeList(data);
 }
@@ -59,8 +66,11 @@ export async function getBatchSales(id: number): Promise<PoultrySale[]> {
 export async function createPoultryBatch(
   payload: CreatePoultryBatchPayload
 ): Promise<PoultryBatch> {
-  return apiFetch<PoultryBatch>(POULTRY_BATCHES_PATH, {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
+  return apiFetch<PoultryBatch>(
+    poultryApiPaths.batches,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }
+  );
 }

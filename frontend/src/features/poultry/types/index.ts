@@ -71,3 +71,12 @@ export type PaginatedResponse<T> = {
   previous: string | null;
   results: T[];
 };
+
+export type CreateInputCostPayload = {
+  item: string;
+  category: string;
+  quantity: number;
+  unit: number;
+  unit_measurement: string;
+  unit_cost: number;
+};
