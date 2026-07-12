@@ -153,7 +153,7 @@ export function AddInputCostForm({
         </FormField>
 
         <FormField
-          label="Number of packages"
+          label="Number of Items"
           error={errors.quantity?.message}
         >
           <input
@@ -169,7 +169,7 @@ export function AddInputCostForm({
         </FormField>
 
         <FormField
-          label="Size per package"
+          label="Size per Item"
           error={errors.unit?.message}
         >
           <input
