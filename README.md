@@ -26,7 +26,7 @@ The Poultry module is the active production workspace. It supports:
 - Cost summaries by category
 - Sales collection summaries
 - Net position and gross position calculations in the frontend
-- Operational readouts for quantity, maturity timing, sales, input costs, and balances
+- Operational readouts for quantity, maturity timing, sales, input costs, mortality, feed usage, and balances
 
 ### Planned Modules
 
@@ -47,18 +47,23 @@ Current frontend routes:
 | --- | --- |
 | `/` | Executive module landing page with Poultry, Crops, and Goats module cards |
 | `/poultry` | Poultry production command view and batch portfolio table |
-| `/poultry/batches/[id]` | Batch detail workspace with overview, flock, costs, and sales views |
+| `/poultry/batches/[id]` | Batch detail workspace with overview, flock, costs, sales, mortality, and feed usage views |
 | `/api/poultry/batches/[id]/input-costs` | Next.js server route that proxies input cost creation to Django |
 | `/api/poultry/batches/[id]/sales` | Next.js server route that proxies sale creation to Django |
+| `/api/poultry/batches/[id]/mortality` | Next.js server route that proxies mortality creation to Django |
+| `/api/poultry/batches/[id]/feed-usage` | Next.js server route that proxies feed usage creation to Django |
 
 Current frontend poultry features:
 
 - Reads poultry batches from the Django API.
 - Displays a batch portfolio table with flock size, placement date, maturity date, status, and a view icon under `Readout`.
 - Opens detailed batch workspaces from the register.
-- Displays batch production information, current birds, sold birds, input cost totals, sales totals, cash collected, outstanding balances, and net position.
+- Displays batch production information, current birds, sold birds, mortality, input cost totals, sales totals, feed usage, cash collected, outstanding balances, and net position.
 - Records input costs through a form with item, category, package count, package size, unit measurement, and cost per unit.
 - Records sales through a form with sale date, product type, quantity sold, unit price, buyer details, payment status, payment method, amount paid, balance, seller, and notes.
+- Records mortality through a form with quantity dead, age in days, suspected cause, description, action taken, and reporter name.
+- Records feed usage through a form with flock age, feeding dates, feed type, source, quantity, unit, current bird count, notes, and reporter name.
+- Recalculates available live birds as initial birds less sold birds and recorded mortality.
 
 The frontend expects `NEXT_PUBLIC_API_BASE_URL` to point to the Django API version root. For local development this is typically:
 
@@ -306,4 +311,4 @@ docker/
 - Crops and Goats are represented on the landing page as future modules.
 - The frontend uses a themed executive layout with cream, navy, and gold styling.
 - The batch detail workspace is designed around summary cards and tabbed operational views rather than placing every form and table into one long page.
-- Input cost and sales creation are routed through local Next.js API routes before being forwarded to the Django API.
+- Input cost, sales, mortality, and feed usage creation are routed through local Next.js API routes before being forwarded to the Django API.

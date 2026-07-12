@@ -78,6 +78,55 @@ export type PoultrySale = {
   updated_at: string;
 };
 
+export type PoultryMortality = {
+  id: number;
+  batch: number;
+  mortality_date: string;
+  quantity_dead: number;
+  age_in_days: number;
+  suspected_cause: string;
+  description: string;
+  action_taken: string;
+  reported_by_name: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type FeedType =
+  | "pre_starter"
+  | "starter"
+  | "grower"
+  | "finisher"
+  | "pullet_starter"
+  | "pullet_grower"
+  | "layers_marsh"
+  | "layers_finisher";
+
+export type FeedSource =
+  | "cp_feed"
+  | "proto_feed"
+  | "concentrates_feed"
+  | "self_made";
+
+export type FeedUnitMeasurement = "kg" | "g";
+
+export type PoultryFeedUsage = {
+  id: number;
+  batch: number;
+  initial_age: number;
+  feeding_start_date: string;
+  feeding_end_date: string;
+  feed_type: FeedType;
+  feed_source: FeedSource;
+  quantity_given: number;
+  unit_of_measurement: FeedUnitMeasurement;
+  current_number_of_birds: number;
+  notes: string;
+  reported_by_name: string;
+  created_at: string;
+  updated_at: string;
+};
+
 export type PaginatedResponse<T> = {
   count: number;
   next: string | null;
@@ -107,4 +156,26 @@ export type CreateSalePayload = {
   balance: number;
   sold_by_name: string;
   notes: string;
+};
+
+export type CreateMortalityPayload = {
+  quantity_dead: number;
+  age_in_days: number;
+  suspected_cause: string;
+  description: string;
+  action_taken: string;
+  reported_by_name: string;
+};
+
+export type CreateFeedUsagePayload = {
+  initial_age: number;
+  feeding_start_date: string;
+  feeding_end_date: string;
+  feed_type: FeedType;
+  feed_source: FeedSource;
+  quantity_given: number;
+  unit_of_measurement: FeedUnitMeasurement;
+  current_number_of_birds: number;
+  notes: string;
+  reported_by_name: string;
 };

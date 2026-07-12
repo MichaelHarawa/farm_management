@@ -1,6 +1,8 @@
 import { notFound } from "next/navigation";
 import {
+  getBatchFeedUsage,
   getBatchInputCosts,
+  getBatchMortality,
   getBatchSales,
   getPoultryBatch,
 } from "@/features/poultry/api/batches";
@@ -36,9 +38,11 @@ export default async function BatchDetailPage({
     throw error;
   }
 
-  const [inputCosts, sales] = await Promise.all([
+  const [inputCosts, sales, mortalities, feedUsages] = await Promise.all([
     getBatchInputCosts(batchId),
     getBatchSales(batchId),
+    getBatchMortality(batchId),
+    getBatchFeedUsage(batchId),
   ]);
 
   return (
@@ -46,6 +50,8 @@ export default async function BatchDetailPage({
       batch={batch}
       inputCosts={inputCosts}
       sales={sales}
+      mortalities={mortalities}
+      feedUsages={feedUsages}
     />
   );
 }

@@ -4,6 +4,8 @@ import type {
   InputCost,
   PaginatedResponse,
   PoultryBatch,
+  PoultryFeedUsage,
+  PoultryMortality,
   PoultrySale,
 } from "../types";
 import { poultryApiPaths } from "./paths";
@@ -71,6 +73,30 @@ export async function getBatchSales(
   const data = await apiFetch<
     PoultrySale[] | PaginatedResponse<PoultrySale>
   >(poultryApiPaths.sales(id), {
+    cache: "no-store",
+  });
+
+  return normalizeList(data);
+}
+
+export async function getBatchMortality(
+  id: number
+): Promise<PoultryMortality[]> {
+  const data = await apiFetch<
+    PoultryMortality[] | PaginatedResponse<PoultryMortality>
+  >(poultryApiPaths.mortality(id), {
+    cache: "no-store",
+  });
+
+  return normalizeList(data);
+}
+
+export async function getBatchFeedUsage(
+  id: number
+): Promise<PoultryFeedUsage[]> {
+  const data = await apiFetch<
+    PoultryFeedUsage[] | PaginatedResponse<PoultryFeedUsage>
+  >(poultryApiPaths.feedUsage(id), {
     cache: "no-store",
   });
 
