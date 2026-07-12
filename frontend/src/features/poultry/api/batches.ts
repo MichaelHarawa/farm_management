@@ -1,4 +1,4 @@
-import { apiFetch } from "@/lib/api";
+import { ApiError, apiFetch } from "@/lib/api";
 import type {
   CreatePoultryBatchPayload,
   InputCost,
@@ -16,6 +16,20 @@ function normalizeList<T>(
   }
 
   return data.results;
+}
+
+async function readResponseBody(response: Response): Promise<unknown> {
+  const bodyText = await response.text();
+
+  if (!bodyText) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(bodyText) as unknown;
+  } catch {
+    return bodyText;
+  }
 }
 
 export async function getPoultryBatches(): Promise<PoultryBatch[]> {
@@ -66,11 +80,24 @@ export async function getBatchSales(
 export async function createPoultryBatch(
   payload: CreatePoultryBatchPayload
 ): Promise<PoultryBatch> {
-  return apiFetch<PoultryBatch>(
-    poultryApiPaths.batches,
-    {
-      method: "POST",
-      body: JSON.stringify(payload),
-    }
-  );
+  const response = await fetch("/api/poultry/batches", {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const responseData = await readResponseBody(response);
+
+  if (!response.ok) {
+    throw new ApiError(
+      "Unable to create poultry batch.",
+      response.status,
+      responseData
+    );
+  }
+
+  return responseData as PoultryBatch;
 }

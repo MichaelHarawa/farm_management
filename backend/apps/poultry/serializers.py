@@ -18,6 +18,7 @@ class BatchSerializer(serializers.ModelSerializer):
             "id",
             "batch_id",
             "bird_type",
+            "source",
             "entry_date",
             "expected_maturity_date",
             "quantity",
@@ -26,6 +27,14 @@ class BatchSerializer(serializers.ModelSerializer):
             # "created_by_username",
         )
         read_only_fields = ("id", "batch_id", "created_at", "updated_at",)
+
+    def validate_source(self, value):
+        source = value.strip()
+
+        if not source:
+            raise serializers.ValidationError("Source is required.")
+
+        return source
 
 class InputCostsSerializer(serializers.ModelSerializer):
     # created_by_username = serializers.CharField(source = "created_by.username", read_only = True)

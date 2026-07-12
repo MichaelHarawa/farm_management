@@ -582,7 +582,7 @@ function OverviewTab({
               label="Entry Date"
               value={formatDisplayDate(batch.entry_date)}
             />
-            <InfoItem label="Source" value="Central Hatchery" />
+            <InfoItem label="Source" value={batch.source || "Central Poultry"} />
             <InfoItem
               label="Initial Birds"
               value={formatNumber(batch.quantity)}

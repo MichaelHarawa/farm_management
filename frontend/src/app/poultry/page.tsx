@@ -1,4 +1,5 @@
 import { BatchList } from "@/features/poultry/components/BatchList";
+import { AddBatchDialog } from "@/features/poultry/components/AddBatchDialog";
 import { getPoultryBatches } from "@/features/poultry/api/batches";
 
 export default async function PoultryPage() {
@@ -74,7 +75,7 @@ export default async function PoultryPage() {
             />
           </div>
 
-          <BatchList batches={batches} />
+          <BatchList batches={batches} addBatchAction={<AddBatchDialog />} />
         </div>
       </section>
     </main>

@@ -9,6 +9,7 @@ export type PoultryBatch = {
   id: number;
   batch_id: string;
   bird_type: BirdType;
+  source: string;
   entry_date: string;
   expected_maturity_date: string;
   quantity: number;
@@ -18,6 +19,7 @@ export type PoultryBatch = {
 
 export type CreatePoultryBatchPayload = {
   bird_type: BirdType;
+  source: string;
   entry_date: string;
   expected_maturity_date: string;
   quantity: number;

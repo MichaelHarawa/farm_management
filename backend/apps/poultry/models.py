@@ -88,6 +88,7 @@ class Batch(models.Model):
     bird_type = models.CharField(max_length=200,
         choices=BirdType.choices,
         default=BirdType.BROILERS,)
+    source = models.CharField(max_length=200, default="Central Poultry")
     entry_date = models.DateTimeField()
     expected_maturity_date = models.DateTimeField()
     quantity = models.PositiveIntegerField(default=0)

@@ -1,9 +1,11 @@
 import { CalendarDays, Eye, Table2 } from "lucide-react";
 import Link from "next/link";
+import type { ReactNode } from "react";
 import type { PoultryBatch } from "../types";
 
 type BatchListProps = {
   batches: PoultryBatch[];
+  addBatchAction?: ReactNode;
 };
 
 function formatDate(value: string): string {
@@ -30,7 +32,7 @@ function getDaysToMaturity(value: string): number {
   );
 }
 
-export function BatchList({ batches }: BatchListProps) {
+export function BatchList({ batches, addBatchAction }: BatchListProps) {
   if (batches.length === 0) {
     return (
       <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-cream)] p-10 text-center shadow-[var(--shadow-card)]">
@@ -50,6 +52,10 @@ export function BatchList({ batches }: BatchListProps) {
           Once a poultry batch is registered, it will appear here as a live
           operational readout.
         </p>
+
+        {addBatchAction ? (
+          <div className="mt-6 flex justify-center">{addBatchAction}</div>
+        ) : null}
       </div>
     );
   }
@@ -73,6 +79,8 @@ export function BatchList({ batches }: BatchListProps) {
         </div>
 
         <div className="flex flex-wrap gap-3">
+          {addBatchAction}
+
           <button
             type="button"
             className="rounded-full border border-[var(--line)] bg-white/40 px-5 py-2 text-[0.68rem] font-bold uppercase tracking-[0.18em] text-[var(--navy)]"
