@@ -3,6 +3,7 @@ from rest_framework import serializers
 
 from .models import(
     Batch,
+    ChicksSource,
     InputCosts,
     Sales,
     Mortality,
@@ -19,6 +20,7 @@ class BatchSerializer(serializers.ModelSerializer):
             "batch_id",
             "bird_type",
             "source",
+            "source_other",
             "entry_date",
             "expected_maturity_date",
             "quantity",
@@ -28,13 +30,24 @@ class BatchSerializer(serializers.ModelSerializer):
         )
         read_only_fields = ("id", "batch_id", "created_at", "updated_at",)
 
-    def validate_source(self, value):
-        source = value.strip()
+    def validate(self, attrs):
+        source = attrs.get("source", getattr(self.instance, "source", None))
+        source_other_value = attrs.get(
+            "source_other",
+            getattr(self.instance, "source_other", ""),
+        )
+        source_other = (source_other_value or "").strip()
 
-        if not source:
-            raise serializers.ValidationError("Source is required.")
+        if source == ChicksSource.OTHER and not source_other:
+            raise serializers.ValidationError(
+                {"source_other": "Enter the source name."}
+            )
 
-        return source
+        attrs["source_other"] = (
+            source_other if source == ChicksSource.OTHER else ""
+        )
+
+        return attrs
 
 class InputCostsSerializer(serializers.ModelSerializer):
     # created_by_username = serializers.CharField(source = "created_by.username", read_only = True)

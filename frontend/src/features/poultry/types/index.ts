@@ -5,11 +5,14 @@ export type BirdType =
   | "kloilers"
   | "mikolongwe";
 
+export type ChicksSource = "central_poultry" | "proto" | "other";
+
 export type PoultryBatch = {
   id: number;
   batch_id: string;
   bird_type: BirdType;
-  source: string;
+  source: ChicksSource;
+  source_other: string;
   entry_date: string;
   expected_maturity_date: string;
   quantity: number;
@@ -19,7 +22,8 @@ export type PoultryBatch = {
 
 export type CreatePoultryBatchPayload = {
   bird_type: BirdType;
-  source: string;
+  source: ChicksSource;
+  source_other: string;
   entry_date: string;
   expected_maturity_date: string;
   quantity: number;

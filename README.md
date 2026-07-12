@@ -111,7 +111,8 @@ Important fields:
 
 - `batch_id`: generated as `BATCH-YYYYMMDD-0001`
 - `bird_type`: broilers, layers, local, kloilers, or mikolongwe
-- `source`: Proto, Central Poultry, or a manually entered source when Others is selected
+- `source`: `proto`, `central_poultry`, or `other`
+- `source_other`: manually entered source name when `source` is `other`
 - `entry_date`
 - `expected_maturity_date`
 - `quantity`

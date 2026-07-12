@@ -53,6 +53,12 @@ class FeedSource(models.TextChoices):
     CONCENTRATES_FEED = "concentrates_feed", "Concentrates Feed"
     SELF_MADE = "self_made", "Self Made"
 
+
+class ChicksSource(models.TextChoices):
+    CENTRAL_POULTRY = "central_poultry", "Central Poultry"
+    PROTO = "proto", "Proto"
+    OTHER = "other", "Other"
+
 class UnitMeasurement(models.TextChoices):
     KGS = "kg", "KG"
     GMS = "g", "Grams"
@@ -88,7 +94,12 @@ class Batch(models.Model):
     bird_type = models.CharField(max_length=200,
         choices=BirdType.choices,
         default=BirdType.BROILERS,)
-    source = models.CharField(max_length=200, default="Central Poultry")
+    source = models.CharField(
+        max_length=200,
+        choices=ChicksSource.choices,
+        default=ChicksSource.PROTO,
+        )
+    source_other = models.CharField(max_length=200, blank=True, default="")
     entry_date = models.DateTimeField()
     expected_maturity_date = models.DateTimeField()
     quantity = models.PositiveIntegerField(default=0)

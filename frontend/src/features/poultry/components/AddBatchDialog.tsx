@@ -23,9 +23,9 @@ const birdTypeOptions = [
 ] as const;
 
 const sourceOptions = [
-  { value: "Proto", label: "Proto" },
-  { value: "Central Poultry", label: "Central Poultry" },
-  { value: "Others", label: "Others" },
+  { value: "proto", label: "Proto" },
+  { value: "central_poultry", label: "Central Poultry" },
+  { value: "other", label: "Others" },
 ] as const;
 
 type AddBatchDialogProps = {
@@ -46,7 +46,7 @@ function getDefaultValues(): BatchFormValues {
 
   return {
     bird_type: "broilers",
-    source: "Central Poultry",
+    source: "proto",
     source_other: "",
     entry_date: toDateTimeLocal(entryDate),
     expected_maturity_date: toDateTimeLocal(maturityDate),
@@ -95,10 +95,9 @@ export function AddBatchDialog({ buttonClassName }: AddBatchDialogProps) {
 
     const payload: CreatePoultryBatchPayload = {
       bird_type: values.bird_type,
-      source:
-        values.source === "Others"
-          ? values.source_other?.trim() ?? ""
-          : values.source,
+      source: values.source,
+      source_other:
+        values.source === "other" ? values.source_other?.trim() ?? "" : "",
       entry_date: values.entry_date,
       expected_maturity_date: values.expected_maturity_date,
       quantity: values.quantity,
@@ -215,7 +214,7 @@ export function AddBatchDialog({ buttonClassName }: AddBatchDialogProps) {
                   </select>
                 </FormField>
 
-                {selectedSource === "Others" ? (
+                {selectedSource === "other" ? (
                   <FormField
                     label="Specify source"
                     error={errors.source_other?.message}

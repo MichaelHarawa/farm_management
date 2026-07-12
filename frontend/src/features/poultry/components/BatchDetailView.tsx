@@ -129,6 +129,22 @@ function formatCostCategory(value: string): string {
   return formatLabel(value);
 }
 
+function formatBatchSource(batch: PoultryBatch): string {
+  if (batch.source === "other") {
+    return batch.source_other?.trim() || "Other";
+  }
+
+  if (batch.source === "central_poultry") {
+    return "Central Poultry";
+  }
+
+  if (batch.source === "proto") {
+    return "Proto";
+  }
+
+  return formatLabel(batch.source);
+}
+
 function getCostQuantity(cost: InputCost): string {
   const unit = cost.unit ? ` x ${formatNumber(cost.unit)}` : "";
 
@@ -582,7 +598,7 @@ function OverviewTab({
               label="Entry Date"
               value={formatDisplayDate(batch.entry_date)}
             />
-            <InfoItem label="Source" value={batch.source || "Central Poultry"} />
+            <InfoItem label="Source" value={formatBatchSource(batch)} />
             <InfoItem
               label="Initial Birds"
               value={formatNumber(batch.quantity)}

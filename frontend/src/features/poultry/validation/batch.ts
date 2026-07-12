@@ -4,7 +4,7 @@ export const batchSchema = z
   .object({
     bird_type: z.enum(["broilers", "layers", "local", "kloilers", "mikolongwe"]),
 
-    source: z.enum(["Proto", "Central Poultry", "Others"]),
+    source: z.enum(["proto", "central_poultry", "other"]),
 
     source_other: z.string().trim().optional(),
 
@@ -24,7 +24,7 @@ export const batchSchema = z
     const maturityDate = new Date(values.expected_maturity_date);
 
     if (
-      values.source === "Others" &&
+      values.source === "other" &&
       (!values.source_other || values.source_other.trim().length < 2)
     ) {
       context.addIssue({
