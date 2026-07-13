@@ -17,4 +17,7 @@ export const poultryApiPaths = {
 
   feedUsage: (batchId: number) =>
     `${POULTRY_ROOT}/${batchId}/feed_usage`,
+
+  vaccinations: (batchId: number) =>
+    `${POULTRY_ROOT}/${batchId}/drugs_vaccine`,
 } as const;

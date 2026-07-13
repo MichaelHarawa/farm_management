@@ -7,6 +7,7 @@ import type {
   PoultryFeedUsage,
   PoultryMortality,
   PoultrySale,
+  PoultryVaccination,
 } from "../types";
 import { poultryApiPaths } from "./paths";
 
@@ -97,6 +98,18 @@ export async function getBatchFeedUsage(
   const data = await apiFetch<
     PoultryFeedUsage[] | PaginatedResponse<PoultryFeedUsage>
   >(poultryApiPaths.feedUsage(id), {
+    cache: "no-store",
+  });
+
+  return normalizeList(data);
+}
+
+export async function getBatchVaccinations(
+  id: number
+): Promise<PoultryVaccination[]> {
+  const data = await apiFetch<
+    PoultryVaccination[] | PaginatedResponse<PoultryVaccination>
+  >(poultryApiPaths.vaccinations(id), {
     cache: "no-store",
   });
 

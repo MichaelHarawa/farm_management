@@ -63,6 +63,7 @@ Current frontend poultry features:
 - Records sales through a form with sale date, product type, quantity sold, unit price, buyer details, payment status, payment method, amount paid, balance, seller, and notes.
 - Records mortality through a form with mortality date, quantity dead, age in days, suspected cause, description, action taken, and reporter name.
 - Records feed usage through a form with flock age, feeding dates, feed type, source, quantity, unit, current bird count, notes, and reporter name.
+- Records vaccinations and drugs with administration date, vaccine type, conditional other-vaccine name, quantity, notes, reporter name, and an auto-calculated timely status.
 - Recalculates available live birds as initial birds less sold birds and recorded mortality.
 
 The frontend expects `NEXT_PUBLIC_API_BASE_URL` to point to the Django API version root. For local development this is typically:
@@ -105,6 +106,8 @@ Current backend routes:
 | `POST` | `/api/v1/poultry-management/{id}/mortality` | Create a mortality record for a batch |
 | `GET` | `/api/v1/poultry-management/{id}/feed_usage` | List feed usage records for a batch |
 | `POST` | `/api/v1/poultry-management/{id}/feed_usage` | Create a feed usage record for a batch |
+| `GET` | `/api/v1/poultry-management/{id}/drugs_vaccine` | List vaccination and drug records for a batch |
+| `POST` | `/api/v1/poultry-management/{id}/drugs_vaccine` | Create a vaccination or drug record for a batch |
 
 ## Poultry Data Model
 
@@ -137,6 +140,7 @@ Important fields:
 - `unit_measurement`
 - `unit_cost`
 - `purchase_date`
+- `notes`
 
 The frontend calculates estimated totals from:
 
@@ -194,6 +198,26 @@ Important fields:
 - `current_number_of_birds`
 - `notes`
 - `reported_by_name`
+
+### Drugs And Vaccination
+
+Tracks vaccine and drug administration against the batch care schedule.
+
+Important fields:
+
+- `vaccination_date`
+- `drug_vaccination_type`: hitchner, gumbolo, lasota, or other
+- `other_drug_vaccination`: only used when type is other
+- `quantity`
+- `description`
+- `timely_status`: calculated by the frontend against the expected schedule
+- `reported_by_name`
+
+Default schedule:
+
+- Hitchner: 7 days after chick arrival
+- Gumbolo: 14 days after chick arrival
+- Lasota: 21 days after chick arrival
 
 ## Local Development
 

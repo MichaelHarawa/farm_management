@@ -39,6 +39,27 @@ export type InputCost = {
   unit?: number | null;
   unit_cost: number;
   purchase_date: string;
+  notes: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DrugVaccinationType =
+  | "gumbolo"
+  | "hitchner"
+  | "lasota"
+  | "other";
+
+export type PoultryVaccination = {
+  id: number;
+  batch: number;
+  vaccination_date: string;
+  drug_vaccination_type: DrugVaccinationType;
+  other_drug_vaccination: string;
+  quantity: number;
+  description: string;
+  timely_status: string;
+  reported_by_name: string;
   created_at: string;
   updated_at: string;
 };
@@ -143,6 +164,17 @@ export type CreateInputCostPayload = {
   unit_measurement: string;
   unit_cost: number;
   purchase_date: string;
+  notes: string;
+};
+
+export type CreateVaccinationPayload = {
+  vaccination_date: string;
+  drug_vaccination_type: DrugVaccinationType;
+  other_drug_vaccination: string;
+  quantity: number;
+  description: string;
+  timely_status: string;
+  reported_by_name: string;
 };
 
 export type CreateSalePayload = {

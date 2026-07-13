@@ -10,6 +10,7 @@ import type {
   PoultryFeedUsage,
   PoultryMortality,
   PoultrySale,
+  PoultryVaccination,
 } from "../types";
 import {
   formatCurrency,
@@ -20,6 +21,7 @@ import { AddInputCostForm } from "./AddInputCostForm";
 import { AddSaleForm } from "./AddSaleForm";
 import { AddMortalityForm } from "./AddMortalityForm";
 import { AddFeedUsageForm } from "./AddFeedUsageForm";
+import { AddVaccinationForm } from "./AddVaccinationForm";
 
 type BatchDetailViewProps = {
   batch: PoultryBatch;
@@ -27,6 +29,7 @@ type BatchDetailViewProps = {
   sales: PoultrySale[];
   mortalities: PoultryMortality[];
   feedUsages: PoultryFeedUsage[];
+  vaccinations: PoultryVaccination[];
 };
 
 type ActiveTab =
@@ -35,12 +38,14 @@ type ActiveTab =
   | "costs"
   | "sales"
   | "mortality"
-  | "feed";
+  | "feed"
+  | "vaccination";
 type ModalKind =
   | "input-cost-form"
   | "sale-form"
   | "mortality-form"
   | "feed-usage-form"
+  | "vaccination-form"
   | null;
 
 type BreakdownItem = {
@@ -57,6 +62,14 @@ type LatestRecord = {
   value: string;
 };
 
+type VaccinationScheduleItem = {
+  title: string;
+  type: string;
+  date: Date;
+  status: string;
+  record?: PoultryVaccination;
+};
+
 const tabs: Array<{
   id: ActiveTab;
   label: string;
@@ -68,6 +81,7 @@ const tabs: Array<{
   { id: "sales", label: "Sales", sidebarLabel: "Sales" },
   { id: "mortality", label: "Mortality", sidebarLabel: "Mortality" },
   { id: "feed", label: "Feed", sidebarLabel: "Feed usage" },
+  { id: "vaccination", label: "Vaccination", sidebarLabel: "Vaccination" },
 ];
 
 const dayInMs = 24 * 60 * 60 * 1000;
@@ -115,6 +129,25 @@ function formatFeedSource(value: string): string {
   };
 
   return labels[value] ?? formatLabel(value);
+}
+
+function formatDrugVaccinationType(value: string): string {
+  const labels: Record<string, string> = {
+    gumbolo: "Gumbolo",
+    hitchner: "Hitchner",
+    lasota: "Lasota",
+    other: "Other",
+  };
+
+  return labels[value] ?? formatLabel(value);
+}
+
+function getVaccinationName(vaccination: PoultryVaccination): string {
+  if (vaccination.drug_vaccination_type === "other") {
+    return vaccination.other_drug_vaccination || "Other";
+  }
+
+  return formatDrugVaccinationType(vaccination.drug_vaccination_type);
 }
 
 function formatDisplayDate(value: string | Date): string {
@@ -175,6 +208,13 @@ function getDaysBetween(start: string | Date, end: string | Date): number {
     0,
     Math.floor((endDate.getTime() - startDate.getTime()) / dayInMs)
   );
+}
+
+function getSignedDaysBetween(start: string | Date, end: string | Date): number {
+  const startDate = new Date(start);
+  const endDate = new Date(end);
+
+  return Math.floor((endDate.getTime() - startDate.getTime()) / dayInMs);
 }
 
 function formatCostCategory(value: string): string {
@@ -239,6 +279,7 @@ export function BatchDetailView({
   sales,
   mortalities,
   feedUsages,
+  vaccinations,
 }: BatchDetailViewProps) {
   const [activeTab, setActiveTab] = useState<ActiveTab>("overview");
   const [openModal, setOpenModal] = useState<ModalKind>(null);
@@ -359,37 +400,71 @@ export function BatchDetailView({
       value: formatFeedQuantity(feedUsage),
     }));
 
-    return [...saleRecords, ...costRecords, ...mortalityRecords, ...feedRecords].sort(
-      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
-    );
-  }, [inputCosts, sales, mortalities, feedUsages]);
+    const vaccinationRecords = vaccinations.map((vaccination) => ({
+      id: `vaccination-${vaccination.id}`,
+      date: vaccination.vaccination_date,
+      type: "Vaccination",
+      description: getVaccinationName(vaccination),
+      value: vaccination.timely_status,
+    }));
+
+    return [
+      ...saleRecords,
+      ...costRecords,
+      ...mortalityRecords,
+      ...feedRecords,
+      ...vaccinationRecords,
+    ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [inputCosts, sales, mortalities, feedUsages, vaccinations]);
 
   const vaccinationSchedule = useMemo(() => {
     const hichnerDate = addDays(batch.entry_date, 7);
-    const gumboroDate = addDays(batch.entry_date, 14);
+    const gumboloDate = addDays(batch.entry_date, 14);
     const lasotaDate = addDays(batch.entry_date, 21);
 
     return [
       {
         title: "Hitchner",
+        type: "hitchner",
         date: hichnerDate,
-        status: metrics.dayOfCycle >= 7 ? "Completed" : "Scheduled",
+        record: vaccinations.find(
+          (vaccination) => vaccination.drug_vaccination_type === "hitchner"
+        ),
       },
       {
-        title: "Gumboro",
-        date: gumboroDate,
-        status: metrics.dayOfCycle >= 14 ? "Completed" : "Upcoming",
+        title: "Gumbolo",
+        type: "gumbolo",
+        date: gumboloDate,
+        record: vaccinations.find(
+          (vaccination) => vaccination.drug_vaccination_type === "gumbolo"
+        ),
       },
       {
         title: "Lasota",
+        type: "lasota",
         date: lasotaDate,
-        status: metrics.dayOfCycle >= 21 ? "Completed" : "Scheduled",
+        record: vaccinations.find(
+          (vaccination) => vaccination.drug_vaccination_type === "lasota"
+        ),
       },
-    ];
-  }, [batch.entry_date, metrics.dayOfCycle]);
+    ].map((item) => {
+      const daysUntilDue = getSignedDaysBetween(new Date(), item.date);
+
+      return {
+        ...item,
+        status: item.record
+          ? item.record.timely_status
+          : daysUntilDue === 0
+            ? "Due today"
+            : daysUntilDue > 0
+              ? "Upcoming"
+              : "Due",
+      };
+    });
+  }, [batch.entry_date, vaccinations]);
 
   const nextCare =
-    vaccinationSchedule.find((item) => item.status !== "Completed") ??
+    vaccinationSchedule.find((item) => !item.record) ??
     vaccinationSchedule[vaccinationSchedule.length - 1];
   const largestCategory = costBreakdown[0];
   const followUpSale = sales.find((sale) => sale.balance > 0);
@@ -429,6 +504,11 @@ export function BatchDetailView({
 
               if (activeTab === "feed") {
                 setOpenModal("feed-usage-form");
+                return;
+              }
+
+              if (activeTab === "vaccination") {
+                setOpenModal("vaccination-form");
               }
             }}
             onTabChange={setActiveTab}
@@ -444,6 +524,7 @@ export function BatchDetailView({
               onAddSale={() => setOpenModal("sale-form")}
               onAddMortality={() => setOpenModal("mortality-form")}
               onAddFeedUsage={() => setOpenModal("feed-usage-form")}
+              onAddVaccination={() => setOpenModal("vaccination-form")}
             />
           ) : null}
 
@@ -454,6 +535,7 @@ export function BatchDetailView({
               sales={sales}
               mortalities={mortalities}
               feedUsages={feedUsages}
+              vaccinations={vaccinations}
               vaccinationSchedule={vaccinationSchedule}
             />
           ) : null}
@@ -493,6 +575,15 @@ export function BatchDetailView({
               feedTypeBreakdown={feedTypeBreakdown}
               feedSourceBreakdown={feedSourceBreakdown}
               onAddFeedUsage={() => setOpenModal("feed-usage-form")}
+            />
+          ) : null}
+
+          {activeTab === "vaccination" ? (
+            <VaccinationTab
+              batch={batch}
+              vaccinations={vaccinations}
+              vaccinationSchedule={vaccinationSchedule}
+              onAddVaccination={() => setOpenModal("vaccination-form")}
             />
           ) : null}
         </div>
@@ -541,6 +632,19 @@ export function BatchDetailView({
           defaultAgeInDays={metrics.dayOfCycle}
         />
       </DetailModal>
+
+      <DetailModal
+        isOpen={openModal === "vaccination-form"}
+        label="New vaccination"
+        title="Record vaccination"
+        onClose={() => setOpenModal(null)}
+      >
+        <AddVaccinationForm
+          batchId={batch.id}
+          arrivalDate={batch.entry_date}
+          currentBirds={metrics.currentBirds}
+        />
+      </DetailModal>
     </main>
   );
 }
@@ -585,6 +689,15 @@ function getPageHeader(activeTab: ActiveTab, batch: PoultryBatch) {
       description:
         "Track feed issued, feed source, and consumption against live birds.",
       actionLabel: "Record feed usage",
+    };
+  }
+
+  if (activeTab === "vaccination") {
+    return {
+      title: "Vaccination schedule",
+      description:
+        "Track vaccine administration against the day 7, 14, and 21 care plan.",
+      actionLabel: "Record vaccination",
     };
   }
 
@@ -740,15 +853,12 @@ type OverviewTabProps = {
   batch: PoultryBatch;
   metrics: Metrics;
   latestRecords: LatestRecord[];
-  nextCare: {
-    title: string;
-    date: Date;
-    status: string;
-  };
+  nextCare: VaccinationScheduleItem;
   onAddCost: () => void;
   onAddSale: () => void;
   onAddMortality: () => void;
   onAddFeedUsage: () => void;
+  onAddVaccination: () => void;
 };
 
 function OverviewTab({
@@ -760,6 +870,7 @@ function OverviewTab({
   onAddSale,
   onAddMortality,
   onAddFeedUsage,
+  onAddVaccination,
 }: OverviewTabProps) {
   return (
     <div className="mt-8 grid gap-6">
@@ -843,6 +954,13 @@ function OverviewTab({
               >
                 Feed usage
               </button>
+              <button
+                type="button"
+                onClick={onAddVaccination}
+                className="h-14 rounded-lg border border-[#ddd7c9] bg-white px-5 text-base font-bold"
+              >
+                Vaccination
+              </button>
             </div>
           </div>
         </Card>
@@ -917,11 +1035,8 @@ type FlockTabProps = {
   sales: PoultrySale[];
   mortalities: PoultryMortality[];
   feedUsages: PoultryFeedUsage[];
-  vaccinationSchedule: Array<{
-    title: string;
-    date: Date;
-    status: string;
-  }>;
+  vaccinations: PoultryVaccination[];
+  vaccinationSchedule: VaccinationScheduleItem[];
 };
 
 function FlockTab({
@@ -930,6 +1045,7 @@ function FlockTab({
   sales,
   mortalities,
   feedUsages,
+  vaccinations,
   vaccinationSchedule,
 }: FlockTabProps) {
   const activityRows = [
@@ -950,6 +1066,12 @@ function FlockTab({
       `Feed issued - ${formatFeedType(feedUsage.feed_type)}`,
       formatFeedQuantity(feedUsage),
       feedUsage.reported_by_name || "Farmnotes",
+    ]),
+    ...vaccinations.map((vaccination) => [
+      formatDisplayDate(vaccination.vaccination_date),
+      `Vaccination - ${getVaccinationName(vaccination)}`,
+      formatNumber(vaccination.quantity),
+      vaccination.reported_by_name || "Farmnotes",
     ]),
     [
       formatDisplayDate(batch.entry_date),
@@ -1129,12 +1251,20 @@ function CostsTab({
       <Card>
         <RegisterHeader title="Input cost records" />
         <SimpleTable
-          columns={["Date", "Cost Item", "Category", "Quantity", "Total"]}
+          columns={[
+            "Date",
+            "Cost Item",
+            "Category",
+            "Quantity",
+            "Notes",
+            "Total",
+          ]}
           rows={inputCosts.map((cost) => [
             formatDisplayDate(cost.purchase_date),
             cost.item,
             formatCostCategory(cost.category),
             getCostQuantity(cost),
+            cost.notes,
             formatCurrency(calculateInputCostTotal(cost)),
           ])}
           emptyMessage="No input costs have been recorded."
@@ -1463,6 +1593,114 @@ function FeedUsageTab({
   );
 }
 
+type VaccinationTabProps = {
+  batch: PoultryBatch;
+  vaccinations: PoultryVaccination[];
+  vaccinationSchedule: VaccinationScheduleItem[];
+  onAddVaccination: () => void;
+};
+
+function VaccinationTab({
+  batch,
+  vaccinations,
+  vaccinationSchedule,
+  onAddVaccination,
+}: VaccinationTabProps) {
+  const completedScheduleCount = vaccinationSchedule.filter(
+    (item) => item.record
+  ).length;
+  const delayedCount = vaccinations.filter((vaccination) =>
+    vaccination.timely_status.toLowerCase().startsWith("delayed")
+  ).length;
+  const nextDue =
+    vaccinationSchedule.find((item) => !item.record) ??
+    vaccinationSchedule[vaccinationSchedule.length - 1];
+
+  return (
+    <div className="mt-8 grid gap-8">
+      <div className="grid gap-6 lg:grid-cols-3">
+        <KpiCard
+          label="Schedule Completed"
+          value={`${formatNumber(completedScheduleCount)} / ${formatNumber(
+            vaccinationSchedule.length
+          )}`}
+          detail="Core vaccine milestones recorded"
+        />
+        <KpiCard
+          label="Vaccination Records"
+          value={formatNumber(vaccinations.length)}
+          detail="Includes scheduled and other drugs"
+        />
+        <KpiCard
+          label="Delayed Records"
+          value={formatNumber(delayedCount)}
+          detail="Calculated from administration date"
+          tone={delayedCount > 0 ? "danger" : "default"}
+        />
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-[1fr_0.42fr]">
+        <Card className="p-6">
+          <SectionLabel>Care Plan</SectionLabel>
+          <h2 className="mt-6 text-3xl font-extrabold">
+            Scheduled vaccine milestones
+          </h2>
+          <p className="mt-5 text-base leading-7 text-[#747b8d]">
+            Hitchner is expected 7 days after arrival, Gumbolo after 14 days,
+            and Lasota after 21 days.
+          </p>
+          <div className="mt-8 grid gap-5 md:grid-cols-3">
+            {vaccinationSchedule.map((item) => (
+              <ScheduleItem key={item.title} item={item} />
+            ))}
+          </div>
+        </Card>
+
+        <Card className="p-6">
+          <SectionLabel>Next Due</SectionLabel>
+          <h2 className="mt-6 text-3xl font-extrabold">{nextDue.title}</h2>
+          <p className="mt-5 text-base leading-7 text-[#747b8d]">
+            Expected on {formatDisplayDate(nextDue.date)} from the batch arrival
+            date of {formatDisplayDate(batch.entry_date)}.
+          </p>
+          <button
+            type="button"
+            onClick={onAddVaccination}
+            className="mt-6 rounded-lg bg-[#151f36] px-8 py-4 text-base font-bold text-white"
+          >
+            Record vaccination
+          </button>
+        </Card>
+      </div>
+
+      <Card>
+        <RegisterHeader
+          title="Vaccination records"
+          actionLabel="Record vaccination"
+          onAction={onAddVaccination}
+        />
+        <SimpleTable
+          columns={[
+            "Date",
+            "Drug / Vaccination",
+            "Quantity",
+            "Timely Status",
+            "Reported By",
+          ]}
+          rows={vaccinations.map((vaccination) => [
+            formatDisplayDate(vaccination.vaccination_date),
+            getVaccinationName(vaccination),
+            formatNumber(vaccination.quantity),
+            vaccination.timely_status,
+            vaccination.reported_by_name,
+          ])}
+          emptyMessage="No vaccination has been recorded."
+        />
+      </Card>
+    </div>
+  );
+}
+
 type KpiCardProps = {
   label: string;
   value: string;
@@ -1689,20 +1927,17 @@ function CategoryBar({
 }
 
 type ScheduleItemProps = {
-  item: {
-    title: string;
-    date: Date;
-    status: string;
-  };
+  item: VaccinationScheduleItem;
 };
 
 function ScheduleItem({ item }: ScheduleItemProps) {
-  const isUpcoming = item.status === "Upcoming";
+  const isAttention = item.status === "Upcoming" || item.status === "Due today";
+  const isCompleted = Boolean(item.record);
 
   return (
     <div
       className={`grid grid-cols-[70px_1fr] gap-4 rounded-lg p-4 ${
-        isUpcoming ? "bg-[#fff4c6]" : ""
+        isAttention ? "bg-[#fff4c6]" : ""
       }`}
     >
       <div>
@@ -1713,7 +1948,7 @@ function ScheduleItem({ item }: ScheduleItemProps) {
         <p className="font-extrabold">{item.title}</p>
         <p
           className={`mt-1 text-sm font-bold ${
-            item.status === "Completed" ? "text-[#4e8b61]" : "text-[#747b8d]"
+            isCompleted ? "text-[#4e8b61]" : "text-[#747b8d]"
           }`}
         >
           {item.status}

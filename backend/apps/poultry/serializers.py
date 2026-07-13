@@ -8,6 +8,7 @@ from .models import(
     Sales,
     Mortality,
     FeedUsage,
+    DrugsVaccination,
 )
 
 class BatchSerializer(serializers.ModelSerializer):
@@ -63,6 +64,7 @@ class InputCostsSerializer(serializers.ModelSerializer):
             "unit",
             "unit_cost",
             "purchase_date",
+            "notes",
             "created_at",
             "updated_at",
             # "created_by_username",
@@ -129,6 +131,25 @@ class FeedUsageSerializer(serializers.ModelSerializer):
                 "unit_of_measurement",
                 "current_number_of_birds",
                 "notes",
+                "reported_by_name",
+                "created_at",
+                "updated_at"
+
+        )
+        read_only_fields = ("id", "batch","created_at","updated_at","created_by")
+
+class DrugsVaccinationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DrugsVaccination
+        fields = (
+                "id",
+                "batch",
+                "vaccination_date",
+                "drug_vaccination_type",
+                "other_drug_vaccination",
+                "quantity",
+                "description",
+                "timely_status",
                 "reported_by_name",
                 "created_at",
                 "updated_at"

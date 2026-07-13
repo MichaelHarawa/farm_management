@@ -15,6 +15,7 @@ from .models import(
     Sales,
     Mortality,
     FeedUsage,
+    DrugsVaccination,
 )
 
 from .serializers import(
@@ -22,7 +23,8 @@ from .serializers import(
     InputCostsSerializer,
     SalesSerializer,
     MortalitySerializer,
-    FeedUsageSerializer
+    FeedUsageSerializer,
+    DrugsVaccinationSerializer,
 )
 
 class BatchViewset(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
@@ -38,6 +40,8 @@ class BatchViewset(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retrie
             return MortalitySerializer
         elif self.action == "feed_usage":
             return FeedUsageSerializer
+        elif self.action == "drugs_vaccine":
+            return DrugsVaccinationSerializer
         return BatchSerializer
 
     @action(detail=True, methods=["get", "post"], url_path="input_costs")
@@ -117,6 +121,28 @@ class BatchViewset(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retrie
 
         return Response(
             self.get_serializer(feed_usage).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    @action(detail=True, methods=["get", "post"], url_path="drugs_vaccine")
+    def drugs_vaccine(self, request, pk=None):
+        poultry_batch = self.get_object()
+
+        if request.method == "GET":
+            vaccinations = poultry_batch.vaccination_row.all().order_by(
+                "-vaccination_date",
+                "-created_at",
+            )
+            serializer = self.get_serializer(vaccinations, many=True)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        vaccination = serializer.save(batch=poultry_batch)
+
+        return Response(
+            self.get_serializer(vaccination).data,
             status=status.HTTP_201_CREATED,
         )
 

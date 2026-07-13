@@ -32,6 +32,12 @@ export const inputCostSchema = z
       .positive("Unit cost must be greater than zero."),
 
     purchase_date: z.string().min(1, "Purchase date is required."),
+
+    notes: z
+      .string()
+      .trim()
+      .min(2, "Notes must contain at least 2 characters.")
+      .max(1000, "Notes cannot exceed 1,000 characters."),
   })
   .superRefine((values, context) => {
     const purchaseDate = new Date(values.purchase_date);

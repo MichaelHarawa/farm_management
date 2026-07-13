@@ -61,6 +61,7 @@ function getDefaultValues(): InputCostFormValues {
     unit_measurement: "kg",
     unit_cost: 0,
     purchase_date: toDateTimeLocal(new Date()),
+    notes: "Recorded through Farmnotes.",
   };
 }
 
@@ -252,6 +253,18 @@ export function AddInputCostForm({
             className="form-input"
           />
         </FormField>
+
+        <div className="md:col-span-2 lg:col-span-3">
+          <FormField label="Notes" error={errors.notes?.message}>
+            <textarea
+              id="input-cost-notes"
+              rows={3}
+              placeholder="Add purchase context, supplier, invoice, or handling notes."
+              {...register("notes")}
+              className="form-input resize-y"
+            />
+          </FormField>
+        </div>
       </div>
 
       <div className="flex flex-col gap-4 border-t border-[var(--line)] pt-5 sm:flex-row sm:items-center sm:justify-between">

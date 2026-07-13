@@ -66,6 +66,14 @@ class UnitMeasurement(models.TextChoices):
 #     INCHES = "inches", "Inches"
 #     GAUGE = "gauge", "Gauge"
 
+
+class DrugVaccinationType(models.TextChoices):
+    GUMBOLO = "gumbolo", "Gumbolo"
+    HITCHNER = "hitchner", "Hitchner"
+    LASOTA = "lasota", "Lasota"
+    OTHER = "other", "Other"
+
+
 class BatchIDSequence(models.Model):
     sequence_date = models.DateField(unique=True)
     last_number = models.PositiveIntegerField(default=0)
@@ -152,6 +160,7 @@ class InputCosts(models.Model):
     unit = models.PositiveIntegerField(default = 0)
     unit_cost = models.PositiveIntegerField()
     purchase_date = models.DateTimeField()
+    notes = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     created_by = models.ForeignKey(
@@ -292,4 +301,32 @@ class FeedUsage(models.Model):
     def __str__(self) -> str:
         return f"{self.batch} consumed {self.quantity_given} {self.unit_of_measurement}"
 
+
+class DrugsVaccination(models.Model):
+    batch = models.ForeignKey(
+    Batch,
+    on_delete=models.CASCADE,
+    related_name="vaccination_row",)
+    vaccination_date = models.DateTimeField()
+    drug_vaccination_type = models.CharField(
+        max_length=200,
+        choices = DrugVaccinationType.choices,
+        )
+    other_drug_vaccination = models.CharField(max_length=200)
+    quantity = models.PositiveIntegerField()
+    description = models.TextField()
+    timely_status = models.CharField(max_length=200)
+    reported_by_name = models.CharField(max_length=200)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(
+    settings.AUTH_USER_MODEL,
+    on_delete=models.SET_NULL,
+    null=True,
+    blank=True,
+    related_name="created_vaccination",
+    )
+
+    def __str__(self) -> str:
+        return f"{self.batch} {self.quantity_dead} administered on {self.vaccination_date}"
 

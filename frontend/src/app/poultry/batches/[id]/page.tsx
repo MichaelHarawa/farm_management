@@ -4,6 +4,7 @@ import {
   getBatchInputCosts,
   getBatchMortality,
   getBatchSales,
+  getBatchVaccinations,
   getPoultryBatch,
 } from "@/features/poultry/api/batches";
 import { BatchDetailView } from "@/features/poultry/components/BatchDetailView";
@@ -38,11 +39,13 @@ export default async function BatchDetailPage({
     throw error;
   }
 
-  const [inputCosts, sales, mortalities, feedUsages] = await Promise.all([
+  const [inputCosts, sales, mortalities, feedUsages, vaccinations] =
+    await Promise.all([
     getBatchInputCosts(batchId),
     getBatchSales(batchId),
     getBatchMortality(batchId),
     getBatchFeedUsage(batchId),
+    getBatchVaccinations(batchId),
   ]);
 
   return (
@@ -52,6 +55,7 @@ export default async function BatchDetailPage({
       sales={sales}
       mortalities={mortalities}
       feedUsages={feedUsages}
+      vaccinations={vaccinations}
     />
   );
 }
