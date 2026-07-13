@@ -1,6 +1,8 @@
+"use client";
+
 import { CalendarDays, Eye, Table2 } from "lucide-react";
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import type { PoultryBatch } from "../types";
 
 type BatchListProps = {
@@ -33,6 +35,56 @@ function getDaysToMaturity(value: string): number {
 }
 
 export function BatchList({ batches, addBatchAction }: BatchListProps) {
+  const [showLastThreeMonths, setShowLastThreeMonths] = useState(false);
+  const visibleBatches = useMemo(() => {
+    if (!showLastThreeMonths) {
+      return batches;
+    }
+
+    const startDate = new Date();
+    startDate.setMonth(startDate.getMonth() - 3);
+
+    return batches.filter((batch) => new Date(batch.entry_date) >= startDate);
+  }, [batches, showLastThreeMonths]);
+
+  function exportView() {
+    const columns = [
+      "Batch ID",
+      "Bird Type",
+      "Quantity",
+      "Entry Date",
+      "Maturity Date",
+      "Status",
+    ];
+    const rows = visibleBatches.map((batch) => {
+      const daysToMaturity = getDaysToMaturity(batch.expected_maturity_date);
+
+      return [
+        batch.batch_id,
+        formatBirdType(batch.bird_type),
+        batch.quantity.toString(),
+        formatDate(batch.entry_date),
+        formatDate(batch.expected_maturity_date),
+        daysToMaturity <= 0 ? "Review" : "Active",
+      ];
+    });
+    const csvRows = [columns, ...rows].map((row) =>
+      row.map((cell) => `"${cell.replace(/"/g, '""')}"`).join(",")
+    );
+    const blob = new Blob([csvRows.join("\n")], {
+      type: "text/csv;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+
+    link.href = url;
+    link.download = "poultry-batch-register.csv";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
+
   if (batches.length === 0) {
     return (
       <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-cream)] p-10 text-center shadow-[var(--shadow-card)]">
@@ -83,14 +135,21 @@ export function BatchList({ batches, addBatchAction }: BatchListProps) {
 
           <button
             type="button"
-            className="rounded-full border border-[var(--line)] bg-white/40 px-5 py-2 text-[0.68rem] font-bold uppercase tracking-[0.18em] text-[var(--navy)]"
+            onClick={() => setShowLastThreeMonths((current) => !current)}
+            className={`rounded-full border border-[var(--line)] px-5 py-2 text-[0.68rem] font-bold uppercase tracking-[0.18em] text-[var(--navy)] transition ${
+              showLastThreeMonths
+                ? "bg-[var(--gold-soft)]"
+                : "bg-white/40 hover:bg-white"
+            }`}
           >
-            Last 30 Days
+            Last 3 Months
           </button>
 
           <button
             type="button"
-            className="rounded-full bg-[var(--gold)] px-5 py-2 text-[0.68rem] font-bold uppercase tracking-[0.18em] text-[var(--navy)]"
+            onClick={exportView}
+            disabled={visibleBatches.length === 0}
+            className="rounded-full bg-[var(--gold)] px-5 py-2 text-[0.68rem] font-bold uppercase tracking-[0.18em] text-[var(--navy)] transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Export View
           </button>
@@ -111,7 +170,18 @@ export function BatchList({ batches, addBatchAction }: BatchListProps) {
           </thead>
 
           <tbody>
-            {batches.map((batch) => {
+            {visibleBatches.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={6}
+                  className="px-6 py-10 text-center text-sm text-[var(--navy-muted)]"
+                >
+                  No batches match the selected time window.
+                </td>
+              </tr>
+            ) : null}
+
+            {visibleBatches.map((batch) => {
               const daysToMaturity = getDaysToMaturity(
                 batch.expected_maturity_date
               );
@@ -189,7 +259,8 @@ export function BatchList({ batches, addBatchAction }: BatchListProps) {
 
       <div className="flex flex-col gap-3 border-t border-[var(--line)] px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-[0.68rem] font-bold uppercase tracking-[0.2em] text-[var(--navy-muted)]">
-          {batches.length} of {batches.length} records shown
+          {visibleBatches.length} of {batches.length} records shown
+          {showLastThreeMonths ? " / last 3 months" : ""}
         </p>
 
         <p className="text-[0.68rem] font-bold uppercase tracking-[0.2em] text-[var(--navy-muted)]">

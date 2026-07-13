@@ -550,11 +550,6 @@ export function BatchDetailView({
               metrics={metrics}
               latestRecords={latestRecords}
               nextCare={nextCare}
-              onAddCost={() => setOpenModal("input-cost-form")}
-              onAddSale={() => setOpenModal("sale-form")}
-              onAddMortality={() => setOpenModal("mortality-form")}
-              onAddFeedUsage={() => setOpenModal("feed-usage-form")}
-              onAddVaccination={() => setOpenModal("vaccination-form")}
             />
           ) : null}
 
@@ -735,7 +730,7 @@ function getPageHeader(activeTab: ActiveTab, batch: PoultryBatch) {
   return {
     title: `${formatLabel(batch.bird_type)} batch`,
     description: "A calm operational summary for the current production cycle.",
-    actionLabel: "More actions",
+    actionLabel: undefined,
   };
 }
 
@@ -817,7 +812,7 @@ type PageHeaderProps = {
   title: string;
   description: string;
   activeTab: ActiveTab;
-  actionLabel: string;
+  actionLabel?: string;
   onAction: () => void;
   onTabChange: (tab: ActiveTab) => void;
 };
@@ -847,13 +842,15 @@ function PageHeader({
           <p className="mt-2 text-base leading-7 text-[#747b8d]">{description}</p>
         </div>
 
-        <button
-          type="button"
-          onClick={onAction}
-          className="h-14 rounded-xl bg-[#151f36] px-8 text-base font-bold text-white transition hover:bg-[#22345f]"
-        >
-          {actionLabel}
-        </button>
+        {actionLabel ? (
+          <button
+            type="button"
+            onClick={onAction}
+            className="h-14 rounded-xl bg-[#151f36] px-8 text-base font-bold text-white transition hover:bg-[#22345f]"
+          >
+            {actionLabel}
+          </button>
+        ) : null}
       </div>
 
       <nav className="mt-7 flex flex-wrap gap-5">
@@ -885,11 +882,6 @@ type OverviewTabProps = {
   metrics: Metrics;
   latestRecords: LatestRecord[];
   nextCare: VaccinationScheduleItem;
-  onAddCost: () => void;
-  onAddSale: () => void;
-  onAddMortality: () => void;
-  onAddFeedUsage: () => void;
-  onAddVaccination: () => void;
 };
 
 function OverviewTab({
@@ -897,11 +889,6 @@ function OverviewTab({
   metrics,
   latestRecords,
   nextCare,
-  onAddCost,
-  onAddSale,
-  onAddMortality,
-  onAddFeedUsage,
-  onAddVaccination,
 }: OverviewTabProps) {
   return (
     <div className="mt-8 grid gap-6">
@@ -915,91 +902,123 @@ function OverviewTab({
         </span>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_0.55fr]">
-        <Card className="p-6">
-          <SectionLabel>Batch Information</SectionLabel>
-          <h2 className="mt-6 text-3xl font-extrabold">Production cycle</h2>
+      <Card className="overflow-hidden">
+        <div className="grid gap-0 lg:grid-cols-[1fr_0.42fr]">
+          <div className="p-6 lg:p-8">
+            <SectionLabel>Batch Information</SectionLabel>
+            <div className="mt-5 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <h2 className="text-4xl font-extrabold tracking-[-0.02em]">
+                  Production cycle
+                </h2>
+                <p className="mt-3 max-w-2xl text-base leading-7 text-[#747b8d]">
+                  {batch.batch_id} - {formatLabel(batch.bird_type)} from{" "}
+                  {formatBatchSource(batch)}
+                </p>
+              </div>
+              <div className="rounded-xl border border-[#ddd7c9] bg-[#f6f3eb] px-5 py-4">
+                <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-[#747b8d]">
+                  Cycle Window
+                </p>
+                <p className="mt-2 text-base font-extrabold">
+                  {formatDisplayDate(batch.entry_date)} -{" "}
+                  {formatDisplayDate(batch.expected_maturity_date)}
+                </p>
+              </div>
+            </div>
 
-          <div className="mt-7 grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
-            <InfoItem label="Batch ID" value={batch.batch_id} />
-            <InfoItem label="Bird Type" value={formatLabel(batch.bird_type)} />
-            <InfoItem
-              label="Entry Date"
-              value={formatDisplayDate(batch.entry_date)}
-            />
-            <InfoItem label="Source" value={formatBatchSource(batch)} />
-            <InfoItem
-              label="Initial Birds"
-              value={formatNumber(batch.quantity)}
-            />
-            <InfoItem
-              label="Current Birds"
-              value={formatNumber(metrics.currentBirds)}
-            />
-            <InfoItem label="Sold" value={formatNumber(metrics.totalBirdsSold)} />
-            <InfoItem
-              label="Maturity"
-              value={formatDisplayDate(batch.expected_maturity_date)}
-            />
+            <div className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              <ExecutiveMetric
+                label="Live Birds"
+                value={formatNumber(metrics.currentBirds)}
+                detail={`${formatPercent(metrics.survivalPercent)} of initial flock`}
+                progress={metrics.survivalPercent}
+                tone="green"
+              />
+              <ExecutiveMetric
+                label="Birds Sold"
+                value={formatNumber(metrics.totalBirdsSold)}
+                detail={`${formatPercent(metrics.soldPercent)} sold`}
+                progress={metrics.soldPercent}
+                tone="gold"
+              />
+              <ExecutiveMetric
+                label="Mortality"
+                value={formatNumber(metrics.mortality)}
+                detail={`${formatDecimalPercent(metrics.mortalityPercent)} mortality rate`}
+                progress={metrics.mortalityPercent}
+                tone={metrics.mortality > 0 ? "red" : "muted"}
+              />
+              <ExecutiveMetric
+                label="Input Cost"
+                value={formatCurrency(metrics.totalInputCosts)}
+                detail={`${formatCurrency(metrics.costPerBird)} per initial bird`}
+                tone="navy"
+              />
+              <ExecutiveMetric
+                label="Sales Value"
+                value={formatCurrency(metrics.totalSales)}
+                detail={`${formatPercent(metrics.collectionPercent)} collected`}
+                progress={metrics.collectionPercent}
+                tone="green"
+              />
+              <ExecutiveMetric
+                label="Net Position"
+                value={formatSignedCurrency(metrics.grossProfit)}
+                detail="Sales less input costs"
+                tone={metrics.grossProfit < 0 ? "red" : "navy"}
+              />
+            </div>
           </div>
-        </Card>
 
-        <Card className="p-6">
-          <SectionLabel>Quick Actions</SectionLabel>
-          <h2 className="mt-6 text-3xl font-extrabold">Action launcher</h2>
-          <p className="mt-3 text-base leading-7 text-[#747b8d]">
-            Jump into the right record without expanding the overview page.
-          </p>
-
-          <div className="mt-6 grid gap-3">
-            <QuickAction
-              label="Record sale"
-              detail="Revenue and collections"
-              tone="gold"
-              onClick={onAddSale}
-            />
-            <QuickAction
-              label="Add cost"
-              detail="Input purchases"
-              onClick={onAddCost}
-            />
-            <QuickAction
-              label="Mortality"
-              detail="Flock losses"
-              onClick={onAddMortality}
-            />
-            <QuickAction
-              label="Feed usage"
-              detail="Feed issued"
-              onClick={onAddFeedUsage}
-            />
-            <QuickAction
-              label="Vaccination"
-              detail="Care schedule"
-              onClick={onAddVaccination}
-            />
-          </div>
-        </Card>
-      </div>
-
-      <div className="grid gap-6 lg:grid-cols-3">
-        <KpiCard
-          label="Birds Remaining"
-          value={formatNumber(metrics.currentBirds)}
-          detail={`${formatPercent(metrics.survivalPercent)} of initial flock`}
-        />
-        <KpiCard
-          label="Total Input Cost"
-          value={formatCurrency(metrics.totalInputCosts)}
-          detail={`${formatCurrency(metrics.costPerBird)} per initial bird`}
-        />
-        <KpiCard
-          label="Net Position"
-          value={formatSignedCurrency(metrics.grossProfit)}
-          detail="Sales less recorded input costs"
-          tone={metrics.grossProfit < 0 ? "danger" : "default"}
-        />
-      </div>
+          <aside className="border-t border-[#ddd7c9] bg-[#151f36] p-6 text-white lg:border-l lg:border-t-0 lg:p-8">
+            <SectionLabel className="text-[#e1aa3f]">Executive Readout</SectionLabel>
+            <div className="mt-7 grid gap-6">
+              <TimelineStat
+                label="Day Of Cycle"
+                value={`${formatNumber(metrics.dayOfCycle)} / ${formatNumber(
+                  metrics.cycleLength
+                )}`}
+              />
+              <TimelineStat
+                label="Initial Flock"
+                value={formatNumber(batch.quantity)}
+              />
+              <TimelineStat
+                label="Next Maturity"
+                value={formatDisplayDate(batch.expected_maturity_date)}
+              />
+              <div className="rounded-xl bg-white/8 p-4">
+                <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-white/60">
+                  Flock Allocation
+                </p>
+                <StackedBar
+                  segments={[
+                    {
+                      label: `${formatNumber(metrics.currentBirds)} live`,
+                      value: metrics.currentBirds,
+                      color: "#4e8b61",
+                    },
+                    {
+                      label: `${formatNumber(metrics.totalBirdsSold)} sold`,
+                      value: metrics.totalBirdsSold,
+                      color: "#e1aa3f",
+                    },
+                    {
+                      label: `${formatNumber(metrics.mortality)} mortality`,
+                      value: metrics.mortality,
+                      color: "#b24a43",
+                    },
+                  ]}
+                  total={batch.quantity}
+                  compact
+                  inverse
+                />
+              </div>
+            </div>
+          </aside>
+        </div>
+      </Card>
 
       <div className="grid gap-6 lg:grid-cols-[1fr_0.5fr]">
         <Card>
@@ -1753,47 +1772,76 @@ type KpiCardProps = {
   tone?: "default" | "danger";
 };
 
-type QuickActionProps = {
+type ExecutiveMetricProps = {
   label: string;
+  value: string;
   detail: string;
-  tone?: "default" | "gold";
-  onClick: () => void;
+  progress?: number;
+  tone?: "green" | "gold" | "muted" | "navy" | "red";
 };
 
-function QuickAction({
+function ExecutiveMetric({
   label,
+  value,
   detail,
-  tone = "default",
-  onClick,
-}: QuickActionProps) {
+  progress,
+  tone = "navy",
+}: ExecutiveMetricProps) {
+  const colorByTone = {
+    green: "#4e8b61",
+    gold: "#e1aa3f",
+    muted: "#747b8d",
+    navy: "#151f36",
+    red: "#b24a43",
+  } as const;
+  const color = colorByTone[tone];
+
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`flex items-center justify-between gap-4 rounded-lg border px-4 py-3 text-left transition ${
-        tone === "gold"
-          ? "border-[#e1aa3f] bg-[#e1aa3f] text-[#151926] hover:brightness-95"
-          : "border-[#ddd7c9] bg-white hover:bg-[#fff4c6]"
-      }`}
-    >
-      <span>
-        <span className="block text-base font-extrabold">{label}</span>
-        <span
-          className={`mt-1 block text-sm ${
-            tone === "gold" ? "text-[#151926]/70" : "text-[#747b8d]"
-          }`}
-        >
-          {detail}
-        </span>
-      </span>
-      <span className="text-xl" aria-hidden="true">
-        &rarr;
-      </span>
-    </button>
+    <div className="rounded-xl border border-[#ddd7c9] bg-white px-5 py-4">
+      <p className="text-xs font-extrabold uppercase tracking-[0.15em] text-[#747b8d]">
+        {label}
+      </p>
+      <p className="mt-3 text-3xl font-extrabold tracking-[-0.02em] text-[#151926]">
+        {value}
+      </p>
+      <p className="mt-2 text-sm leading-6 text-[#747b8d]">{detail}</p>
+      {typeof progress === "number" ? (
+        <div className="mt-4 h-2 overflow-hidden rounded-full bg-[#e7e4d9]">
+          <div
+            className="h-full rounded-full"
+            style={{
+              width: `${getPercent(progress, 100)}%`,
+              backgroundColor: color,
+            }}
+          />
+        </div>
+      ) : null}
+    </div>
   );
 }
 
-function KpiCard({ label, value, detail, tone = "default" }: KpiCardProps) {
+type TimelineStatProps = {
+  label: string;
+  value: string;
+};
+
+function TimelineStat({ label, value }: TimelineStatProps) {
+  return (
+    <div className="border-b border-white/15 pb-5">
+      <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-white/55">
+        {label}
+      </p>
+      <p className="mt-2 text-2xl font-extrabold text-white">{value}</p>
+    </div>
+  );
+}
+
+function KpiCard({
+  label,
+  value,
+  detail,
+  tone = "default",
+}: KpiCardProps) {
   return (
     <Card className="p-6">
       <p className="text-sm font-extrabold uppercase text-[#747b8d]">{label}</p>
@@ -1806,20 +1854,6 @@ function KpiCard({ label, value, detail, tone = "default" }: KpiCardProps) {
       </p>
       <p className="mt-3 text-base leading-6 text-[#747b8d]">{detail}</p>
     </Card>
-  );
-}
-
-type InfoItemProps = {
-  label: string;
-  value: string;
-};
-
-function InfoItem({ label, value }: InfoItemProps) {
-  return (
-    <div>
-      <p className="text-xs font-extrabold uppercase text-[#747b8d]">{label}</p>
-      <p className="mt-2 text-base font-extrabold text-[#151926]">{value}</p>
-    </div>
   );
 }
 
@@ -1854,6 +1888,7 @@ type SimpleTableProps = {
   rows: string[][];
   emptyMessage: string;
   pageSize?: number;
+  exportFileName?: string;
 };
 
 function SimpleTable({
@@ -1861,15 +1896,69 @@ function SimpleTable({
   rows,
   emptyMessage,
   pageSize = 5,
+  exportFileName = "farmnotes-register",
 }: SimpleTableProps) {
   const [currentPage, setCurrentPage] = useState(1);
-  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const [filterValue, setFilterValue] = useState("");
+  const normalizedFilter = filterValue.trim().toLowerCase();
+  const filteredRows = normalizedFilter
+    ? rows.filter((row) =>
+        row.some((cell) => cell.toLowerCase().includes(normalizedFilter))
+      )
+    : rows;
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
   const safeCurrentPage = Math.min(currentPage, totalPages);
   const startIndex = (safeCurrentPage - 1) * pageSize;
-  const paginatedRows = rows.slice(startIndex, startIndex + pageSize);
+  const paginatedRows = filteredRows.slice(startIndex, startIndex + pageSize);
+
+  function exportRows() {
+    const csvRows = [columns, ...filteredRows].map((row) =>
+      row
+        .map((cell) => `"${cell.replace(/"/g, '""')}"`)
+        .join(",")
+    );
+    const blob = new Blob([csvRows.join("\n")], {
+      type: "text/csv;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+
+    link.href = url;
+    link.download = `${exportFileName}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
 
   return (
     <div>
+      <div className="flex flex-col gap-3 border-t border-[#ddd7c9] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+        <label className="flex min-w-0 flex-1 items-center gap-3">
+          <span className="text-xs font-extrabold uppercase tracking-[0.16em] text-[#747b8d]">
+            Filter
+          </span>
+          <input
+            type="search"
+            value={filterValue}
+            onChange={(event) => {
+              setFilterValue(event.target.value);
+              setCurrentPage(1);
+            }}
+            placeholder="Search table"
+            className="min-w-0 flex-1 rounded-lg border border-[#ddd7c9] bg-white px-4 py-2 text-sm text-[#151926] outline-none transition focus:border-[#e1aa3f]"
+          />
+        </label>
+        <button
+          type="button"
+          onClick={exportRows}
+          disabled={filteredRows.length === 0}
+          className="rounded-lg bg-[#151f36] px-5 py-2 text-sm font-bold text-white transition hover:bg-[#22345f] disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Export CSV
+        </button>
+      </div>
+
       <div className="overflow-x-auto">
         <table className="min-w-full border-collapse">
           <thead>
@@ -1885,13 +1974,15 @@ function SimpleTable({
             </tr>
           </thead>
           <tbody>
-            {rows.length === 0 ? (
+            {filteredRows.length === 0 ? (
               <tr>
                 <td
                   colSpan={columns.length}
                   className="px-5 py-8 text-base text-[#747b8d]"
                 >
-                  {emptyMessage}
+                  {rows.length === 0
+                    ? emptyMessage
+                    : "No records match the current filter."}
                 </td>
               </tr>
             ) : (
@@ -1919,12 +2010,12 @@ function SimpleTable({
         </table>
       </div>
 
-      {rows.length > pageSize ? (
+      {filteredRows.length > pageSize ? (
         <div className="flex flex-col gap-3 border-t border-[#ddd7c9] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-[#747b8d]">
             Showing {formatNumber(startIndex + 1)}-
-            {formatNumber(Math.min(startIndex + pageSize, rows.length))} of{" "}
-            {formatNumber(rows.length)}
+            {formatNumber(Math.min(startIndex + pageSize, filteredRows.length))}{" "}
+            of {formatNumber(filteredRows.length)}
           </p>
           <div className="flex items-center gap-2">
             <button
@@ -1980,18 +2071,6 @@ function RegisterHeader({ title, actionLabel, onAction }: RegisterHeaderProps) {
             {actionLabel}
           </button>
         ) : null}
-        <button
-          type="button"
-          className="rounded-lg border border-[#ddd7c9] bg-white px-8 py-4 text-base font-bold"
-        >
-          Filter
-        </button>
-        <button
-          type="button"
-          className="rounded-lg border border-[#ddd7c9] bg-white px-8 py-4 text-base font-bold"
-        >
-          Export
-        </button>
       </div>
     </div>
   );
@@ -2004,12 +2083,23 @@ type StackedBarProps = {
     color: string;
   }>;
   total: number;
+  compact?: boolean;
+  inverse?: boolean;
 };
 
-function StackedBar({ segments, total }: StackedBarProps) {
+function StackedBar({
+  segments,
+  total,
+  compact = false,
+  inverse = false,
+}: StackedBarProps) {
   return (
-    <div className="mt-6">
-      <div className="flex h-7 overflow-hidden rounded-full bg-[#e7e4d9]">
+    <div className={compact ? "mt-4" : "mt-6"}>
+      <div
+        className={`flex overflow-hidden rounded-full ${
+          compact ? "h-3" : "h-7"
+        } ${inverse ? "bg-white/15" : "bg-[#e7e4d9]"}`}
+      >
         {segments.map((segment) => (
           <div
             key={segment.label}
@@ -2028,7 +2118,11 @@ function StackedBar({ segments, total }: StackedBarProps) {
               className="h-3 w-3 rounded-full"
               style={{ backgroundColor: segment.color }}
             />
-            <span className="text-sm font-extrabold text-[#151926]">
+            <span
+              className={`text-sm font-extrabold ${
+                inverse ? "text-white/80" : "text-[#151926]"
+              }`}
+            >
               {segment.label}
             </span>
           </div>
