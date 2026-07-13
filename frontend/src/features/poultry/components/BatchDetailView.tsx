@@ -337,7 +337,7 @@ export function BatchDetailView({
 
     const costRecords = inputCosts.map((cost) => ({
       id: `cost-${cost.id}`,
-      date: cost.created_at,
+      date: cost.purchase_date,
       type: "Cost",
       description: cost.item,
       value: formatCurrency(calculateInputCostTotal(cost)),
@@ -1131,7 +1131,7 @@ function CostsTab({
         <SimpleTable
           columns={["Date", "Cost Item", "Category", "Quantity", "Total"]}
           rows={inputCosts.map((cost) => [
-            formatDisplayDate(cost.created_at),
+            formatDisplayDate(cost.purchase_date),
             cost.item,
             formatCostCategory(cost.category),
             getCostQuantity(cost),

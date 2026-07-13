@@ -45,7 +45,10 @@ class BatchViewset(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retrie
         poultry_batch = self.get_object()
 
         if request.method == "GET":
-            input_costs = poultry_batch.input_costs.all().order_by("-created_at")
+            input_costs = poultry_batch.input_costs.all().order_by(
+                "-purchase_date",
+                "-created_at",
+            )
             serializer = self.get_serializer(input_costs, many=True)
             return Response(serializer.data, status=status.HTTP_200_OK)
 

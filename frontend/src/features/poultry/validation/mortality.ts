@@ -2,6 +2,8 @@ import { z } from "zod";
 
 export function createMortalitySchema(maxAvailableBirds: number) {
   return z.object({
+    mortality_date: z.string().min(1, "Mortality date is required."),
+
     quantity_dead: z
       .number()
       .int("Quantity must be a whole number.")
@@ -39,6 +41,16 @@ export function createMortalitySchema(maxAvailableBirds: number) {
       .trim()
       .min(2, "Reporter name must contain at least 2 characters.")
       .max(200, "Reporter name cannot exceed 200 characters."),
+  }).superRefine((values, context) => {
+    const mortalityDate = new Date(values.mortality_date);
+
+    if (Number.isNaN(mortalityDate.getTime())) {
+      context.addIssue({
+        code: "custom",
+        path: ["mortality_date"],
+        message: "Mortality date must be a valid date.",
+      });
+    }
   });
 }
 

@@ -34,7 +34,35 @@ const unitOptions = [
     value: "gauge",
     label: "Gauge",
   },
+  {
+    value: "other",
+    label: "Other",
+  },
+  {
+    value: "na",
+    label: "Not Applicable",
+  },
 ] as const;
+
+function toDateTimeLocal(value: Date): string {
+  const timezoneOffsetMs = value.getTimezoneOffset() * 60 * 1000;
+
+  return new Date(value.getTime() - timezoneOffsetMs)
+    .toISOString()
+    .slice(0, 16);
+}
+
+function getDefaultValues(): InputCostFormValues {
+  return {
+    item: "",
+    category: "",
+    quantity: 1,
+    unit: 1,
+    unit_measurement: "kg",
+    unit_cost: 0,
+    purchase_date: toDateTimeLocal(new Date()),
+  };
+}
 
 type AddInputCostFormProps = {
   batchId: number;
@@ -63,14 +91,7 @@ export function AddInputCostForm({
   } = useForm<InputCostFormValues>({
     resolver: zodResolver(inputCostSchema),
 
-    defaultValues: {
-      item: "",
-      category: "",
-      quantity: 1,
-      unit: 1,
-      unit_measurement: "kg",
-      unit_cost: 0,
-    },
+    defaultValues: getDefaultValues(),
 
     mode: "onBlur",
   });
@@ -100,7 +121,7 @@ export function AddInputCostForm({
     try {
       await createBatchInputCost(batchId, values);
 
-      reset();
+      reset(getDefaultValues());
 
       setSuccessMessage(
         "The input cost was recorded successfully."
@@ -216,6 +237,18 @@ export function AddInputCostForm({
             {...register("unit_cost", {
               valueAsNumber: true,
             })}
+            className="form-input"
+          />
+        </FormField>
+
+        <FormField
+          label="Purchase date"
+          error={errors.purchase_date?.message}
+        >
+          <input
+            id="purchase-date"
+            type="datetime-local"
+            {...register("purchase_date")}
             className="form-input"
           />
         </FormField>

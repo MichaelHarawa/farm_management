@@ -19,6 +19,13 @@ type AddMortalityFormProps = {
   defaultAgeInDays: number;
 };
 
+function toDateTimeLocal(date: Date): string {
+  const localDate = new Date(date);
+  localDate.setMinutes(localDate.getMinutes() - localDate.getTimezoneOffset());
+
+  return localDate.toISOString().slice(0, 16);
+}
+
 export function AddMortalityForm({
   batchId,
   availableBirds,
@@ -27,6 +34,7 @@ export function AddMortalityForm({
   const router = useRouter();
   const [serverError, setServerError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const defaultMortalityDate = toDateTimeLocal(new Date());
   const schema = useMemo(
     () => createMortalitySchema(availableBirds),
     [availableBirds]
@@ -41,6 +49,7 @@ export function AddMortalityForm({
   } = useForm<MortalityFormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
+      mortality_date: defaultMortalityDate,
       quantity_dead: 1,
       age_in_days: defaultAgeInDays,
       suspected_cause: "",
@@ -67,6 +76,7 @@ export function AddMortalityForm({
       await createBatchMortality(batchId, values);
 
       reset({
+        mortality_date: toDateTimeLocal(new Date()),
         quantity_dead: 1,
         age_in_days: defaultAgeInDays,
         suspected_cause: "",
@@ -93,6 +103,18 @@ export function AddMortalityForm({
       </div>
 
       <div className="grid gap-5 md:grid-cols-2">
+        <FormField
+          label="Mortality date"
+          error={errors.mortality_date?.message}
+        >
+          <input
+            id="mortality-date"
+            type="datetime-local"
+            {...register("mortality_date")}
+            className="form-input"
+          />
+        </FormField>
+
         <FormField
           label="Quantity dead"
           error={errors.quantity_dead?.message}

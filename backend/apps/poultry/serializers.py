@@ -62,6 +62,7 @@ class InputCostsSerializer(serializers.ModelSerializer):
             "unit_measurement",
             "unit",
             "unit_cost",
+            "purchase_date",
             "created_at",
             "updated_at",
             # "created_by_username",

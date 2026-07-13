@@ -59,9 +59,9 @@ Current frontend poultry features:
 - Displays a batch portfolio table with flock size, placement date, maturity date, status, and a view icon under `Readout`.
 - Opens detailed batch workspaces from the register.
 - Displays batch production information, current birds, sold birds, mortality, input cost totals, sales totals, feed usage, cash collected, outstanding balances, and net position.
-- Records input costs through a form with item, category, package count, package size, unit measurement, and cost per unit.
+- Records input costs through a form with purchase date, item, category, package count, package size, unit measurement, and cost per unit.
 - Records sales through a form with sale date, product type, quantity sold, unit price, buyer details, payment status, payment method, amount paid, balance, seller, and notes.
-- Records mortality through a form with quantity dead, age in days, suspected cause, description, action taken, and reporter name.
+- Records mortality through a form with mortality date, quantity dead, age in days, suspected cause, description, action taken, and reporter name.
 - Records feed usage through a form with flock age, feeding dates, feed type, source, quantity, unit, current bird count, notes, and reporter name.
 - Recalculates available live birds as initial birds less sold birds and recorded mortality.
 
@@ -136,6 +136,7 @@ Important fields:
 - `unit`
 - `unit_measurement`
 - `unit_cost`
+- `purchase_date`
 
 The frontend calculates estimated totals from:
 

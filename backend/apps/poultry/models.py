@@ -151,6 +151,7 @@ class InputCosts(models.Model):
     unit_measurement = models.CharField(max_length=200)
     unit = models.PositiveIntegerField(default = 0)
     unit_cost = models.PositiveIntegerField()
+    purchase_date = models.DateTimeField()
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     created_by = models.ForeignKey(
@@ -233,7 +234,7 @@ class Mortality(models.Model):
     Batch,
     on_delete=models.CASCADE,
     related_name="mortality_row",)
-    mortality_date = models.DateTimeField(auto_now_add=True)
+    mortality_date = models.DateTimeField()
     quantity_dead = models.PositiveIntegerField()
     age_in_days = models.PositiveIntegerField()
     suspected_cause = models.CharField(max_length=200)

@@ -38,6 +38,7 @@ export type InputCost = {
   unit_measurement: string;
   unit?: number | null;
   unit_cost: number;
+  purchase_date: string;
   created_at: string;
   updated_at: string;
 };
@@ -141,6 +142,7 @@ export type CreateInputCostPayload = {
   unit: number;
   unit_measurement: string;
   unit_cost: number;
+  purchase_date: string;
 };
 
 export type CreateSalePayload = {
@@ -159,6 +161,7 @@ export type CreateSalePayload = {
 };
 
 export type CreateMortalityPayload = {
+  mortality_date: string;
   quantity_dead: number;
   age_in_days: number;
   suspected_cause: string;
