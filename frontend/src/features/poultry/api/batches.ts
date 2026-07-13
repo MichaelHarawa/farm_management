@@ -68,6 +68,18 @@ export async function getBatchInputCosts(
   return normalizeList(data);
 }
 
+export async function getBatchFeedInputCosts(
+  id: number
+): Promise<InputCost[]> {
+  const data = await apiFetch<
+    InputCost[] | PaginatedResponse<InputCost>
+  >(poultryApiPaths.feedInputCosts(id), {
+    cache: "no-store",
+  });
+
+  return normalizeList(data);
+}
+
 export async function getBatchSales(
   id: number
 ): Promise<PoultrySale[]> {

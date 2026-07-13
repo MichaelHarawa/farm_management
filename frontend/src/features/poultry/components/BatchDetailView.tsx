@@ -26,6 +26,7 @@ import { AddVaccinationForm } from "./AddVaccinationForm";
 type BatchDetailViewProps = {
   batch: PoultryBatch;
   inputCosts: InputCost[];
+  feedInputCosts: InputCost[];
   sales: PoultrySale[];
   mortalities: PoultryMortality[];
   feedUsages: PoultryFeedUsage[];
@@ -220,6 +221,34 @@ function getSignedDaysBetween(start: string | Date, end: string | Date): number 
 function formatCostCategory(value: string): string {
   const normalized = value.trim().toLowerCase();
 
+  if (normalized.includes("feed")) {
+    return "Feed";
+  }
+
+  if (normalized.includes("transport")) {
+    return "Transport";
+  }
+
+  if (
+    normalized.includes("temperature") ||
+    normalized.includes("heat") ||
+    normalized.includes("charcoal")
+  ) {
+    return "Temperature Control";
+  }
+
+  if (normalized.includes("biosecurity") || normalized.includes("disinfect")) {
+    return "Biosecurity";
+  }
+
+  if (normalized.includes("chick")) {
+    return "Chick Care";
+  }
+
+  if (normalized.includes("vaccin") || normalized.includes("hitchner")) {
+    return "Vaccination";
+  }
+
   if (["ops", "operation", "operations"].includes(normalized)) {
     return "Operations";
   }
@@ -276,6 +305,7 @@ function buildBreakdown<T>(
 export function BatchDetailView({
   batch,
   inputCosts,
+  feedInputCosts,
   sales,
   mortalities,
   feedUsages,
@@ -544,6 +574,7 @@ export function BatchDetailView({
             <CostsTab
               batch={batch}
               inputCosts={inputCosts}
+              feedInputCosts={feedInputCosts}
               metrics={metrics}
               costBreakdown={costBreakdown}
               largestCategory={largestCategory}
@@ -915,53 +946,38 @@ function OverviewTab({
 
         <Card className="p-6">
           <SectionLabel>Quick Actions</SectionLabel>
-          <h2 className="mt-6 text-3xl font-extrabold">Record new activity</h2>
+          <h2 className="mt-6 text-3xl font-extrabold">Action launcher</h2>
+          <p className="mt-3 text-base leading-7 text-[#747b8d]">
+            Jump into the right record without expanding the overview page.
+          </p>
 
-          <div className="mt-6 grid gap-4">
-            <button
-              type="button"
+          <div className="mt-6 grid gap-3">
+            <QuickAction
+              label="Record sale"
+              detail="Revenue and collections"
+              tone="gold"
+              onClick={onAddSale}
+            />
+            <QuickAction
+              label="Add cost"
+              detail="Input purchases"
+              onClick={onAddCost}
+            />
+            <QuickAction
+              label="Mortality"
+              detail="Flock losses"
               onClick={onAddMortality}
-              className="h-14 rounded-lg bg-[#151f36] px-5 text-base font-bold text-white"
-            >
-              Record flock activity
-            </button>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <button
-                type="button"
-                onClick={onAddCost}
-                className="h-14 rounded-lg border border-[#ddd7c9] bg-white px-5 text-base font-bold"
-              >
-                Add cost
-              </button>
-              <button
-                type="button"
-                onClick={onAddSale}
-                className="h-14 rounded-lg bg-[#e1aa3f] px-5 text-base font-bold"
-              >
-                Record sale
-              </button>
-              <button
-                type="button"
-                onClick={onAddMortality}
-                className="h-14 rounded-lg border border-[#ddd7c9] bg-white px-5 text-base font-bold"
-              >
-                Mortality
-              </button>
-              <button
-                type="button"
-                onClick={onAddFeedUsage}
-                className="h-14 rounded-lg border border-[#ddd7c9] bg-white px-5 text-base font-bold"
-              >
-                Feed usage
-              </button>
-              <button
-                type="button"
-                onClick={onAddVaccination}
-                className="h-14 rounded-lg border border-[#ddd7c9] bg-white px-5 text-base font-bold"
-              >
-                Vaccination
-              </button>
-            </div>
+            />
+            <QuickAction
+              label="Feed usage"
+              detail="Feed issued"
+              onClick={onAddFeedUsage}
+            />
+            <QuickAction
+              label="Vaccination"
+              detail="Care schedule"
+              onClick={onAddVaccination}
+            />
           </div>
         </Card>
       </div>
@@ -1170,6 +1186,7 @@ function FlockTab({
 type CostsTabProps = {
   batch: PoultryBatch;
   inputCosts: InputCost[];
+  feedInputCosts: InputCost[];
   metrics: Metrics;
   costBreakdown: BreakdownItem[];
   largestCategory?: BreakdownItem;
@@ -1178,10 +1195,17 @@ type CostsTabProps = {
 function CostsTab({
   batch,
   inputCosts,
+  feedInputCosts,
   metrics,
   costBreakdown,
   largestCategory,
 }: CostsTabProps) {
+  const [showFeedDetails, setShowFeedDetails] = useState(false);
+  const feedInputTotal = feedInputCosts.reduce(
+    (total, cost) => total + calculateInputCostTotal(cost),
+    0
+  );
+
   return (
     <div className="mt-8 grid gap-8">
       <div className="grid gap-6 lg:grid-cols-3">
@@ -1237,16 +1261,37 @@ function CostsTab({
               : "No recorded input spend yet."}
           </h2>
           <p className="mt-5 text-base leading-7 text-white/70">
-            Review ingredient-level feed costs before adding more purchases.
+            {feedInputCosts.length > 0
+              ? `${formatCurrency(feedInputTotal)} has been recorded in feed-related categories.`
+              : "Feed-related input costs will appear once category names include feed."}
           </p>
           <button
             type="button"
+            onClick={() => setShowFeedDetails((current) => !current)}
             className="mt-5 rounded-lg bg-[#e1aa3f] px-8 py-4 text-base font-bold text-[#151926]"
           >
-            Review feed details
+            {showFeedDetails ? "Hide feed details" : "Review feed details"}
           </button>
         </section>
       </div>
+
+      {showFeedDetails ? (
+        <Card>
+          <RegisterHeader title="Feed cost components" />
+          <SimpleTable
+            columns={["Date", "Item", "Category", "Quantity", "Notes", "Total"]}
+            rows={feedInputCosts.map((cost) => [
+              formatDisplayDate(cost.purchase_date),
+              cost.item,
+              cost.category,
+              getCostQuantity(cost),
+              cost.notes,
+              formatCurrency(calculateInputCostTotal(cost)),
+            ])}
+            emptyMessage="No feed-related input costs were found."
+          />
+        </Card>
+      ) : null}
 
       <Card>
         <RegisterHeader title="Input cost records" />
@@ -1708,6 +1753,46 @@ type KpiCardProps = {
   tone?: "default" | "danger";
 };
 
+type QuickActionProps = {
+  label: string;
+  detail: string;
+  tone?: "default" | "gold";
+  onClick: () => void;
+};
+
+function QuickAction({
+  label,
+  detail,
+  tone = "default",
+  onClick,
+}: QuickActionProps) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex items-center justify-between gap-4 rounded-lg border px-4 py-3 text-left transition ${
+        tone === "gold"
+          ? "border-[#e1aa3f] bg-[#e1aa3f] text-[#151926] hover:brightness-95"
+          : "border-[#ddd7c9] bg-white hover:bg-[#fff4c6]"
+      }`}
+    >
+      <span>
+        <span className="block text-base font-extrabold">{label}</span>
+        <span
+          className={`mt-1 block text-sm ${
+            tone === "gold" ? "text-[#151926]/70" : "text-[#747b8d]"
+          }`}
+        >
+          {detail}
+        </span>
+      </span>
+      <span className="text-xl" aria-hidden="true">
+        &rarr;
+      </span>
+    </button>
+  );
+}
+
 function KpiCard({ label, value, detail, tone = "default" }: KpiCardProps) {
   return (
     <Card className="p-6">
@@ -1768,52 +1853,106 @@ type SimpleTableProps = {
   columns: string[];
   rows: string[][];
   emptyMessage: string;
+  pageSize?: number;
 };
 
-function SimpleTable({ columns, rows, emptyMessage }: SimpleTableProps) {
+function SimpleTable({
+  columns,
+  rows,
+  emptyMessage,
+  pageSize = 5,
+}: SimpleTableProps) {
+  const [currentPage, setCurrentPage] = useState(1);
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const startIndex = (safeCurrentPage - 1) * pageSize;
+  const paginatedRows = rows.slice(startIndex, startIndex + pageSize);
+
   return (
-    <div className="overflow-x-auto">
-      <table className="min-w-full border-collapse">
-        <thead>
-          <tr className="bg-[#ece9dd]">
-            {columns.map((column) => (
-              <th
-                key={column}
-                className="px-5 py-4 text-left text-xs font-extrabold uppercase text-[#747b8d]"
-              >
-                {column}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.length === 0 ? (
-            <tr>
-              <td
-                colSpan={columns.length}
-                className="px-5 py-8 text-base text-[#747b8d]"
-              >
-                {emptyMessage}
-              </td>
+    <div>
+      <div className="overflow-x-auto">
+        <table className="min-w-full border-collapse">
+          <thead>
+            <tr className="bg-[#ece9dd]">
+              {columns.map((column) => (
+                <th
+                  key={column}
+                  className="px-5 py-4 text-left text-xs font-extrabold uppercase text-[#747b8d]"
+                >
+                  {column}
+                </th>
+              ))}
             </tr>
-          ) : (
-            rows.map((row, rowIndex) => (
-              <tr key={`${row[0]}-${rowIndex}`} className="border-b border-[#ddd7c9]">
-                {row.map((cell, cellIndex) => (
-                  <td
-                    key={`${cell}-${cellIndex}`}
-                    className={`px-5 py-5 text-base ${
-                      cellIndex === 0 ? "font-extrabold text-[#151926]" : "text-[#747b8d]"
-                    }`}
-                  >
-                    {cell}
-                  </td>
-                ))}
+          </thead>
+          <tbody>
+            {rows.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={columns.length}
+                  className="px-5 py-8 text-base text-[#747b8d]"
+                >
+                  {emptyMessage}
+                </td>
               </tr>
-            ))
-          )}
-        </tbody>
-      </table>
+            ) : (
+              paginatedRows.map((row, rowIndex) => (
+                <tr
+                  key={`${row[0]}-${startIndex + rowIndex}`}
+                  className="border-b border-[#ddd7c9]"
+                >
+                  {row.map((cell, cellIndex) => (
+                    <td
+                      key={`${cell}-${cellIndex}`}
+                      className={`px-5 py-5 text-base ${
+                        cellIndex === 0
+                          ? "font-extrabold text-[#151926]"
+                          : "text-[#747b8d]"
+                      }`}
+                    >
+                      {cell}
+                    </td>
+                  ))}
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {rows.length > pageSize ? (
+        <div className="flex flex-col gap-3 border-t border-[#ddd7c9] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-[#747b8d]">
+            Showing {formatNumber(startIndex + 1)}-
+            {formatNumber(Math.min(startIndex + pageSize, rows.length))} of{" "}
+            {formatNumber(rows.length)}
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() =>
+                setCurrentPage((page) => Math.max(1, page - 1))
+              }
+              disabled={safeCurrentPage === 1}
+              className="rounded-lg border border-[#ddd7c9] bg-white px-4 py-2 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Previous
+            </button>
+            <span className="px-2 text-sm font-bold text-[#747b8d]">
+              {formatNumber(safeCurrentPage)} / {formatNumber(totalPages)}
+            </span>
+            <button
+              type="button"
+              onClick={() =>
+                setCurrentPage((page) => Math.min(totalPages, page + 1))
+              }
+              disabled={safeCurrentPage === totalPages}
+              className="rounded-lg border border-[#ddd7c9] bg-white px-4 py-2 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

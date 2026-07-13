@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import {
   getBatchFeedUsage,
+  getBatchFeedInputCosts,
   getBatchInputCosts,
   getBatchMortality,
   getBatchSales,
@@ -39,9 +40,16 @@ export default async function BatchDetailPage({
     throw error;
   }
 
-  const [inputCosts, sales, mortalities, feedUsages, vaccinations] =
-    await Promise.all([
+  const [
+    inputCosts,
+    feedInputCosts,
+    sales,
+    mortalities,
+    feedUsages,
+    vaccinations,
+  ] = await Promise.all([
     getBatchInputCosts(batchId),
+    getBatchFeedInputCosts(batchId),
     getBatchSales(batchId),
     getBatchMortality(batchId),
     getBatchFeedUsage(batchId),
@@ -52,6 +60,7 @@ export default async function BatchDetailPage({
     <BatchDetailView
       batch={batch}
       inputCosts={inputCosts}
+      feedInputCosts={feedInputCosts}
       sales={sales}
       mortalities={mortalities}
       feedUsages={feedUsages}

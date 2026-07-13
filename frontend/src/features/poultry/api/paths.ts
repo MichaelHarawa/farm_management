@@ -9,6 +9,9 @@ export const poultryApiPaths = {
   inputCosts: (batchId: number) =>
     `${POULTRY_ROOT}/${batchId}/input_costs`,
 
+  feedInputCosts: (batchId: number) =>
+    `${POULTRY_ROOT}/${batchId}/feed_input_costs`,
+
   sales: (batchId: number) =>
     `${POULTRY_ROOT}/${batchId}/sales`,
 

@@ -32,7 +32,7 @@ class BatchViewset(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retrie
     queryset = Batch.objects.all()
 
     def get_serializer_class(self):
-        if self.action == "input_costs":
+        if self.action in {"input_costs", "feed_input_costs"}:
             return InputCostsSerializer
         elif self.action == "sales":
             return SalesSerializer
@@ -65,6 +65,19 @@ class BatchViewset(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retrie
             self.get_serializer(input_cost).data,
             status=status.HTTP_201_CREATED,
         )
+
+    @action(detail=True, methods=["get"], url_path="feed_input_costs")
+    def feed_input_costs(self, request, pk=None):
+        poultry_batch = self.get_object()
+        input_costs = poultry_batch.input_costs.filter(
+            category__icontains="feed",
+        ).order_by(
+            "-purchase_date",
+            "-created_at",
+        )
+        serializer = self.get_serializer(input_costs, many=True)
+
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
     @action(detail=True, methods=["get", "post"], url_path="sales")

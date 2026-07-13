@@ -100,6 +100,7 @@ Current backend routes:
 | `GET` | `/api/v1/poultry-management/{id}` | Retrieve one poultry batch |
 | `GET` | `/api/v1/poultry-management/{id}/input_costs` | List input costs for a batch |
 | `POST` | `/api/v1/poultry-management/{id}/input_costs` | Create an input cost for a batch |
+| `GET` | `/api/v1/poultry-management/{id}/feed_input_costs` | List feed-related input costs filtered by category |
 | `GET` | `/api/v1/poultry-management/{id}/sales` | List sales for a batch |
 | `POST` | `/api/v1/poultry-management/{id}/sales` | Create a sale for a batch |
 | `GET` | `/api/v1/poultry-management/{id}/mortality` | List mortality records for a batch |
