@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Iterable
 
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 
 
 class RoleChoices(models.TextChoices):
-    FARM_MANAGER = "farm_manager", "Farm Manager" 
+    FARM_MANAGER = "farm_manager", "Farm Manager"
     FARM_SUPERVISOR = "farm_supervisor", "Farm Supervisor"
     DIRECTOR = "director", "Director"
     STAKE_HOLDER = "stake_holder", "Stake Holder"
@@ -15,7 +16,11 @@ class RoleChoices(models.TextChoices):
 
 
 class Role(models.Model):
-    slug = models.CharField(max_length=64, choices=RoleChoices.choices, unique=True)
+    slug = models.CharField(
+        max_length=64,
+        choices=RoleChoices.choices,
+        unique=True,
+    )
     name = models.CharField(max_length=120)
     description = models.TextField(blank=True)
     is_system = models.BooleanField(default=True)
@@ -30,15 +35,23 @@ class Role(models.Model):
 
 
 class User(AbstractUser):
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False,
+    )
     email = models.EmailField(unique=True)
-    roles = models.ManyToManyField(Role, blank=True, related_name="users")
+    roles = models.ManyToManyField(
+        Role,
+        blank=True,
+        related_name="users",
+    )
     job_title = models.CharField(max_length=120, blank=True)
     department = models.CharField(max_length=120, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
-    REQUIRED_FIELDS = ["roles","department"]
+    REQUIRED_FIELDS = ["email"]
 
     class Meta:
         ordering = ["username"]
@@ -50,27 +63,47 @@ class User(AbstractUser):
     def role_slugs(self) -> set[str]:
         if not self.pk:
             return set()
-        return set(self.roles.values_list("slug", flat=True))
+
+        return set(
+            self.roles.values_list("slug", flat=True)
+        )
 
     @property
-    def has_superuser_role(self) -> bool:
-        """
-        This checks two things:
-        1. Is the user a Django superuser?
-        2. Does the user have the system role "superuser"?
-        """
-        return self.is_superuser or RoleChoices.SUPERUSER in self.role_slugs
+    def has_admin_access(self) -> bool:
+        return (
+            self.is_superuser
+            or RoleChoices.ADMIN in self.role_slugs
+        )
 
-    def has_role(self, role: str | RoleChoices) -> bool:
-        """
-        This checks whether the user has a specific role
-        """
-        return self.has_superuser_role or str(role) in self.role_slugs
-
-    def has_any_role(self, roles: list[str] | tuple[str, ...] | set[str]) -> bool:
-        """
-        to get a boolean value if user has any/specified role from a list
-        """
-        if self.has_superuser_role:
+    def has_role(
+        self,
+        role: str | RoleChoices,
+    ) -> bool:
+        if self.has_admin_access:
             return True
-        return bool(self.role_slugs.intersection({str(role) for role in roles}))
+
+        role_value = (
+            role.value
+            if isinstance(role, RoleChoices)
+            else role
+        )
+
+        return role_value in self.role_slugs
+
+    def has_any_role(
+        self,
+        roles: Iterable[str | RoleChoices],
+    ) -> bool:
+        if self.has_admin_access:
+            return True
+
+        required_roles = {
+            role.value
+            if isinstance(role, RoleChoices)
+            else role
+            for role in roles
+        }
+
+        return bool(
+            self.role_slugs.intersection(required_roles)
+        )
