@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { LoginForm } from "@/features/auth/components/LoginForm";
+import { getSafeInternalPath } from "@/features/auth/utils/redirects";
 
 export const metadata: Metadata = {
   title:
@@ -35,8 +36,7 @@ export default async function LoginPage({
 }: LoginPageProps) {
   const { next } = await searchParams;
 
-  const redirectTo =
-    getSafeRedirect(next);
+    const redirectTo = getSafeInternalPath(next);
 
   return (
     <main className="min-h-[calc(100vh-8rem)] bg-[var(--navy)] px-5 py-12 sm:px-8">

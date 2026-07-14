@@ -30,6 +30,7 @@ from .serializers import(
 class BatchViewset(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
     serializer_class = BatchSerializer
     queryset = Batch.objects.all()
+    permission_classes = (IsAuthenticated,)
 
     def get_serializer_class(self):
         if self.action in {"input_costs", "feed_input_costs"}:
