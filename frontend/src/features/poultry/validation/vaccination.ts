@@ -11,6 +11,15 @@ export const vaccinationSchema = z
       "Other vaccination name cannot exceed 200 characters."
     ),
 
+    drug_category: z.enum([
+      "vaccination",
+      "drug",
+      "antibiotic",
+      "vitamin",
+      "dewormer",
+      "other",
+    ]),
+
     quantity: z
       .number()
       .int("Quantity must be a whole number.")

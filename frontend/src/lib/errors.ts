@@ -1,4 +1,5 @@
 import { ApiError } from "./api";
+import { ClientApiError } from "./client-api";
 
 function isRecord(
   value: unknown
@@ -13,7 +14,12 @@ function isRecord(
 export function getApiErrorMessage(
   error: unknown
 ): string {
-  if (!(error instanceof ApiError)) {
+  if (
+    !(
+      error instanceof ApiError ||
+      error instanceof ClientApiError
+    )
+  ) {
     return "An unexpected error occurred. Please try again.";
   }
 

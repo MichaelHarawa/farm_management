@@ -17,26 +17,12 @@ type LoginPageProps = {
   }>;
 };
 
-function getSafeRedirect(
-  value: string | string[] | undefined
-): string {
-  if (
-    typeof value === "string" &&
-    value.startsWith("/") &&
-    !value.startsWith("//")
-  ) {
-    return value;
-  }
-
-  return "/poultry";
-}
-
 export default async function LoginPage({
   searchParams,
 }: LoginPageProps) {
   const { next } = await searchParams;
 
-    const redirectTo = getSafeInternalPath(next);
+  const redirectTo = getSafeInternalPath(next);
 
   return (
     <main className="min-h-[calc(100vh-8rem)] bg-[var(--navy)] px-5 py-12 sm:px-8">
@@ -63,7 +49,7 @@ export default async function LoginPage({
             href="/"
             className="text-label mt-12 text-[var(--navy-muted)] transition hover:text-[var(--gold)]"
           >
-            ← Return home
+            {"<- Return home"}
           </Link>
         </section>
 

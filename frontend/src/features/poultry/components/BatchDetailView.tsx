@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { createPortal } from "react-dom";
 import { useMemo, useState, type ReactNode } from "react";
 import { X } from "lucide-react";
 
@@ -82,7 +83,11 @@ const tabs: Array<{
   { id: "sales", label: "Sales", sidebarLabel: "Sales" },
   { id: "mortality", label: "Mortality", sidebarLabel: "Mortality" },
   { id: "feed", label: "Feed", sidebarLabel: "Feed usage" },
-  { id: "vaccination", label: "Vaccination", sidebarLabel: "Vaccination" },
+  {
+    id: "vaccination",
+    label: "Vaccination & Drugs",
+    sidebarLabel: "Vaccination & Drugs",
+  },
 ];
 
 const dayInMs = 24 * 60 * 60 * 1000;
@@ -229,6 +234,14 @@ function formatCostCategory(value: string): string {
     return "Transport";
   }
 
+  if (normalized.includes("drug") || normalized.includes("medicine")) {
+    return "Drug";
+  }
+
+  if (normalized.includes("water")) {
+    return "Water";
+  }
+
   if (
     normalized.includes("temperature") ||
     normalized.includes("heat") ||
@@ -276,6 +289,90 @@ function getCostQuantity(cost: InputCost): string {
   const unit = cost.unit ? ` x ${formatNumber(cost.unit)}` : "";
 
   return `${formatNumber(cost.quantity)}${unit} ${cost.unit_measurement}`;
+}
+
+function formatDrugCategory(value: string): string {
+  return formatLabel(value);
+}
+
+function costDetail(cost: InputCost): TableRowDetail {
+  return {
+    title: cost.item,
+    subtitle: `Recorded on ${formatDisplayDate(cost.purchase_date)}`,
+    fields: [
+      { label: "Category", value: formatCostCategory(cost.category) },
+      { label: "Original Category", value: cost.category },
+      { label: "Quantity", value: getCostQuantity(cost) },
+      { label: "Unit Cost", value: formatCurrency(cost.unit_cost) },
+      { label: "Total", value: formatCurrency(calculateInputCostTotal(cost)) },
+      { label: "Notes", value: cost.notes },
+    ],
+  };
+}
+
+function saleDetail(sale: PoultrySale): TableRowDetail {
+  return {
+    title: sale.sale_id,
+    subtitle: `Sale recorded on ${formatDisplayDate(sale.sale_date)}`,
+    fields: [
+      { label: "Product", value: formatLabel(sale.product_type) },
+      { label: "Quantity", value: formatNumber(sale.quantity_sold) },
+      { label: "Unit Price", value: formatCurrency(sale.unit_price) },
+      { label: "Total", value: formatCurrency(calculateSaleTotal(sale)) },
+      { label: "Amount Paid", value: formatCurrency(sale.amount_paid) },
+      { label: "Balance", value: formatCurrency(sale.balance) },
+      { label: "Buyer", value: sale.buyer_name },
+      { label: "Buyer Type", value: formatLabel(sale.buyer_type) },
+      { label: "Payment Status", value: formatLabel(sale.payment_status) },
+      { label: "Payment Method", value: formatLabel(sale.payment_method) },
+      { label: "Sold By", value: sale.sold_by_name },
+      { label: "Notes", value: sale.notes },
+    ],
+  };
+}
+
+function mortalityDetail(mortality: PoultryMortality): TableRowDetail {
+  return {
+    title: mortality.suspected_cause,
+    subtitle: `Mortality recorded on ${formatDisplayDate(mortality.mortality_date)}`,
+    fields: [
+      { label: "Quantity Dead", value: formatNumber(mortality.quantity_dead) },
+      { label: "Age", value: `${formatNumber(mortality.age_in_days)} days` },
+      { label: "Reported By", value: mortality.reported_by_name },
+      { label: "Description", value: mortality.description },
+      { label: "Action Taken", value: mortality.action_taken },
+    ],
+  };
+}
+
+function feedUsageDetail(feedUsage: PoultryFeedUsage): TableRowDetail {
+  return {
+    title: formatFeedType(feedUsage.feed_type),
+    subtitle: `${formatDisplayDate(feedUsage.feeding_start_date)} to ${formatDisplayDate(feedUsage.feeding_end_date)}`,
+    fields: [
+      { label: "Feed Source", value: formatFeedSource(feedUsage.feed_source) },
+      { label: "Quantity", value: formatFeedQuantity(feedUsage) },
+      { label: "Initial Age", value: `${formatNumber(feedUsage.initial_age)} days` },
+      { label: "Birds Fed", value: formatNumber(feedUsage.current_number_of_birds) },
+      { label: "Reported By", value: feedUsage.reported_by_name },
+      { label: "Notes", value: feedUsage.notes },
+    ],
+  };
+}
+
+function vaccinationDetail(vaccination: PoultryVaccination): TableRowDetail {
+  return {
+    title: getVaccinationName(vaccination),
+    subtitle: `Administered on ${formatDisplayDate(vaccination.vaccination_date)}`,
+    fields: [
+      { label: "Category", value: formatDrugCategory(vaccination.drug_category) },
+      { label: "Type", value: formatDrugVaccinationType(vaccination.drug_vaccination_type) },
+      { label: "Quantity", value: formatNumber(vaccination.quantity) },
+      { label: "Timely Status", value: vaccination.timely_status },
+      { label: "Reported By", value: vaccination.reported_by_name },
+      { label: "Description", value: vaccination.description },
+    ],
+  };
 }
 
 function buildBreakdown<T>(
@@ -642,6 +739,7 @@ export function BatchDetailView({
         <AddMortalityForm
           batchId={batch.id}
           availableBirds={metrics.currentBirds}
+          arrivalDate={batch.entry_date}
           defaultAgeInDays={metrics.dayOfCycle}
         />
       </DetailModal>
@@ -661,8 +759,8 @@ export function BatchDetailView({
 
       <DetailModal
         isOpen={openModal === "vaccination-form"}
-        label="New vaccination"
-        title="Record vaccination"
+        label="New vaccination / drug"
+        title="Record drug or vaccination"
         onClose={() => setOpenModal(null)}
       >
         <AddVaccinationForm
@@ -1034,6 +1132,15 @@ function OverviewTab({
               record.description,
               record.value,
             ])}
+            rowDetails={latestRecords.slice(0, 4).map((record) => ({
+              title: record.description,
+              subtitle: `${record.type} - ${formatDisplayDate(record.date)}`,
+              fields: [
+                { label: "Type", value: record.type },
+                { label: "Date", value: formatDisplayDate(record.date) },
+                { label: "Readout", value: record.value },
+              ],
+            }))}
             emptyMessage="No activity has been recorded for this batch."
           />
         </Card>
@@ -1184,6 +1291,15 @@ function FlockTab({
           <SimpleTable
             columns={["Date", "Activity", "Quantity", "Recorded By"]}
             rows={activityRows}
+            rowDetails={activityRows.map((row) => ({
+              title: row[1],
+              subtitle: row[0],
+              fields: [
+                { label: "Activity", value: row[1] },
+                { label: "Quantity", value: row[2] },
+                { label: "Recorded By", value: row[3] },
+              ],
+            }))}
             emptyMessage="No flock activity has been recorded."
           />
         </Card>
@@ -1220,6 +1336,20 @@ function CostsTab({
   largestCategory,
 }: CostsTabProps) {
   const [showFeedDetails, setShowFeedDetails] = useState(false);
+  const [breakdownPage, setBreakdownPage] = useState(1);
+  const breakdownPageSize = 5;
+  const breakdownTotalPages = Math.max(
+    1,
+    Math.ceil(costBreakdown.length / breakdownPageSize)
+  );
+  const safeBreakdownPage = Math.min(
+    breakdownPage,
+    breakdownTotalPages
+  );
+  const visibleCostBreakdown = costBreakdown.slice(
+    (safeBreakdownPage - 1) * breakdownPageSize,
+    safeBreakdownPage * breakdownPageSize
+  );
   const feedInputTotal = feedInputCosts.reduce(
     (total, cost) => total + calculateInputCostTotal(cost),
     0
@@ -1257,7 +1387,7 @@ function CostsTab({
           <h2 className="mt-6 text-3xl font-extrabold">Spend by category</h2>
           <div className="mt-6 grid gap-8">
             {costBreakdown.length > 0 ? (
-              costBreakdown.map((item) => (
+              visibleCostBreakdown.map((item) => (
                 <CategoryBar
                   key={item.label}
                   item={item}
@@ -1270,6 +1400,43 @@ function CostsTab({
               </p>
             )}
           </div>
+          {costBreakdown.length > breakdownPageSize ? (
+            <div className="mt-7 flex flex-col gap-3 border-t border-[#ddd7c9] pt-5 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-[#747b8d]">
+                Showing {formatNumber((safeBreakdownPage - 1) * breakdownPageSize + 1)}
+                -
+                {formatNumber(
+                  Math.min(safeBreakdownPage * breakdownPageSize, costBreakdown.length)
+                )}{" "}
+                of {formatNumber(costBreakdown.length)} categories
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setBreakdownPage((page) => Math.max(1, page - 1))
+                  }
+                  disabled={safeBreakdownPage === 1}
+                  className="rounded-lg border border-[#ddd7c9] bg-white px-4 py-2 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Previous
+                </button>
+                <span className="px-2 text-sm font-bold text-[#747b8d]">
+                  {formatNumber(safeBreakdownPage)} / {formatNumber(breakdownTotalPages)}
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setBreakdownPage((page) => Math.min(breakdownTotalPages, page + 1))
+                  }
+                  disabled={safeBreakdownPage === breakdownTotalPages}
+                  className="rounded-lg border border-[#ddd7c9] bg-white px-4 py-2 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          ) : null}
         </Card>
 
         <section className="rounded-xl bg-[#151f36] p-7 text-white">
@@ -1307,6 +1474,7 @@ function CostsTab({
               cost.notes,
               formatCurrency(calculateInputCostTotal(cost)),
             ])}
+            rowDetails={feedInputCosts.map(costDetail)}
             emptyMessage="No feed-related input costs were found."
           />
         </Card>
@@ -1331,6 +1499,7 @@ function CostsTab({
             cost.notes,
             formatCurrency(calculateInputCostTotal(cost)),
           ])}
+          rowDetails={inputCosts.map(costDetail)}
           emptyMessage="No input costs have been recorded."
         />
       </Card>
@@ -1401,6 +1570,7 @@ function SalesTab({ sales, metrics, followUpSale, onAddSale }: SalesTabProps) {
             formatLabel(sale.payment_status),
             formatCurrency(calculateSaleTotal(sale)),
           ])}
+          rowDetails={sales.map(saleDetail)}
           emptyMessage="No sales have been recorded."
         />
 
@@ -1517,6 +1687,7 @@ function MortalityTab({
               mortality.suspected_cause,
               mortality.reported_by_name,
             ])}
+            rowDetails={mortalities.map(mortalityDetail)}
             emptyMessage="No mortality has been recorded."
           />
         </Card>
@@ -1650,6 +1821,7 @@ function FeedUsageTab({
             formatNumber(feedUsage.current_number_of_birds),
             feedUsage.reported_by_name,
           ])}
+          rowDetails={feedUsages.map(feedUsageDetail)}
           emptyMessage="No feed usage has been recorded."
         />
       </Card>
@@ -1691,7 +1863,7 @@ function VaccinationTab({
           detail="Core vaccine milestones recorded"
         />
         <KpiCard
-          label="Vaccination Records"
+          label="Vaccination / Drug Records"
           value={formatNumber(vaccinations.length)}
           detail="Includes scheduled and other drugs"
         />
@@ -1732,20 +1904,21 @@ function VaccinationTab({
             onClick={onAddVaccination}
             className="mt-6 rounded-lg bg-[#151f36] px-8 py-4 text-base font-bold text-white"
           >
-            Record vaccination
+            Record drug / vaccination
           </button>
         </Card>
       </div>
 
       <Card>
         <RegisterHeader
-          title="Vaccination records"
-          actionLabel="Record vaccination"
+          title="Vaccination & drug records"
+          actionLabel="Record drug / vaccination"
           onAction={onAddVaccination}
         />
         <SimpleTable
           columns={[
             "Date",
+            "Category",
             "Drug / Vaccination",
             "Quantity",
             "Timely Status",
@@ -1753,12 +1926,14 @@ function VaccinationTab({
           ]}
           rows={vaccinations.map((vaccination) => [
             formatDisplayDate(vaccination.vaccination_date),
+            formatDrugCategory(vaccination.drug_category),
             getVaccinationName(vaccination),
             formatNumber(vaccination.quantity),
             vaccination.timely_status,
             vaccination.reported_by_name,
           ])}
-          emptyMessage="No vaccination has been recorded."
+          rowDetails={vaccinations.map(vaccinationDetail)}
+          emptyMessage="No vaccination or drug administration has been recorded."
         />
       </Card>
     </div>
@@ -1889,6 +2064,16 @@ type SimpleTableProps = {
   emptyMessage: string;
   pageSize?: number;
   exportFileName?: string;
+  rowDetails?: TableRowDetail[];
+};
+
+type TableRowDetail = {
+  title: string;
+  subtitle?: string;
+  fields: Array<{
+    label: string;
+    value: string;
+  }>;
 };
 
 function SimpleTable({
@@ -1897,22 +2082,32 @@ function SimpleTable({
   emptyMessage,
   pageSize = 5,
   exportFileName = "farmnotes-register",
+  rowDetails = [],
 }: SimpleTableProps) {
   const [currentPage, setCurrentPage] = useState(1);
   const [filterValue, setFilterValue] = useState("");
+  const [selectedDetail, setSelectedDetail] =
+    useState<TableRowDetail | null>(null);
   const normalizedFilter = filterValue.trim().toLowerCase();
+  const keyedRows = rows.map((row, index) => ({
+    row,
+    detail: rowDetails[index],
+  }));
   const filteredRows = normalizedFilter
-    ? rows.filter((row) =>
-        row.some((cell) => cell.toLowerCase().includes(normalizedFilter))
+    ? keyedRows.filter(({ row, detail }) =>
+        [
+          ...row,
+          ...(detail?.fields.map((field) => field.value) ?? []),
+        ].some((cell) => cell.toLowerCase().includes(normalizedFilter))
       )
-    : rows;
+    : keyedRows;
   const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
   const safeCurrentPage = Math.min(currentPage, totalPages);
   const startIndex = (safeCurrentPage - 1) * pageSize;
   const paginatedRows = filteredRows.slice(startIndex, startIndex + pageSize);
 
   function exportRows() {
-    const csvRows = [columns, ...filteredRows].map((row) =>
+    const csvRows = [columns, ...filteredRows.map(({ row }) => row)].map((row) =>
       row
         .map((cell) => `"${cell.replace(/"/g, '""')}"`)
         .join(",")
@@ -1986,10 +2181,29 @@ function SimpleTable({
                 </td>
               </tr>
             ) : (
-              paginatedRows.map((row, rowIndex) => (
+              paginatedRows.map(({ row, detail }, rowIndex) => (
                 <tr
                   key={`${row[0]}-${startIndex + rowIndex}`}
-                  className="border-b border-[#ddd7c9]"
+                  onClick={() => {
+                    if (detail) {
+                      setSelectedDetail(detail);
+                    }
+                  }}
+                  tabIndex={detail ? 0 : undefined}
+                  onKeyDown={(event) => {
+                    if (
+                      detail &&
+                      (event.key === "Enter" || event.key === " ")
+                    ) {
+                      event.preventDefault();
+                      setSelectedDetail(detail);
+                    }
+                  }}
+                  className={`border-b border-[#ddd7c9] ${
+                    detail
+                      ? "cursor-pointer transition hover:bg-[#fff4c6]/60 focus:bg-[#fff4c6]/60 focus:outline-none"
+                      : ""
+                  }`}
                 >
                   {row.map((cell, cellIndex) => (
                     <td
@@ -2044,6 +2258,140 @@ function SimpleTable({
           </div>
         </div>
       ) : null}
+
+      <RecordDetailModal
+        detail={selectedDetail}
+        onClose={() => setSelectedDetail(null)}
+      />
+    </div>
+  );
+}
+
+type RecordDetailModalProps = {
+  detail: TableRowDetail | null;
+  onClose: () => void;
+};
+
+function RecordDetailModal({
+  detail,
+  onClose,
+}: RecordDetailModalProps) {
+  if (!detail) {
+    return null;
+  }
+
+  if (typeof document === "undefined") {
+    return null;
+  }
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[100] overflow-y-auto bg-[#e9ecf3]/80 px-4 py-8 backdrop-blur-[7px]"
+      role="presentation"
+      onMouseDown={onClose}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="record-detail-title"
+        className="relative mx-auto mt-12 w-full max-w-4xl overflow-hidden rounded-[1.75rem] border border-white/90 bg-white shadow-[0_30px_90px_rgba(21,31,54,0.24)]"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="pointer-events-none absolute -left-24 -top-24 h-72 w-72 rounded-full bg-[var(--gold-soft)]/70 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-24 -right-24 h-72 w-72 rounded-full bg-[#f3f5fa] blur-3xl" />
+
+        <div className="relative px-8 py-8 sm:px-12 sm:py-10">
+          <div className="flex items-start justify-between gap-6">
+            <div>
+              <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-[var(--navy-muted)]">
+                Record Details
+              </p>
+              <h2
+                id="record-detail-title"
+                className="mt-4 max-w-2xl text-3xl font-extrabold leading-tight text-[var(--navy)] sm:text-4xl"
+              >
+                {detail.title}
+              </h2>
+              {detail.subtitle ? (
+                <p className="mt-3 text-base leading-7 text-[var(--navy-muted)]">
+                  {detail.subtitle}
+                </p>
+              ) : null}
+            </div>
+
+            <button
+              type="button"
+              aria-label="Close record detail"
+              title="Close"
+              onClick={onClose}
+              className="grid h-11 w-11 shrink-0 place-items-center rounded-full text-[var(--navy-muted)] transition hover:bg-[var(--gold-soft)] hover:text-[var(--navy)]"
+            >
+              <X className="h-6 w-6" aria-hidden="true" />
+            </button>
+          </div>
+
+          <div className="mt-9 border-t border-[var(--line)] pt-8">
+            <div className="grid gap-x-16 gap-y-8 md:grid-cols-2">
+              {detail.fields.map((field) => (
+                <RecordDetailField
+                  key={field.label}
+                  label={field.label}
+                  value={field.value}
+                />
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-10">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-xl bg-[var(--gold)] px-6 py-3 text-sm font-extrabold uppercase tracking-[0.14em] text-[var(--navy)] shadow-sm transition hover:brightness-95"
+            >
+              Close Detail
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+function RecordDetailField({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  const displayValue = value || "-";
+  const pillLabels = [
+    "Status",
+    "Payment Status",
+    "Timely Status",
+    "Category",
+    "Type",
+  ];
+  const shouldUsePill =
+    pillLabels.includes(label) ||
+    displayValue.toLowerCase().includes("delayed") ||
+    displayValue.toLowerCase().includes("early");
+
+  return (
+    <div>
+      <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-[var(--navy-muted)]">
+        {label}
+      </p>
+      {shouldUsePill ? (
+        <span className="mt-3 inline-flex max-w-full rounded-full bg-[var(--gold-soft)] px-4 py-2 text-sm font-extrabold text-[var(--navy)]">
+          {displayValue}
+        </span>
+      ) : (
+        <p className="mt-3 whitespace-pre-wrap break-words text-base font-bold leading-7 text-[var(--navy-soft)]">
+          {displayValue}
+        </p>
+      )}
     </div>
   );
 }

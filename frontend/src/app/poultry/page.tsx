@@ -3,7 +3,7 @@ import { AddBatchDialog } from "@/features/poultry/components/AddBatchDialog";
 import { getPoultryBatches } from "@/features/poultry/api/batches";
 
 export default async function PoultryPage() {
-  const batches = await getPoultryBatches();
+  const batches = await getPoultryBatches("/poultry");
   const totalBirds = batches.reduce((total, batch) => total + batch.quantity, 0);
   const nextMaturityDate = batches
     .map((batch) => new Date(batch.expected_maturity_date))

@@ -147,6 +147,7 @@ class DrugsVaccinationSerializer(serializers.ModelSerializer):
                 "vaccination_date",
                 "drug_vaccination_type",
                 "other_drug_vaccination",
+                "drug_category",
                 "quantity",
                 "description",
                 "timely_status",

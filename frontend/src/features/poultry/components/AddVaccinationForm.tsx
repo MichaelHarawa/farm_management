@@ -7,7 +7,10 @@ import { useForm, useWatch, type SubmitHandler } from "react-hook-form";
 
 import { getApiErrorMessage } from "@/lib/errors";
 import { createBatchVaccination } from "../api/vaccinations";
-import type { DrugVaccinationType } from "../types";
+import type {
+  DrugCategory,
+  DrugVaccinationType,
+} from "../types";
 import { formatDisplayDateFromValue } from "../utils/vaccinations";
 import {
   vaccinationSchema,
@@ -27,6 +30,18 @@ const drugVaccinationOptions: Array<{
   { value: "hitchner", label: "Hitchner" },
   { value: "gumbolo", label: "Gumbolo" },
   { value: "lasota", label: "Lasota" },
+  { value: "other", label: "Other" },
+];
+
+const drugCategoryOptions: Array<{
+  value: DrugCategory;
+  label: string;
+}> = [
+  { value: "vaccination", label: "Vaccination" },
+  { value: "drug", label: "Drug" },
+  { value: "antibiotic", label: "Antibiotic" },
+  { value: "vitamin", label: "Vitamin" },
+  { value: "dewormer", label: "Dewormer" },
   { value: "other", label: "Other" },
 ];
 
@@ -109,6 +124,7 @@ function getDefaultValues(currentBirds: number): VaccinationFormValues {
     vaccination_date: toDateTimeLocal(new Date()),
     drug_vaccination_type: "hitchner",
     other_drug_vaccination: "",
+    drug_category: "vaccination",
     quantity: Math.max(currentBirds, 1),
     description: "",
     reported_by_name: "",
@@ -182,7 +198,7 @@ export function AddVaccinationForm({
   return (
     <form onSubmit={handleSubmit(onSubmit)} noValidate className="grid gap-6">
       <div>
-        <p className="text-label text-[var(--navy-muted)]">New Vaccination</p>
+        <p className="text-label text-[var(--navy-muted)]">New Vaccination / Drug</p>
         <h3 className="font-display mt-2 text-3xl text-[var(--navy)]">
           Record drug or vaccine administration.
         </h3>
@@ -211,6 +227,23 @@ export function AddVaccinationForm({
             className="form-input"
           >
             {drugVaccinationOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </FormField>
+
+        <FormField
+          label="Administration category"
+          error={errors.drug_category?.message}
+        >
+          <select
+            id="drug-category"
+            {...register("drug_category")}
+            className="form-input"
+          >
+            {drugCategoryOptions.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
               </option>
@@ -290,7 +323,7 @@ export function AddVaccinationForm({
           disabled={isSubmitting}
           className="rounded-full bg-[var(--gold)] px-6 py-3 text-[0.7rem] font-bold uppercase tracking-[0.18em] text-[var(--navy)] transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {isSubmitting ? "Saving..." : "Record Vaccination"}
+          {isSubmitting ? "Saving..." : "Record Administration"}
         </button>
       </div>
 

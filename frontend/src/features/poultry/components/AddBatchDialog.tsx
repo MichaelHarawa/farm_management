@@ -7,7 +7,7 @@ import { useState, type ReactNode } from "react";
 import { useForm, useWatch, type SubmitHandler } from "react-hook-form";
 
 import { getApiErrorMessage } from "@/lib/errors";
-import { createPoultryBatch } from "../api/batches";
+import { createPoultryBatch } from "../api/batch-mutations";
 import type { CreatePoultryBatchPayload } from "../types";
 import {
   batchSchema,

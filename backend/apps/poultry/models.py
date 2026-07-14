@@ -74,6 +74,15 @@ class DrugVaccinationType(models.TextChoices):
     OTHER = "other", "Other"
 
 
+class DrugCategory(models.TextChoices):
+    VACCINATION = "vaccination", "Vaccination"
+    DRUG = "drug", "Drug"
+    ANTIBIOTIC = "antibiotic", "Antibiotic"
+    VITAMIN = "vitamin", "Vitamin"
+    DEWORMER = "dewormer", "Dewormer"
+    OTHER = "other", "Other"
+
+
 class BatchIDSequence(models.Model):
     sequence_date = models.DateField(unique=True)
     last_number = models.PositiveIntegerField(default=0)
@@ -313,6 +322,11 @@ class DrugsVaccination(models.Model):
         choices = DrugVaccinationType.choices,
         )
     other_drug_vaccination = models.CharField(max_length=200)
+    drug_category = models.CharField(
+        max_length=200,
+        choices=DrugCategory.choices,
+        default=DrugCategory.VACCINATION,
+    )
     quantity = models.PositiveIntegerField()
     description = models.TextField()
     timely_status = models.CharField(max_length=200)

@@ -16,6 +16,7 @@ import {
 type AddMortalityFormProps = {
   batchId: number;
   availableBirds: number;
+  arrivalDate: string;
   defaultAgeInDays: number;
 };
 
@@ -26,9 +27,27 @@ function toDateTimeLocal(date: Date): string {
   return localDate.toISOString().slice(0, 16);
 }
 
+function calculateAgeInDays(arrivalDate: string, mortalityDate: string): number {
+  const start = new Date(arrivalDate);
+  const end = new Date(mortalityDate);
+
+  if (
+    Number.isNaN(start.getTime()) ||
+    Number.isNaN(end.getTime())
+  ) {
+    return 0;
+  }
+
+  return Math.max(
+    0,
+    Math.floor((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000))
+  );
+}
+
 export function AddMortalityForm({
   batchId,
   availableBirds,
+  arrivalDate,
   defaultAgeInDays,
 }: AddMortalityFormProps) {
   const router = useRouter();
@@ -65,20 +84,38 @@ export function AddMortalityForm({
       control,
       name: "quantity_dead",
     }) ?? 0;
+  const mortalityDate =
+    useWatch({
+      control,
+      name: "mortality_date",
+    }) ?? defaultMortalityDate;
 
   const projectedAvailableBirds = Math.max(availableBirds - quantityDead, 0);
+  const calculatedAgeInDays = calculateAgeInDays(
+    arrivalDate,
+    mortalityDate
+  );
 
   const onSubmit: SubmitHandler<MortalityFormValues> = async (values) => {
     setServerError(null);
     setSuccessMessage(null);
 
     try {
-      await createBatchMortality(batchId, values);
+      await createBatchMortality(batchId, {
+        ...values,
+        age_in_days: calculateAgeInDays(
+          arrivalDate,
+          values.mortality_date
+        ),
+      });
 
       reset({
         mortality_date: toDateTimeLocal(new Date()),
         quantity_dead: 1,
-        age_in_days: defaultAgeInDays,
+        age_in_days: calculateAgeInDays(
+          arrivalDate,
+          toDateTimeLocal(new Date())
+        ),
         suspected_cause: "",
         description: "",
         action_taken: "",
@@ -126,19 +163,6 @@ export function AddMortalityForm({
             max={availableBirds}
             step="1"
             {...register("quantity_dead", {
-              valueAsNumber: true,
-            })}
-            className="form-input"
-          />
-        </FormField>
-
-        <FormField label="Age in days" error={errors.age_in_days?.message}>
-          <input
-            id="mortality-age"
-            type="number"
-            min="0"
-            step="1"
-            {...register("age_in_days", {
               valueAsNumber: true,
             })}
             className="form-input"
@@ -205,6 +229,10 @@ export function AddMortalityForm({
           <SummaryFigure
             label="Available After"
             value={formatNumber(projectedAvailableBirds)}
+          />
+          <SummaryFigure
+            label="Age Recorded"
+            value={`${formatNumber(calculatedAgeInDays)} days`}
           />
         </div>
 

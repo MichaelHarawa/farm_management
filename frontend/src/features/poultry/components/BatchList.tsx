@@ -1,7 +1,8 @@
 "use client";
 
-import { CalendarDays, Eye, Table2 } from "lucide-react";
+import { CalendarDays, Eye, Table2, X } from "lucide-react";
 import Link from "next/link";
+import { createPortal } from "react-dom";
 import { useMemo, useState, type ReactNode } from "react";
 import type { PoultryBatch } from "../types";
 
@@ -36,6 +37,8 @@ function getDaysToMaturity(value: string): number {
 
 export function BatchList({ batches, addBatchAction }: BatchListProps) {
   const [showLastThreeMonths, setShowLastThreeMonths] = useState(false);
+  const [selectedBatch, setSelectedBatch] =
+    useState<PoultryBatch | null>(null);
   const visibleBatches = useMemo(() => {
     if (!showLastThreeMonths) {
       return batches;
@@ -190,7 +193,15 @@ export function BatchList({ batches, addBatchAction }: BatchListProps) {
               return (
                 <tr
                   key={batch.id}
-                  className="border-b border-[var(--line)] transition hover:bg-[var(--gold-soft)]/45"
+                  onClick={() => setSelectedBatch(batch)}
+                  tabIndex={0}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      setSelectedBatch(batch);
+                    }
+                  }}
+                  className="cursor-pointer border-b border-[var(--line)] transition hover:bg-[var(--gold-soft)]/45 focus:bg-[var(--gold-soft)]/45 focus:outline-none"
                 >
                   <td className="min-w-64 px-6 py-5">
                     <p className="text-sm font-extrabold text-[var(--navy)]">
@@ -243,6 +254,7 @@ export function BatchList({ batches, addBatchAction }: BatchListProps) {
                   <td className="min-w-44 px-6 py-5 text-right">
                     <Link
                       href={`/poultry/batches/${batch.id}`}
+                      onClick={(event) => event.stopPropagation()}
                       aria-label={`View ${batch.batch_id}`}
                       title={`View ${batch.batch_id}`}
                       className="inline-grid h-10 w-14 place-items-center rounded-full bg-[var(--gold)] text-[var(--navy)] transition hover:bg-[var(--gold-soft)]"
@@ -267,6 +279,151 @@ export function BatchList({ batches, addBatchAction }: BatchListProps) {
           Updated live
         </p>
       </div>
+
+      <BatchRecordModal
+        batch={selectedBatch}
+        onClose={() => setSelectedBatch(null)}
+      />
+    </div>
+  );
+}
+
+type BatchRecordModalProps = {
+  batch: PoultryBatch | null;
+  onClose: () => void;
+};
+
+function BatchRecordModal({ batch, onClose }: BatchRecordModalProps) {
+  if (!batch) {
+    return null;
+  }
+
+  if (typeof document === "undefined") {
+    return null;
+  }
+
+  const daysToMaturity = getDaysToMaturity(batch.expected_maturity_date);
+  const isMature = daysToMaturity <= 0;
+  const status = isMature ? "Review" : "Active";
+  const readout = isMature
+    ? "Maturity reached"
+    : `${Math.max(0, daysToMaturity)} days remaining`;
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[100] overflow-y-auto bg-[#e9ecf3]/80 px-4 py-8 backdrop-blur-[7px]"
+      role="presentation"
+      onMouseDown={onClose}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="batch-row-detail-title"
+        className="relative mx-auto mt-12 w-full max-w-4xl overflow-hidden rounded-[1.75rem] border border-white/90 bg-white shadow-[0_30px_90px_rgba(21,31,54,0.24)]"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="pointer-events-none absolute -left-24 -top-24 h-72 w-72 rounded-full bg-[var(--gold-soft)]/70 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-24 -right-24 h-72 w-72 rounded-full bg-[#f3f5fa] blur-3xl" />
+
+        <div className="relative px-8 py-8 sm:px-12 sm:py-10">
+          <div className="flex items-start justify-between gap-6">
+            <div>
+              <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-[var(--navy-muted)]">
+                Batch Detail
+              </p>
+              <h2
+                id="batch-row-detail-title"
+                className="mt-4 max-w-2xl text-3xl font-extrabold leading-tight text-[var(--navy)] sm:text-4xl"
+              >
+                {batch.batch_id}
+              </h2>
+              <p className="mt-3 text-base leading-7 text-[var(--navy-muted)]">
+                Production cycle summary from placement to expected maturity.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              aria-label="Close batch detail"
+              title="Close"
+              onClick={onClose}
+              className="grid h-11 w-11 shrink-0 place-items-center rounded-full text-[var(--navy-muted)] transition hover:bg-[var(--gold-soft)] hover:text-[var(--navy)]"
+            >
+              <X className="h-6 w-6" aria-hidden="true" />
+            </button>
+          </div>
+
+          <div className="mt-9 border-t border-[var(--line)] pt-8">
+            <div className="grid gap-x-16 gap-y-8 md:grid-cols-2">
+              <BatchDetailField
+                label="Bird Type"
+                value={`${formatBirdType(batch.bird_type)} cycle`}
+              />
+              <BatchDetailField
+                label="Initial Birds"
+                value={batch.quantity.toLocaleString()}
+              />
+              <BatchDetailField
+                label="Placement"
+                value={formatDate(batch.entry_date)}
+              />
+              <BatchDetailField
+                label="Maturity"
+                value={formatDate(batch.expected_maturity_date)}
+              />
+              <BatchDetailField label="Status" value={status} pill />
+              <BatchDetailField label="Readout" value={readout} />
+            </div>
+          </div>
+
+          <div className="mt-10 flex flex-col gap-3 sm:flex-row sm:items-center">
+            <Link
+              href={`/poultry/batches/${batch.id}`}
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-[var(--gold)] px-6 py-3 text-sm font-extrabold uppercase tracking-[0.14em] text-[var(--navy)] shadow-sm transition hover:brightness-95"
+            >
+              <Eye className="h-4 w-4" aria-hidden="true" />
+              Open Workspace
+            </Link>
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex items-center justify-center rounded-xl border border-[var(--line)] bg-white px-6 py-3 text-sm font-extrabold uppercase tracking-[0.14em] text-[var(--navy-muted)] transition hover:bg-[var(--gold-soft)] hover:text-[var(--navy)]"
+            >
+              Close Detail
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+function BatchDetailField({
+  label,
+  value,
+  pill = false,
+}: {
+  label: string;
+  value: string;
+  pill?: boolean;
+}) {
+  const displayValue = value || "-";
+
+  return (
+    <div>
+      <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-[var(--navy-muted)]">
+        {label}
+      </p>
+      {pill ? (
+        <span className="mt-3 inline-flex rounded-full bg-[var(--gold-soft)] px-4 py-2 text-sm font-extrabold text-[var(--navy)]">
+          {displayValue}
+        </span>
+      ) : (
+        <p className="mt-3 whitespace-pre-wrap break-words text-base font-bold leading-7 text-[var(--navy-soft)]">
+          {displayValue}
+        </p>
+      )}
     </div>
   );
 }

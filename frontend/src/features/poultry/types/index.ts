@@ -50,12 +50,21 @@ export type DrugVaccinationType =
   | "lasota"
   | "other";
 
+export type DrugCategory =
+  | "vaccination"
+  | "drug"
+  | "antibiotic"
+  | "vitamin"
+  | "dewormer"
+  | "other";
+
 export type PoultryVaccination = {
   id: number;
   batch: number;
   vaccination_date: string;
   drug_vaccination_type: DrugVaccinationType;
   other_drug_vaccination: string;
+  drug_category: DrugCategory;
   quantity: number;
   description: string;
   timely_status: string;
@@ -171,6 +180,7 @@ export type CreateVaccinationPayload = {
   vaccination_date: string;
   drug_vaccination_type: DrugVaccinationType;
   other_drug_vaccination: string;
+  drug_category: DrugCategory;
   quantity: number;
   description: string;
   timely_status: string;

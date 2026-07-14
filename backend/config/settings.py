@@ -79,6 +79,7 @@ INSTALLED_APPS = [
     
     'drf_spectacular',
     'rest_framework',
+    'rest_framework_simplejwt.token_blacklist',
     'apps.accounts',
     'apps.inventory',
     'apps.poultry',
@@ -166,12 +167,12 @@ SIMPLE_JWT = {
     "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
 
     "ROTATE_REFRESH_TOKENS": True,
-    # "BLACKLIST_AFTER_ROTATION": True,
+    "BLACKLIST_AFTER_ROTATION": True,
 
     "UPDATE_LAST_LOGIN": False,
 
     "ALGORITHM": "HS256",
-    "SIGNING_KEY": env("JWT_SIGNING_KEY"),
+    "SIGNING_KEY": env("JWT_SIGNING_KEY", SECRET_KEY),
 
     "AUTH_HEADER_TYPES": ("Bearer",),
 

@@ -1,8 +1,15 @@
-import { NextResponse } from "next/server";
+import {
+  NextRequest,
+  NextResponse,
+} from "next/server";
 
+import {
+  RouteAuthenticationError,
+  routeAuthenticatedBackendFetch,
+} from "@/features/auth/server/route-authenticated-backend";
 import { poultryApiPaths } from "@/features/poultry/api/paths";
 import type { PoultryFeedUsage } from "@/features/poultry/types";
-import { ApiError, apiFetch } from "@/lib/api";
+import { BackendApiError } from "@/lib/server/backend-api";
 
 type RouteContext = {
   params: Promise<{
@@ -10,7 +17,7 @@ type RouteContext = {
   }>;
 };
 
-export async function POST(request: Request, { params }: RouteContext) {
+export async function POST(request: NextRequest, { params }: RouteContext) {
   const { id } = await params;
   const batchId = Number(id);
 
@@ -33,7 +40,8 @@ export async function POST(request: Request, { params }: RouteContext) {
   }
 
   try {
-    const feedUsage = await apiFetch<PoultryFeedUsage>(
+    const feedUsage = await routeAuthenticatedBackendFetch<PoultryFeedUsage>(
+      request,
       poultryApiPaths.feedUsage(batchId),
       {
         method: "POST",
@@ -44,7 +52,14 @@ export async function POST(request: Request, { params }: RouteContext) {
 
     return NextResponse.json(feedUsage, { status: 201 });
   } catch (error) {
-    if (error instanceof ApiError) {
+    if (error instanceof RouteAuthenticationError) {
+      return NextResponse.json(
+        { message: error.message },
+        { status: error.status }
+      );
+    }
+
+    if (error instanceof BackendApiError) {
       return NextResponse.json(error.details ?? { detail: error.message }, {
         status: error.status,
       });

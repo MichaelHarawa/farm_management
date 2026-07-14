@@ -1,16 +1,26 @@
 import { notFound } from "next/navigation";
+
 import {
-  getBatchFeedUsage,
   getBatchFeedInputCosts,
+  getBatchFeedUsage,
   getBatchInputCosts,
   getBatchMortality,
   getBatchSales,
   getBatchVaccinations,
   getPoultryBatch,
 } from "@/features/poultry/api/batches";
-import { BatchDetailView } from "@/features/poultry/components/BatchDetailView";
-import type { PoultryBatch } from "@/features/poultry/types";
-import { ApiError } from "@/lib/api";
+
+import {
+  BatchDetailView,
+} from "@/features/poultry/components/BatchDetailView";
+
+import type {
+  PoultryBatch,
+} from "@/features/poultry/types";
+
+import {
+  BackendApiError,
+} from "@/lib/server/backend-api";
 
 type BatchDetailPageProps = {
   params: Promise<{
@@ -24,16 +34,28 @@ export default async function BatchDetailPage({
   const { id } = await params;
   const batchId = Number(id);
 
-  if (!Number.isInteger(batchId) || batchId <= 0) {
+  if (
+    !Number.isInteger(batchId) ||
+    batchId <= 0
+  ) {
     notFound();
   }
+
+  const returnTo =
+    `/poultry/batches/${batchId}`;
 
   let batch: PoultryBatch;
 
   try {
-    batch = await getPoultryBatch(batchId);
+    batch = await getPoultryBatch(
+      batchId,
+      returnTo
+    );
   } catch (error) {
-    if (error instanceof ApiError && error.status === 404) {
+    if (
+      error instanceof BackendApiError &&
+      error.status === 404
+    ) {
       notFound();
     }
 
@@ -48,13 +70,31 @@ export default async function BatchDetailPage({
     feedUsages,
     vaccinations,
   ] = await Promise.all([
-    getBatchInputCosts(batchId),
-    getBatchFeedInputCosts(batchId),
-    getBatchSales(batchId),
-    getBatchMortality(batchId),
-    getBatchFeedUsage(batchId),
-    getBatchVaccinations(batchId),
-  ]);
+      getBatchInputCosts(
+        batchId,
+        returnTo
+      ),
+      getBatchFeedInputCosts(
+        batchId,
+        returnTo
+      ),
+      getBatchSales(
+        batchId,
+        returnTo
+      ),
+      getBatchMortality(
+        batchId,
+        returnTo
+      ),
+      getBatchFeedUsage(
+        batchId,
+        returnTo
+      ),
+      getBatchVaccinations(
+        batchId,
+        returnTo
+      ),
+    ]);
 
   return (
     <BatchDetailView

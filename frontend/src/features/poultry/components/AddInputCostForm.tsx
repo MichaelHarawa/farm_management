@@ -44,6 +44,18 @@ const unitOptions = [
   },
 ] as const;
 
+const inputCostCategoryOptions = [
+  "Feed",
+  "Chick Care",
+  "Temperature Control",
+  "Drug",
+  "Biosecurity",
+  "Vaccination",
+  "Water",
+  "Transport",
+  "Other",
+] as const;
+
 function toDateTimeLocal(value: Date): string {
   const timezoneOffsetMs = value.getTimezoneOffset() * 60 * 1000;
 
@@ -80,11 +92,15 @@ export function AddInputCostForm({
   const [successMessage, setSuccessMessage] =
     useState<string | null>(null);
 
+  const [categoryMode, setCategoryMode] =
+    useState("");
+
   const {
     register,
     handleSubmit,
     reset,
     control,
+    setValue,
     formState: {
       errors,
       isSubmitting,
@@ -109,6 +125,23 @@ export function AddInputCostForm({
     control,
     name: "unit_cost",
   }) ?? 0;
+  const selectedCategory = useWatch({
+    control,
+    name: "category",
+  }) ?? "";
+  const isKnownCategory =
+    inputCostCategoryOptions.includes(
+      selectedCategory as (typeof inputCostCategoryOptions)[number]
+    );
+  const selectedCategoryMode =
+    categoryMode ||
+    (isKnownCategory
+      ? selectedCategory
+      : selectedCategory
+        ? "Other"
+        : "");
+  const isOtherCategory =
+    selectedCategoryMode === "Other";
 
   const estimatedTotal =
     quantity * unit * unitCost;
@@ -123,6 +156,7 @@ export function AddInputCostForm({
       await createBatchInputCost(batchId, values);
 
       reset(getDefaultValues());
+      setCategoryMode("");
 
       setSuccessMessage(
         "The input cost was recorded successfully."
@@ -161,18 +195,52 @@ export function AddInputCostForm({
           />
         </FormField>
 
-        <FormField
-          label="Category"
-          error={errors.category?.message}
-        >
-          <input
+        <FormField label="Category" error={errors.category?.message}>
+          <select
             id="input-cost-category"
-            type="text"
-            placeholder="Example: Feed"
-            {...register("category")}
+            value={selectedCategoryMode}
+            onChange={(event) => {
+              const value = event.target.value;
+              setCategoryMode(value);
+              setValue(
+                "category",
+                value === "Other" ? "" : value,
+                {
+                  shouldDirty: true,
+                  shouldValidate: true,
+                }
+              );
+            }}
             className="form-input"
-          />
+          >
+            <option value="">Select category</option>
+            {inputCostCategoryOptions.map((category) => (
+              <option key={category} value={category}>
+                {category}
+              </option>
+            ))}
+          </select>
         </FormField>
+
+        {isOtherCategory || (
+          selectedCategory &&
+          !inputCostCategoryOptions.includes(
+            selectedCategory as (typeof inputCostCategoryOptions)[number]
+          )
+        ) ? (
+          <FormField
+            label="Other category"
+            error={errors.category?.message}
+          >
+            <input
+              id="input-cost-category-other"
+              type="text"
+              placeholder="Type category"
+              {...register("category")}
+              className="form-input"
+            />
+          </FormField>
+        ) : null}
 
         <FormField
           label="Number of Items"
