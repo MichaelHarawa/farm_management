@@ -18,6 +18,8 @@ export type PoultryBatch = {
   quantity: number;
   created_at: string;
   updated_at: string;
+  created_by: string | null;
+  created_by_name: string;
 };
 
 export type CreatePoultryBatchPayload = {
@@ -42,6 +44,8 @@ export type InputCost = {
   notes: string;
   created_at: string;
   updated_at: string;
+  created_by: string | null;
+  created_by_name: string;
 };
 
 export type DrugVaccinationType =
@@ -71,6 +75,8 @@ export type PoultryVaccination = {
   reported_by_name: string;
   created_at: string;
   updated_at: string;
+  created_by: string | null;
+  created_by_name: string;
 };
 
 export type ProductType = "live_chicken" | "dressed_chicken" | "eggs" | "manure";
@@ -107,6 +113,8 @@ export type PoultrySale = {
   notes: string;
   created_at: string;
   updated_at: string;
+  created_by: string | null;
+  created_by_name: string;
 };
 
 export type PoultryMortality = {
@@ -121,6 +129,8 @@ export type PoultryMortality = {
   reported_by_name: string;
   created_at: string;
   updated_at: string;
+  created_by: string | null;
+  created_by_name: string;
 };
 
 export type FeedType =
@@ -156,6 +166,8 @@ export type PoultryFeedUsage = {
   reported_by_name: string;
   created_at: string;
   updated_at: string;
+  created_by: string | null;
+  created_by_name: string;
 };
 
 export type PaginatedResponse<T> = {

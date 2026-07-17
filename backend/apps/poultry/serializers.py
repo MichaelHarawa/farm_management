@@ -1,9 +1,12 @@
 from __future__ import annotations
+from decimal import Decimal
+
 from rest_framework import serializers
 
 from .models import(
     Batch,
     ChicksSource,
+    PaymentStatus,
     InputCosts,
     Sales,
     Mortality,
@@ -12,7 +15,7 @@ from .models import(
 )
 
 class BatchSerializer(serializers.ModelSerializer):
-    # created_by_username = serializers.CharField(source = "created_by.username", read_only = True)
+    created_by_name = serializers.SerializerMethodField()
 
     class Meta:
         model = Batch
@@ -25,11 +28,29 @@ class BatchSerializer(serializers.ModelSerializer):
             "entry_date",
             "expected_maturity_date",
             "quantity",
+            "status",
+            "closed_at",
+            "closure_reason",
+            "profitability_finalized_at",
+            "target_selling_price",
+            "closure_notes",
             "created_at",
             "updated_at",
-            # "created_by_username",
+            "created_by",
+            "created_by_name",
         )
-        read_only_fields = ("id", "batch_id", "created_at", "updated_at",)
+        read_only_fields = (
+            "id",
+            "batch_id",
+            "status",
+            "closed_at",
+            "closure_reason",
+            "profitability_finalized_at",
+            "created_at",
+            "updated_at",
+            "created_by",
+            "created_by_name",
+        )
 
     def validate(self, attrs):
         source = attrs.get("source", getattr(self.instance, "source", None))
@@ -50,8 +71,20 @@ class BatchSerializer(serializers.ModelSerializer):
 
         return attrs
 
+    def get_created_by_name(self, obj):
+        if obj.created_by_id is None:
+            return ""
+
+        return obj.created_by.get_full_name() or obj.created_by.username
+
 class InputCostsSerializer(serializers.ModelSerializer):
-    # created_by_username = serializers.CharField(source = "created_by.username", read_only = True)
+    created_by_name = serializers.SerializerMethodField()
+    direct_input_total = serializers.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        read_only=True,
+    )
+
     class Meta:
         model = InputCosts
         fields = (
@@ -63,16 +96,58 @@ class InputCostsSerializer(serializers.ModelSerializer):
             "unit_measurement",
             "unit",
             "unit_cost",
+            "direct_input_total",
             "purchase_date",
             "notes",
             "created_at",
             "updated_at",
-            # "created_by_username",
+            "created_by",
+            "created_by_name",
         )
-        read_only_fields = ("id", "batch","created_at","updated_at")
+        read_only_fields = (
+            "id",
+            "batch",
+            "created_at",
+            "updated_at",
+            "created_by",
+            "created_by_name",
+            "direct_input_total",
+        )
+
+    def validate(self, attrs):
+        quantity = attrs.get("quantity", getattr(self.instance, "quantity", 0))
+        unit = attrs.get("unit", getattr(self.instance, "unit", 0))
+        unit_cost = attrs.get(
+            "unit_cost",
+            getattr(self.instance, "unit_cost", Decimal("0.00")),
+        )
+
+        errors = {}
+        if quantity <= 0:
+            errors["quantity"] = "Quantity must be greater than zero."
+        if unit <= 0:
+            errors["unit"] = "Unit must be greater than zero."
+        if unit_cost < Decimal("0.00"):
+            errors["unit_cost"] = "Unit cost cannot be negative."
+        if errors:
+            raise serializers.ValidationError(errors)
+
+        return attrs
+
+    def get_created_by_name(self, obj):
+        if obj.created_by_id is None:
+            return ""
+
+        return obj.created_by.get_full_name() or obj.created_by.username
 
 class SalesSerializer(serializers.ModelSerializer):
-    # created_by_username = serializers.CharField(source = "created_by.username", read_only = True)
+    created_by_name = serializers.SerializerMethodField()
+    sale_total = serializers.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        read_only=True,
+    )
+
     class Meta:
         model = Sales
         fields = (
@@ -83,6 +158,7 @@ class SalesSerializer(serializers.ModelSerializer):
             "product_type",
             "quantity_sold",
             "unit_price",
+            "sale_total",
             "buyer_name",
             "buyer_type",
             "payment_status",
@@ -94,11 +170,67 @@ class SalesSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
             "created_by",
-            # "created_by_username",
+            "created_by_name",
         )
-        read_only_fields = ("id", "batch","sale_id","created_at","updated_at","created_by")
+        read_only_fields = (
+            "id",
+            "batch",
+            "sale_id",
+            "sale_total",
+            "balance",
+            "created_at",
+            "updated_at",
+            "created_by",
+            "created_by_name",
+        )
+
+    def validate(self, attrs):
+        quantity_sold = attrs.get(
+            "quantity_sold",
+            getattr(self.instance, "quantity_sold", 0),
+        )
+        unit_price = attrs.get(
+            "unit_price",
+            getattr(self.instance, "unit_price", Decimal("0.00")),
+        )
+        amount_paid = attrs.get(
+            "amount_paid",
+            getattr(self.instance, "amount_paid", Decimal("0.00")),
+        )
+        payment_status = attrs.get(
+            "payment_status",
+            getattr(self.instance, "payment_status", None),
+        )
+        sale_total = (Decimal(quantity_sold) * unit_price).quantize(
+            Decimal("0.01")
+        )
+
+        errors = {}
+        if quantity_sold <= 0:
+            errors["quantity_sold"] = "Quantity sold must be greater than zero."
+        if unit_price < Decimal("0.00"):
+            errors["unit_price"] = "Unit price cannot be negative."
+        if amount_paid < Decimal("0.00"):
+            errors["amount_paid"] = "Amount paid cannot be negative."
+        if (
+            payment_status != PaymentStatus.CANCELLED
+            and amount_paid > sale_total
+        ):
+            errors["amount_paid"] = "Amount paid cannot exceed sale total."
+        if errors:
+            raise serializers.ValidationError(errors)
+
+        return attrs
+
+    def get_created_by_name(self, obj):
+        if obj.created_by_id is None:
+            return ""
+
+        return obj.created_by.get_full_name() or obj.created_by.username
 
 class MortalitySerializer(serializers.ModelSerializer):
+    created_by_name = serializers.SerializerMethodField()
+
     class Meta:
         model = Mortality
         fields= (
@@ -112,11 +244,28 @@ class MortalitySerializer(serializers.ModelSerializer):
                 "action_taken",
                 "reported_by_name",
                 "created_at",
-                "updated_at"
+                "updated_at",
+                "created_by",
+                "created_by_name",
         )
-        read_only_fields = ("id", "batch","created_at","updated_at","created_by")
+        read_only_fields = (
+            "id",
+            "batch",
+            "created_at",
+            "updated_at",
+            "created_by",
+            "created_by_name",
+        )
+
+    def get_created_by_name(self, obj):
+        if obj.created_by_id is None:
+            return ""
+
+        return obj.created_by.get_full_name() or obj.created_by.username
 
 class FeedUsageSerializer(serializers.ModelSerializer):
+    created_by_name = serializers.SerializerMethodField()
+
     class Meta:
         model = FeedUsage
         fields = (
@@ -133,12 +282,29 @@ class FeedUsageSerializer(serializers.ModelSerializer):
                 "notes",
                 "reported_by_name",
                 "created_at",
-                "updated_at"
+                "updated_at",
+                "created_by",
+                "created_by_name",
 
         )
-        read_only_fields = ("id", "batch","created_at","updated_at","created_by")
+        read_only_fields = (
+            "id",
+            "batch",
+            "created_at",
+            "updated_at",
+            "created_by",
+            "created_by_name",
+        )
+
+    def get_created_by_name(self, obj):
+        if obj.created_by_id is None:
+            return ""
+
+        return obj.created_by.get_full_name() or obj.created_by.username
 
 class DrugsVaccinationSerializer(serializers.ModelSerializer):
+    created_by_name = serializers.SerializerMethodField()
+
     class Meta:
         model = DrugsVaccination
         fields = (
@@ -153,9 +319,24 @@ class DrugsVaccinationSerializer(serializers.ModelSerializer):
                 "timely_status",
                 "reported_by_name",
                 "created_at",
-                "updated_at"
+                "updated_at",
+                "created_by",
+                "created_by_name",
 
         )
-        read_only_fields = ("id", "batch","created_at","updated_at","created_by")
+        read_only_fields = (
+            "id",
+            "batch",
+            "created_at",
+            "updated_at",
+            "created_by",
+            "created_by_name",
+        )
+
+    def get_created_by_name(self, obj):
+        if obj.created_by_id is None:
+            return ""
+
+        return obj.created_by.get_full_name() or obj.created_by.username
 
 

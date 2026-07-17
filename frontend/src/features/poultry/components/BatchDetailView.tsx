@@ -2286,7 +2286,7 @@ function RecordDetailModal({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[100] overflow-y-auto bg-[#e9ecf3]/80 px-4 py-8 backdrop-blur-[7px]"
+      className="fixed inset-0 z-[9999] overflow-y-auto bg-[#e9ecf3]/80 px-4 py-8 backdrop-blur-[7px]"
       role="presentation"
       onMouseDown={onClose}
     >
@@ -2342,7 +2342,7 @@ function RecordDetailModal({
             </div>
           </div>
 
-          <div className="mt-10">
+          <div className="mt-10 flex flex-col gap-3 sm:flex-row sm:items-center">
             <button
               type="button"
               onClick={onClose}
@@ -2350,6 +2350,9 @@ function RecordDetailModal({
             >
               Close Detail
             </button>
+            <span className="text-xs font-bold uppercase tracking-[0.16em] text-[var(--navy-muted)]">
+              Farmnotes / Detail View
+            </span>
           </div>
         </div>
       </div>
@@ -2558,9 +2561,13 @@ function DetailModal({
     return null;
   }
 
-  return (
+  if (typeof document === "undefined") {
+    return null;
+  }
+
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 overflow-y-auto bg-[rgba(21,31,54,0.72)] px-4 py-6 backdrop-blur-sm"
+      className="fixed inset-0 z-[100] overflow-y-auto bg-[#e9ecf3]/80 px-4 py-8 backdrop-blur-[7px]"
       role="presentation"
       onMouseDown={onClose}
     >
@@ -2568,33 +2575,43 @@ function DetailModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="batch-detail-modal-title"
-        className="mx-auto w-full max-w-5xl rounded-xl border border-[#ddd7c9] bg-[#fffdf8] shadow-[0_24px_80px_rgba(0,0,0,0.32)]"
+        className="relative mx-auto mt-12 w-full max-w-5xl overflow-hidden rounded-[1.75rem] border border-white/90 bg-white shadow-[0_30px_90px_rgba(21,31,54,0.24)]"
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <div className="flex items-start justify-between gap-4 border-b border-[#ddd7c9] px-6 py-5">
-          <div>
-            <SectionLabel>{label}</SectionLabel>
-            <h2
-              id="batch-detail-modal-title"
-              className="mt-2 text-3xl font-extrabold text-[#151926]"
+        <div className="pointer-events-none absolute -left-24 -top-24 h-72 w-72 rounded-full bg-[var(--gold-soft)]/70 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-24 -right-24 h-72 w-72 rounded-full bg-[#f3f5fa] blur-3xl" />
+
+        <div className="relative px-8 py-8 sm:px-12 sm:py-10">
+          <div className="flex items-start justify-between gap-6">
+            <div>
+              <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-[var(--navy-muted)]">
+                {label}
+              </p>
+              <h2
+                id="batch-detail-modal-title"
+                className="mt-4 max-w-2xl text-3xl font-extrabold leading-tight text-[var(--navy)] sm:text-4xl"
+              >
+                {title}
+              </h2>
+            </div>
+
+            <button
+              type="button"
+              aria-label="Close dialog"
+              title="Close"
+              onClick={onClose}
+              className="grid h-11 w-11 shrink-0 place-items-center rounded-full text-[var(--navy-muted)] transition hover:bg-[var(--gold-soft)] hover:text-[var(--navy)]"
             >
-              {title}
-            </h2>
+              <X className="h-6 w-6" aria-hidden="true" />
+            </button>
           </div>
 
-          <button
-            type="button"
-            aria-label="Close dialog"
-            title="Close"
-            onClick={onClose}
-            className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-[#ddd7c9] text-[#151926] transition hover:bg-[#fff4c6]"
-          >
-            <X className="h-5 w-5" aria-hidden="true" />
-          </button>
+          <div className="mt-9 border-t border-[var(--line)] pt-8">
+            {children}
+          </div>
         </div>
-
-        <div className="px-6 py-6">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

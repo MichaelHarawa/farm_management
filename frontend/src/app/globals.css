@@ -77,3 +77,23 @@ a {
   border-color: var(--gold);
   box-shadow: 0 0 0 3px rgba(242, 189, 66, 0.22);
 }
+
+.finance-button {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.75rem;
+  background: var(--gold);
+  padding: 0.75rem 1rem;
+  color: var(--navy);
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  transition: filter 0.18s ease, background 0.18s ease;
+}
+
+.finance-button:hover {
+  filter: brightness(0.96);
+}

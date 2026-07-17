@@ -1,6 +1,7 @@
 import { BatchList } from "@/features/poultry/components/BatchList";
 import { AddBatchDialog } from "@/features/poultry/components/AddBatchDialog";
 import { getPoultryBatches } from "@/features/poultry/api/batches";
+import Link from "next/link";
 
 export default async function PoultryPage() {
   const batches = await getPoultryBatches("/poultry");
@@ -65,8 +66,9 @@ export default async function PoultryPage() {
             />
             <RegisterSignal
               label="Financial workspace"
-              value="Costs + Sales"
-              detail="Open each batch for ledgers"
+              value="Finance Control"
+              detail="Open workforce, payroll, and profitability"
+              href="/finance"
             />
             <RegisterSignal
               label="Care workspace"
@@ -108,16 +110,34 @@ type RegisterSignalProps = {
   label: string;
   value: string;
   detail: string;
+  href?: string;
 };
 
-function RegisterSignal({ label, value, detail }: RegisterSignalProps) {
-  return (
-    <div className="rounded-lg border border-white/10 bg-white/[0.04] px-5 py-4">
+function RegisterSignal({ label, value, detail, href }: RegisterSignalProps) {
+  const content = (
+    <>
       <p className="text-label text-[var(--gold)]">{label}</p>
       <p className="mt-3 text-lg font-bold text-[var(--surface-cream)]">
         {value}
       </p>
       <p className="mt-2 text-sm leading-6 text-white/60">{detail}</p>
+    </>
+  );
+
+  if (href) {
+    return (
+      <Link
+        href={href}
+        className="rounded-lg border border-white/10 bg-white/[0.04] px-5 py-4 transition hover:border-[var(--gold)] hover:bg-white/[0.08]"
+      >
+        {content}
+      </Link>
+    );
+  }
+
+  return (
+    <div className="rounded-lg border border-white/10 bg-white/[0.04] px-5 py-4">
+      {content}
     </div>
   );
 }

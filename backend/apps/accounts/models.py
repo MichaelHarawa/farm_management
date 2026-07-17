@@ -13,6 +13,7 @@ class RoleChoices(models.TextChoices):
     DIRECTOR = "director", "Director"
     STAKE_HOLDER = "stake_holder", "Stake Holder"
     ADMIN = "admin", "Admin"
+    GENERAL_WORKER = "general_worker", "General Worker"
 
 
 class Role(models.Model):

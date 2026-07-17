@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+from decimal import Decimal
+
+from django.conf import settings
+from django.core.exceptions import ValidationError
+from django.core.validators import MinValueValidator
 from django.db import models, transaction
 from django.utils import timezone
-from django.conf import settings
 
 
 class BirdType(models.TextChoices):
@@ -83,6 +87,14 @@ class DrugCategory(models.TextChoices):
     OTHER = "other", "Other"
 
 
+class BatchStatus(models.TextChoices):
+    PLANNED = "planned", "Planned"
+    ACTIVE = "active", "Active"
+    MATURE = "mature", "Mature"
+    SELLING = "selling", "Selling"
+    CLOSED = "closed", "Closed"
+
+
 class BatchIDSequence(models.Model):
     sequence_date = models.DateField(unique=True)
     last_number = models.PositiveIntegerField(default=0)
@@ -120,6 +132,23 @@ class Batch(models.Model):
     entry_date = models.DateTimeField()
     expected_maturity_date = models.DateTimeField()
     quantity = models.PositiveIntegerField(default=0)
+    status = models.CharField(
+        max_length=20,
+        choices=BatchStatus.choices,
+        default=BatchStatus.PLANNED,
+        db_index=True,
+    )
+    closed_at = models.DateTimeField(null=True, blank=True)
+    closure_reason = models.CharField(max_length=255, blank=True, default="")
+    profitability_finalized_at = models.DateTimeField(null=True, blank=True)
+    target_selling_price = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(Decimal("0.00"))],
+    )
+    closure_notes = models.TextField(blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     created_by = models.ForeignKey(
@@ -134,7 +163,22 @@ class Batch(models.Model):
         ordering = ["-created_at"]
 
     def __str__(self) -> str:
-        return f"{self.batch_id} of {self.quantity} {bird_type}"
+        return f"{self.batch_id} of {self.quantity} {self.bird_type}"
+
+    def clean(self):
+        super().clean()
+        if (
+            self.expected_maturity_date
+            and self.entry_date
+            and self.expected_maturity_date < self.entry_date
+        ):
+            raise ValidationError(
+                {
+                    "expected_maturity_date": (
+                        "Expected maturity date cannot be before entry date."
+                    )
+                }
+            )
 
     def save(self, *args, **kwargs):
         if not self.batch_id:
@@ -166,8 +210,12 @@ class InputCosts(models.Model):
     category = models.CharField(max_length=200)
     quantity = models.PositiveIntegerField()
     unit_measurement = models.CharField(max_length=200)
-    unit = models.PositiveIntegerField(default = 0)
-    unit_cost = models.PositiveIntegerField()
+    unit = models.PositiveIntegerField(default=1)
+    unit_cost = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal("0.00"))],
+    )
     purchase_date = models.DateTimeField()
     notes = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
@@ -183,6 +231,31 @@ class InputCosts(models.Model):
     def __str__(self) -> str:
         return f"{self.batch} costs"
 
+    @property
+    def direct_input_total(self) -> Decimal:
+        return (
+            Decimal(self.quantity)
+            * Decimal(self.unit)
+            * self.unit_cost
+        ).quantize(Decimal("0.01"))
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        if self.quantity <= 0:
+            errors["quantity"] = "Quantity must be greater than zero."
+        if self.unit <= 0:
+            errors["unit"] = "Unit must be greater than zero."
+        if self.unit_cost < Decimal("0.00"):
+            errors["unit_cost"] = "Unit cost cannot be negative."
+        if (
+            self.purchase_date
+            and self.purchase_date.date() > timezone.localdate()
+        ):
+            errors["purchase_date"] = "Purchase date cannot be in the future."
+        if errors:
+            raise ValidationError(errors)
+
 
 class Sales(models.Model):
     batch = models.ForeignKey(
@@ -196,7 +269,11 @@ class Sales(models.Model):
         choices=ProductType.choices,
     )
     quantity_sold = models.PositiveIntegerField()
-    unit_price = models.PositiveIntegerField()
+    unit_price = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal("0.00"))],
+    )
     buyer_name = models.CharField(max_length=200)
     buyer_type = models.CharField(
         max_length=20,
@@ -210,11 +287,19 @@ class Sales(models.Model):
         max_length=200,
         choices = PaymentMethod.choices,
         )
-    amount_paid = models.PositiveIntegerField()
-    balance = models.PositiveIntegerField()
+    amount_paid = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal("0.00"))],
+    )
+    balance = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal("0.00"))],
+    )
     sold_by_name = models.CharField(max_length=200)
     notes = models.TextField()
-    created_at = created_at = models.DateTimeField(auto_now_add=True)
+    created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     created_by = models.ForeignKey(
     settings.AUTH_USER_MODEL,
@@ -227,6 +312,8 @@ class Sales(models.Model):
     def save(self, *args, **kwargs):
         if not self.sale_id:
             self.sale_id = self.next_sale_id()
+        self.balance = self.calculated_balance
+        self.payment_status = self.normalized_payment_status
         super().save(*args, **kwargs)
 
     @staticmethod
@@ -246,6 +333,57 @@ class Sales(models.Model):
 
     def __str__(self) -> str:
         return f"{self.batch} of sale {self.sale_id} sold at {self.sale_date}"
+
+    @property
+    def sale_total(self) -> Decimal:
+        return (
+            Decimal(self.quantity_sold)
+            * self.unit_price
+        ).quantize(Decimal("0.01"))
+
+    @property
+    def calculated_balance(self) -> Decimal:
+        if self.payment_status == PaymentStatus.CANCELLED:
+            return Decimal("0.00")
+
+        return (self.sale_total - self.amount_paid).quantize(Decimal("0.01"))
+
+    @property
+    def normalized_payment_status(self) -> str:
+        if self.payment_status == PaymentStatus.CANCELLED:
+            return PaymentStatus.CANCELLED
+
+        if self.amount_paid == Decimal("0.00"):
+            return PaymentStatus.UNPAID
+
+        if self.amount_paid == self.sale_total:
+            return PaymentStatus.PAID
+
+        return PaymentStatus.PARTIAL
+
+    @property
+    def reduces_live_birds(self) -> bool:
+        return self.product_type in {
+            ProductType.LIVE_CHICKEN,
+            ProductType.DRESSED_CHICKEN,
+        }
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        if self.quantity_sold <= 0:
+            errors["quantity_sold"] = "Quantity sold must be greater than zero."
+        if self.unit_price < Decimal("0.00"):
+            errors["unit_price"] = "Unit price cannot be negative."
+        if self.amount_paid < Decimal("0.00"):
+            errors["amount_paid"] = "Amount paid cannot be negative."
+        if (
+            self.payment_status != PaymentStatus.CANCELLED
+            and self.amount_paid > self.sale_total
+        ):
+            errors["amount_paid"] = "Amount paid cannot exceed the sale total."
+        if errors:
+            raise ValidationError(errors)
 
 class Mortality(models.Model):
     batch = models.ForeignKey(
@@ -271,6 +409,13 @@ class Mortality(models.Model):
 
     def __str__(self) -> str:
         return f"{self.batch} {self.quantity_dead} died on {self.created_at}"
+
+    def clean(self):
+        super().clean()
+        if self.quantity_dead <= 0:
+            raise ValidationError(
+                {"quantity_dead": "Quantity dead must be greater than zero."}
+            )
 
 
 class FeedUsage(models.Model):
@@ -342,5 +487,5 @@ class DrugsVaccination(models.Model):
     )
 
     def __str__(self) -> str:
-        return f"{self.batch} {self.quantity_dead} administered on {self.vaccination_date}"
+        return f"{self.batch} {self.quantity} administered on {self.vaccination_date}"
 

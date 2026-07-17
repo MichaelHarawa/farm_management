@@ -66,6 +66,25 @@ Current frontend poultry features:
 - Records vaccinations and drugs with administration date, vaccine type, conditional other-vaccine name, quantity, notes, reporter name, and an auto-calculated timely status.
 - Recalculates available live birds as initial birds less sold birds and recorded mortality.
 
+### Finance And Profitability
+
+The Finance module adds workforce management, payroll snapshots, cost allocation,
+batch profitability, monthly profitability, receivables, and business-intelligence
+warnings. Backend services perform the authoritative financial calculations with
+`Decimal`; frontend pages format and display returned values.
+
+Current frontend finance routes:
+
+| Route | Purpose |
+| --- | --- |
+| `/finance` | Dashboard for active batch exposure, closed-batch profit, receivables, and warnings |
+| `/finance/employees` | Create linked system users and employee profiles; review salary allocation splits |
+| `/finance/payroll` | Generate payroll snapshots, recalculate allocations, and close periods |
+| `/finance/labour` | Record ad-hoc labour payments by cost scope |
+| `/finance/expenses` | Record shared, admin, selling, finance, capital, tax, and other expenses |
+| `/finance/monthly` | Monthly farm profitability report |
+| `/finance/batches/[id]` | Batch profitability report |
+
 The frontend expects `NEXT_PUBLIC_API_BASE_URL` to point to the Django API version root. For local development this is typically:
 
 ```env
@@ -110,6 +129,26 @@ Current backend routes:
 | `GET` | `/api/v1/poultry-management/{id}/drugs_vaccine` | List vaccination and drug records for a batch |
 | `POST` | `/api/v1/poultry-management/{id}/drugs_vaccine` | Create a vaccination or drug record for a batch |
 
+Current finance API routes:
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| `GET/POST` | `/api/v1/finance/employees` | List or create employee profiles and linked system users |
+| `GET/PATCH` | `/api/v1/finance/employees/{id}` | Retrieve or edit employee details |
+| `POST` | `/api/v1/finance/employees/{id}/activate` | Activate employee and linked user |
+| `POST` | `/api/v1/finance/employees/{id}/deactivate` | Deactivate employee and linked user |
+| `GET/POST` | `/api/v1/finance/accounting-periods` | List or create accounting periods |
+| `POST` | `/api/v1/finance/accounting-periods/{id}/generate-payroll` | Generate monthly permanent-employee payroll snapshots |
+| `POST` | `/api/v1/finance/accounting-periods/{id}/recalculate` | Recalculate bird-day snapshots and unlocked allocations |
+| `POST` | `/api/v1/finance/accounting-periods/{id}/close` | Close a period and lock allocations |
+| `GET/POST` | `/api/v1/finance/payroll-entries` | Manage payroll entries |
+| `GET/POST` | `/api/v1/finance/ad-hoc-labour` | Manage temporary and ad-hoc labour payments |
+| `GET/POST` | `/api/v1/finance/expenses` | Manage shared expenses |
+| `GET` | `/api/v1/finance/reports/monthly?period=YYYY-MM` | Monthly profitability report |
+| `GET` | `/api/v1/finance/reports/batches/{batch_id}` | Batch profitability report |
+| `GET` | `/api/v1/finance/dashboard` | Dashboard indicators and warnings |
+| `GET` | `/api/v1/finance/receivables` | Open customer receivables |
+
 ## Poultry Data Model
 
 ### Batch
@@ -149,6 +188,8 @@ The frontend calculates estimated totals from:
 quantity * unit * unit_cost
 ```
 
+The backend exposes the same calculation as `direct_input_total`.
+
 ### Sales
 
 Tracks sales and collections attached to a batch.
@@ -168,6 +209,126 @@ Important fields:
 - `balance`
 - `sold_by_name`
 - `notes`
+
+Sales integrity rules:
+
+- `sale_total = quantity_sold * unit_price`
+- `balance = sale_total - amount_paid`
+- `PAID`, `PARTIAL`, and `UNPAID` are normalized from payment amount and balance
+- `CANCELLED` sales are excluded from revenue, birds sold, cash collected, receivables, and closure
+- only live chicken and dressed chicken reduce the live-bird balance
+- eggs and manure generate revenue without reducing live birds
+
+Batch closure uses:
+
+```text
+remaining_live_birds =
+  initial_batch_quantity
+  - valid_bird_units_sold
+  - recorded_mortality
+```
+
+A batch closes automatically only when `remaining_live_birds == 0`. Sale and
+mortality creation use database transactions and row locking to prevent
+overselling.
+
+## Management Accounting Definitions
+
+Batch revenue is the sum of valid non-cancelled sales linked to the batch,
+including eggs and manure revenue. Customer cash collected is valid sales
+`amount_paid`. Accounts receivable is valid sales `balance`.
+
+Direct batch cost is input costs plus batch-direct temporary labour plus directly
+assigned production expenses. Allocated production cost is permanent production
+payroll, shared production temporary labour, and shared production overhead
+allocated through auditable `CostAllocation` rows.
+
+```text
+total_production_cost = direct_batch_cost + allocated_production_cost
+batch_gross_profit = batch_revenue - total_production_cost
+fully_loaded_batch_profit =
+  batch_gross_profit
+  - directly attributable selling costs
+  - separately disclosed administration allocation
+```
+
+Administration is displayed separately and is not hidden inside production cost.
+Gross margin, fully loaded margin, mortality rate, and collection rate return
+`null` when the denominator is zero.
+
+Active and selling batches are labelled `PROVISIONAL`:
+
+```text
+provisional_saleable_birds =
+  valid_bird_units_already_sold + remaining_live_birds
+
+provisional_cost_per_saleable_bird =
+  accumulated_production_cost / provisional_saleable_birds
+```
+
+Closed batches are labelled `FINAL`; their final profitability snapshot is
+created once and protected from casual overwrite.
+
+Monthly profitability separates profitability, cash movement, receivables, and
+active-batch work in progress. Cash flow is not presented as net profit.
+
+## Bird-Day Allocation
+
+Shared production payroll, shared production labour, and shared production
+overhead use bird-days by default. For each day in an accounting period:
+
+```text
+daily_average_live_birds =
+  (opening_live_birds + closing_live_birds) / 2
+
+daily_bird_days = daily_average_live_birds
+```
+
+Mortality and valid bird sales apply to closing balance on their transaction
+date. Cancelled sales are excluded.
+
+Worked example:
+
+| Batch | Average live birds | Active days | Bird-days |
+| --- | ---: | ---: | ---: |
+| A | 180 | 30 | 5,400 |
+| B | 250 | 20 | 5,000 |
+
+For MWK 600,000 of shared production salary:
+
+```text
+Batch A = 600,000 * 5,400 / 10,400 = 311,538.46
+Batch B = 600,000 * 5,000 / 10,400 = 288,461.54
+```
+
+Rounded allocations reconcile exactly to the source amount with a deterministic
+remainder rule.
+
+## Payroll, Labour, Expenses, And Permissions
+
+Permanent employees are represented by `EmployeeProfile`, linked one-to-one to
+the existing `accounts.User`. Roles remain the existing user-role system.
+Employee allocation percentages must total 100%.
+
+Payroll entries are monthly snapshots, so historical reports do not change when
+an employee's current salary changes later.
+
+Ad-hoc labour scopes:
+
+- `BATCH_DIRECT`: assigned fully to one batch
+- `SHARED_PRODUCTION`: allocated by bird-days
+- `FARM_ADMINISTRATION`: monthly operating expense, not batch production cost
+- `SELLING_AND_DISTRIBUTION`: assigned directly when possible, otherwise revenue share
+
+Shared expenses separate production, administration, selling, finance, capital,
+tax, and other scopes. Capital expenditure is isolated from ordinary operating
+expense totals.
+
+Finance permissions use existing roles:
+
+- `admin`, `director`, and `farm_manager`: manage finance data and close periods
+- `farm_supervisor`: record operational finance data but cannot close periods
+- `stake_holder`: read-only report and dashboard access
 
 ### Mortality
 
@@ -232,6 +393,14 @@ python -m venv venv
 pip install -r requirements.txt
 python backend/manage.py migrate
 python backend/manage.py runserver 0.0.0.0:7070
+```
+
+When running Django commands from the Windows host while Docker exposes Postgres
+on `localhost:5437`, override the Docker-only database host:
+
+```powershell
+$env:POSTGRES_HOST='localhost'
+$env:POSTGRES_PORT='5437'
 ```
 
 ### Frontend
@@ -308,6 +477,25 @@ python backend/manage.py check
 python backend/manage.py test
 ```
 
+Finance-focused backend tests:
+
+```powershell
+python backend/manage.py test apps.finance.tests
+```
+
+Manual finance smoke test:
+
+1. Create an accounting period through Django admin or `POST /api/v1/finance/accounting-periods`.
+2. Open `/finance/employees` and create an employee with salary, allocation split, and role.
+3. Open `/finance/payroll`, generate payroll, recalculate allocations, and close the period when ready.
+4. Record ad-hoc labour in `/finance/labour`.
+5. Record shared expenses in `/finance/expenses`.
+6. Create poultry mortality and valid bird sales until a batch reaches zero remaining birds.
+7. Review `/finance/batches/{batch_id}` for provisional or final profitability.
+8. Review `/finance/monthly` for profitability, cash movement, receivables, WIP, and warnings.
+9. Log out and confirm finance pages redirect through the existing auth flow.
+10. Sign in as a stakeholder and confirm write actions are rejected by the backend.
+
 ## Project Structure
 
 ```text
@@ -316,6 +504,7 @@ backend/
     accounts/
     inventory/
     poultry/
+    finance/
   config/
   manage.py
 
@@ -324,6 +513,7 @@ frontend/
     app/
     features/
       poultry/
+      finance/
     lib/
 
 docker/
@@ -333,8 +523,8 @@ docker/
 
 ## Current Notes
 
-- Poultry is the only live operating module.
+- Poultry and Finance are the live operating modules.
 - Crops and Goats are represented on the landing page as future modules.
 - The frontend uses a themed executive layout with cream, navy, and gold styling.
 - The batch detail workspace is designed around summary cards and tabbed operational views rather than placing every form and table into one long page.
-- Input cost, sales, mortality, and feed usage creation are routed through local Next.js API routes before being forwarded to the Django API.
+- Input cost, sales, mortality, feed usage, and finance mutations are routed through local Next.js API routes before being forwarded to the Django API.

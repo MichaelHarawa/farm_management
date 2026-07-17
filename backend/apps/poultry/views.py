@@ -1,16 +1,21 @@
 from __future__ import annotations
 
-from django.shortcuts import render
-from django.contrib.auth import get_user_model
-from django.db.models import Q
-from django.utils import timezone
-from rest_framework import filters, mixins, status, viewsets
+from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.exceptions import ValidationError
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+
+from apps.finance.services.batch_lifecycle import (
+    create_mortality_with_lifecycle,
+    create_sale_with_lifecycle,
+    recalculate_batch_status,
+)
+from apps.finance.services.profitability import create_final_snapshot
 
 from .models import(
     Batch,
+    BatchStatus,
     InputCosts,
     Sales,
     Mortality,
@@ -29,8 +34,18 @@ from .serializers import(
 
 class BatchViewset(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
     serializer_class = BatchSerializer
-    queryset = Batch.objects.all()
+    queryset = Batch.objects.select_related("created_by")
     permission_classes = (IsAuthenticated,)
+
+    def perform_create(self, serializer):
+        batch = serializer.save(created_by=self.request.user)
+        recalculate_batch_status(batch)
+
+    def save_with_current_user(self, serializer, **kwargs):
+        return serializer.save(
+            created_by=self.request.user,
+            **kwargs,
+        )
 
     def get_serializer_class(self):
         if self.action in {"input_costs", "feed_input_costs"}:
@@ -60,7 +75,10 @@ class BatchViewset(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retrie
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        input_cost = serializer.save(batch=poultry_batch)
+        input_cost = self.save_with_current_user(
+            serializer,
+            batch=poultry_batch,
+        )
 
         return Response(
             self.get_serializer(input_cost).data,
@@ -93,7 +111,16 @@ class BatchViewset(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retrie
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        sale = serializer.save(batch=poultry_batch)
+        try:
+            sale = create_sale_with_lifecycle(
+                batch_id=poultry_batch.pk,
+                created_by=request.user,
+                **serializer.validated_data,
+            )
+        except ValueError as error:
+            raise ValidationError({"quantity_sold": str(error)}) from error
+        if sale.batch.status == BatchStatus.CLOSED:
+            create_final_snapshot(sale.batch, generated_by=request.user)
 
         return Response(
             self.get_serializer(sale).data,
@@ -112,7 +139,16 @@ class BatchViewset(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retrie
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        mortality = serializer.save(batch=poultry_batch)
+        try:
+            mortality = create_mortality_with_lifecycle(
+                batch_id=poultry_batch.pk,
+                created_by=request.user,
+                **serializer.validated_data,
+            )
+        except ValueError as error:
+            raise ValidationError({"quantity_dead": str(error)}) from error
+        if mortality.batch.status == BatchStatus.CLOSED:
+            create_final_snapshot(mortality.batch, generated_by=request.user)
 
         return Response(
             self.get_serializer(mortality).data,
@@ -131,7 +167,10 @@ class BatchViewset(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retrie
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        feed_usage = serializer.save(batch=poultry_batch)
+        feed_usage = self.save_with_current_user(
+            serializer,
+            batch=poultry_batch,
+        )
 
         return Response(
             self.get_serializer(feed_usage).data,
@@ -153,7 +192,10 @@ class BatchViewset(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retrie
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        vaccination = serializer.save(batch=poultry_batch)
+        vaccination = self.save_with_current_user(
+            serializer,
+            batch=poultry_batch,
+        )
 
         return Response(
             self.get_serializer(vaccination).data,

@@ -22,16 +22,16 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 
 def load_dotenv() -> None:
-    env_file = BASE_DIR / ".env"
-    if not env_file.exists():
-        return
-
-    for line in env_file.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
+    for env_file in (BASE_DIR.parent / ".env", BASE_DIR / ".env"):
+        if not env_file.exists():
             continue
-        key, value = line.split("=", 1)
-        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+        for line in env_file.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
 
 
 load_dotenv()
@@ -83,6 +83,7 @@ INSTALLED_APPS = [
     'apps.accounts',
     'apps.inventory',
     'apps.poultry',
+    'apps.finance',
 ]
 
 MIDDLEWARE = [
@@ -190,6 +191,14 @@ SPECTACULAR_SETTINGS = {
         "persistAuthorization": True,
         "displayRequestDuration": True,
     },
+}
+
+FARM_CURRENCY_CODE = env("FARM_CURRENCY_CODE", "MWK")
+
+FINANCE_WARNING_THRESHOLDS = {
+    "high_mortality_rate": env("FINANCE_HIGH_MORTALITY_RATE", "8.0"),
+    "receivable_overdue_days": env("FINANCE_RECEIVABLE_OVERDUE_DAYS", "14"),
+    "stale_batch_update_days": env("FINANCE_STALE_BATCH_UPDATE_DAYS", "7"),
 }
 
 # Internationalization
