@@ -3,13 +3,24 @@ from django.contrib import admin
 from .models import (
     AccountingPeriod,
     AdHocLabourPayment,
+    Asset,
+    AssetCapitalizedCost,
+    AssetCategory,
+    AssetDepreciationEntry,
+    AssetMaintenanceRecord,
+    AssetReplacementPlan,
+    AssetUsageRecord,
     BatchProfitabilitySnapshot,
     BirdDaySnapshot,
+    ConsumableUsage,
     CostAllocation,
     EmployeeBatchWorkLog,
     EmployeeProfile,
+    ExpenseRecognitionSchedule,
     PayrollEntry,
+    ReplacementReserveTransaction,
     SharedExpense,
+    SharedConsumableLot,
 )
 
 
@@ -87,6 +98,135 @@ class SharedExpenseAdmin(admin.ModelAdmin):
         "directly_assigned_batch",
         "created_by",
     )
+
+
+@admin.register(SharedConsumableLot)
+class SharedConsumableLotAdmin(admin.ModelAdmin):
+    list_display = (
+        "item",
+        "category",
+        "purchase_date",
+        "quantity_available",
+        "unit_cost",
+        "payment_status",
+    )
+    list_filter = ("category", "payment_status", "expiry_date")
+    search_fields = ("item", "supplier", "invoice_reference")
+    autocomplete_fields = ("linked_expense", "created_by")
+
+
+@admin.register(ConsumableUsage)
+class ConsumableUsageAdmin(admin.ModelAdmin):
+    list_display = (
+        "consumable_lot",
+        "usage_date",
+        "accounting_period",
+        "usage_scope",
+        "batch",
+        "recognized_cost",
+        "locked",
+    )
+    list_filter = ("usage_scope", "accounting_period", "locked")
+    autocomplete_fields = (
+        "consumable_lot",
+        "accounting_period",
+        "batch",
+        "recorded_by",
+        "approved_by",
+    )
+
+
+@admin.register(ExpenseRecognitionSchedule)
+class ExpenseRecognitionScheduleAdmin(admin.ModelAdmin):
+    list_display = (
+        "source_expense",
+        "accounting_period",
+        "recognition_method",
+        "amount_recognized",
+        "remaining_deferred_amount",
+        "locked",
+    )
+    list_filter = ("recognition_method", "accounting_period", "locked")
+    autocomplete_fields = ("source_expense", "accounting_period", "generated_by")
+
+
+@admin.register(AssetCategory)
+class AssetCategoryAdmin(admin.ModelAdmin):
+    list_display = (
+        "name",
+        "code",
+        "default_useful_life_months",
+        "default_depreciation_method",
+        "is_active",
+    )
+    list_filter = ("code", "default_depreciation_method", "is_active")
+    search_fields = ("name", "code")
+
+
+@admin.register(Asset)
+class AssetAdmin(admin.ModelAdmin):
+    list_display = (
+        "asset_code",
+        "name",
+        "asset_category",
+        "status",
+        "total_capitalized_cost",
+        "available_for_use_date",
+    )
+    list_filter = ("status", "production_scope", "depreciation_method")
+    search_fields = ("asset_code", "name", "serial_number", "supplier")
+    autocomplete_fields = ("asset_category", "created_by")
+
+
+@admin.register(AssetCapitalizedCost)
+class AssetCapitalizedCostAdmin(admin.ModelAdmin):
+    list_display = ("asset", "expense", "capitalized_amount")
+    autocomplete_fields = ("asset", "expense", "created_by")
+
+
+@admin.register(AssetUsageRecord)
+class AssetUsageRecordAdmin(admin.ModelAdmin):
+    list_display = ("asset", "usage_date", "usage_unit", "quantity", "batch")
+    list_filter = ("usage_unit", "accounting_period", "locked")
+    autocomplete_fields = ("asset", "accounting_period", "batch", "recorded_by", "approved_by")
+
+
+@admin.register(AssetDepreciationEntry)
+class AssetDepreciationEntryAdmin(admin.ModelAdmin):
+    list_display = (
+        "asset",
+        "accounting_period",
+        "period_depreciation",
+        "closing_carrying_amount",
+        "locked",
+    )
+    list_filter = ("accounting_period", "depreciation_method_snapshot", "locked")
+    autocomplete_fields = ("asset", "accounting_period", "generated_by")
+
+
+@admin.register(AssetMaintenanceRecord)
+class AssetMaintenanceRecordAdmin(admin.ModelAdmin):
+    list_display = ("asset", "maintenance_date", "cost_amount", "next_due_date")
+    list_filter = ("maintenance_date", "next_due_date")
+    autocomplete_fields = ("asset", "accounting_period", "linked_expense", "recorded_by")
+
+
+@admin.register(AssetReplacementPlan)
+class AssetReplacementPlanAdmin(admin.ModelAdmin):
+    list_display = (
+        "asset",
+        "current_replacement_cost",
+        "projected_future_replacement_cost",
+        "target_reserve_balance",
+    )
+    autocomplete_fields = ("asset", "updated_by")
+
+
+@admin.register(ReplacementReserveTransaction)
+class ReplacementReserveTransactionAdmin(admin.ModelAdmin):
+    list_display = ("asset", "transaction_date", "transaction_type", "amount")
+    list_filter = ("transaction_type", "accounting_period")
+    autocomplete_fields = ("asset", "accounting_period", "authorized_by")
 
 
 @admin.register(EmployeeBatchWorkLog)

@@ -10,9 +10,12 @@ import {
 
 import {
   ACCESS_TOKEN_COOKIE,
+  AUTH_LAST_ACTIVITY_COOKIE,
   REFRESH_TOKEN_COOKIE,
   clearAuthCookies,
+  isSessionIdleExpired,
   setAuthCookies,
+  touchAuthActivityCookie,
 } from "@/features/auth/server/token-cookies";
 
 import { BackendApiError } from "@/lib/server/backend-api";
@@ -35,6 +38,8 @@ function unauthorizedResponse(): NextResponse {
 export async function GET(
   request: NextRequest
 ) {
+  const shouldTouch =
+    request.nextUrl.searchParams.get("touch") !== "0";
   const accessToken =
     request.cookies.get(
       ACCESS_TOKEN_COOKIE
@@ -44,8 +49,16 @@ export async function GET(
     request.cookies.get(
       REFRESH_TOKEN_COOKIE
     )?.value;
+  const lastActivity =
+    request.cookies.get(
+      AUTH_LAST_ACTIVITY_COOKIE
+    )?.value;
 
   if (!accessToken && !refreshToken) {
+    return unauthorizedResponse();
+  }
+
+  if (refreshToken && isSessionIdleExpired(lastActivity)) {
     return unauthorizedResponse();
   }
 
@@ -61,6 +74,10 @@ export async function GET(
           user,
         }
       );
+
+      if (shouldTouch) {
+        touchAuthActivityCookie(response);
+      }
 
       response.headers.set(
         "Cache-Control",
@@ -117,6 +134,8 @@ export async function GET(
       access: refreshedTokens.access,
       refresh:
         refreshedTokens.refresh,
+    }, {
+      touch: shouldTouch,
     });
 
     response.headers.set(

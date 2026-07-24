@@ -7,13 +7,18 @@ import {
 import type {
   AccountingPeriod,
   AdHocLabourPayment,
+  Asset,
+  AssetCategory,
+  AssetDepreciationEntry,
   BatchProfitabilityReport,
+  ConsumableUsage,
   EmployeeProfile,
   FinanceDashboard,
   MonthlyReport,
   PaginatedResponse,
   PayrollEntry,
   SharedExpense,
+  SharedConsumableLot,
 } from "../types";
 
 import { financeApiPaths } from "./paths";
@@ -77,6 +82,61 @@ export async function getSharedExpenses(returnTo: string): Promise<SharedExpense
   const data = await authenticatedBackendFetch<
     SharedExpense[] | PaginatedResponse<SharedExpense>
   >(financeApiPaths.expenses, {
+    returnTo,
+    cache: "no-store",
+  });
+
+  return normalizeList(data);
+}
+
+export async function getConsumableLots(returnTo: string): Promise<SharedConsumableLot[]> {
+  const data = await authenticatedBackendFetch<
+    SharedConsumableLot[] | PaginatedResponse<SharedConsumableLot>
+  >(financeApiPaths.consumableLots, {
+    returnTo,
+    cache: "no-store",
+  });
+
+  return normalizeList(data);
+}
+
+export async function getConsumableUsages(returnTo: string): Promise<ConsumableUsage[]> {
+  const data = await authenticatedBackendFetch<
+    ConsumableUsage[] | PaginatedResponse<ConsumableUsage>
+  >(financeApiPaths.consumableUsages, {
+    returnTo,
+    cache: "no-store",
+  });
+
+  return normalizeList(data);
+}
+
+export async function getAssetCategories(returnTo: string): Promise<AssetCategory[]> {
+  const data = await authenticatedBackendFetch<
+    AssetCategory[] | PaginatedResponse<AssetCategory>
+  >(financeApiPaths.assetCategories, {
+    returnTo,
+    cache: "no-store",
+  });
+
+  return normalizeList(data);
+}
+
+export async function getAssets(returnTo: string): Promise<Asset[]> {
+  const data = await authenticatedBackendFetch<
+    Asset[] | PaginatedResponse<Asset>
+  >(financeApiPaths.assetDepreciation, {
+    returnTo,
+    cache: "no-store",
+  });
+
+  return normalizeList(data);
+}
+
+export async function getAssetDepreciation(returnTo: string): Promise<AssetDepreciationEntry[]> {
+  const data = await authenticatedBackendFetch<
+    AssetDepreciationEntry[] | PaginatedResponse<AssetDepreciationEntry>
+  >(financeApiPaths.assets, {
     returnTo,
     cache: "no-store",
   });

@@ -13,9 +13,14 @@ export type PoultryBatch = {
   bird_type: BirdType;
   source: ChicksSource;
   source_other: string;
+  booking_date: string | null;
+  estimated_chick_arrival_date: string | null;
   entry_date: string;
   expected_maturity_date: string;
   quantity: number;
+  status: "planned" | "active" | "mature" | "selling" | "closed";
+  target_selling_price: number | null;
+  closure_notes: string;
   created_at: string;
   updated_at: string;
   created_by: string | null;
@@ -40,6 +45,8 @@ export type InputCost = {
   unit_measurement: string;
   unit?: number | null;
   unit_cost: number;
+  usd_exchange_rate: number | null;
+  usd_equivalent: number | null;
   purchase_date: string;
   notes: string;
   created_at: string;
@@ -103,6 +110,8 @@ export type PoultrySale = {
   product_type: ProductType;
   quantity_sold: number;
   unit_price: number;
+  usd_exchange_rate: number | null;
+  usd_equivalent: number | null;
   buyer_name: string;
   buyer_type: BuyerType;
   payment_status: PaymentStatus;

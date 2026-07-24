@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import timedelta
 from decimal import Decimal
 
 from django.conf import settings
@@ -7,6 +8,16 @@ from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import models, transaction
 from django.utils import timezone
+
+
+MONEY_VALIDATOR = MinValueValidator(Decimal("0.00"))
+USD_RATE_VALIDATOR = MinValueValidator(Decimal("0.000001"))
+
+
+def usd_equivalent(mwk_amount: Decimal | int | None, rate: Decimal | None):
+    if mwk_amount is None or not rate:
+        return None
+    return (Decimal(mwk_amount) / rate).quantize(Decimal("0.01"))
 
 
 class BirdType(models.TextChoices):
@@ -129,6 +140,8 @@ class Batch(models.Model):
         default=ChicksSource.PROTO,
         )
     source_other = models.CharField(max_length=200, blank=True, default="")
+    booking_date = models.DateField(null=True, blank=True)
+    estimated_chick_arrival_date = models.DateField(null=True, blank=True)
     entry_date = models.DateTimeField()
     expected_maturity_date = models.DateTimeField()
     quantity = models.PositiveIntegerField(default=0)
@@ -183,6 +196,8 @@ class Batch(models.Model):
     def save(self, *args, **kwargs):
         if not self.batch_id:
             self.batch_id = self.next_batch_id()
+        if self.booking_date and not self.estimated_chick_arrival_date:
+            self.estimated_chick_arrival_date = self.booking_date + timedelta(days=10)
         super().save(*args, **kwargs)
 
     @staticmethod
@@ -214,7 +229,22 @@ class InputCosts(models.Model):
     unit_cost = models.DecimalField(
         max_digits=14,
         decimal_places=2,
-        validators=[MinValueValidator(Decimal("0.00"))],
+        validators=[MONEY_VALIDATOR],
+    )
+    usd_exchange_rate = models.DecimalField(
+        max_digits=16,
+        decimal_places=6,
+        null=True,
+        blank=True,
+        validators=[USD_RATE_VALIDATOR],
+        help_text="MWK per USD at entry time.",
+    )
+    usd_equivalent = models.DecimalField(
+        max_digits=16,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MONEY_VALIDATOR],
     )
     purchase_date = models.DateTimeField()
     notes = models.TextField()
@@ -256,6 +286,13 @@ class InputCosts(models.Model):
         if errors:
             raise ValidationError(errors)
 
+    def save(self, *args, **kwargs):
+        self.usd_equivalent = usd_equivalent(
+            self.direct_input_total,
+            self.usd_exchange_rate,
+        )
+        super().save(*args, **kwargs)
+
 
 class Sales(models.Model):
     batch = models.ForeignKey(
@@ -272,7 +309,22 @@ class Sales(models.Model):
     unit_price = models.DecimalField(
         max_digits=14,
         decimal_places=2,
-        validators=[MinValueValidator(Decimal("0.00"))],
+        validators=[MONEY_VALIDATOR],
+    )
+    usd_exchange_rate = models.DecimalField(
+        max_digits=16,
+        decimal_places=6,
+        null=True,
+        blank=True,
+        validators=[USD_RATE_VALIDATOR],
+        help_text="MWK per USD at entry time.",
+    )
+    usd_equivalent = models.DecimalField(
+        max_digits=16,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MONEY_VALIDATOR],
     )
     buyer_name = models.CharField(max_length=200)
     buyer_type = models.CharField(
@@ -290,12 +342,12 @@ class Sales(models.Model):
     amount_paid = models.DecimalField(
         max_digits=14,
         decimal_places=2,
-        validators=[MinValueValidator(Decimal("0.00"))],
+        validators=[MONEY_VALIDATOR],
     )
     balance = models.DecimalField(
         max_digits=14,
         decimal_places=2,
-        validators=[MinValueValidator(Decimal("0.00"))],
+        validators=[MONEY_VALIDATOR],
     )
     sold_by_name = models.CharField(max_length=200)
     notes = models.TextField()
@@ -314,6 +366,10 @@ class Sales(models.Model):
             self.sale_id = self.next_sale_id()
         self.balance = self.calculated_balance
         self.payment_status = self.normalized_payment_status
+        self.usd_equivalent = usd_equivalent(
+            self.sale_total,
+            self.usd_exchange_rate,
+        )
         super().save(*args, **kwargs)
 
     @staticmethod

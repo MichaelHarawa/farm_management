@@ -22,13 +22,24 @@ from ..models import (
     AccountingPeriod,
     AdHocLabourPayment,
     AllocationSourceType,
+    Asset,
+    AssetDepreciationEntry,
+    AssetStatus,
+    BatchProfitabilitySnapshot,
+    ConsumableUsage,
+    ConsumableUsageScope,
     CostAllocation,
     CostScope,
+    ExpenseRecognitionSchedule,
+    ExpenseRecognitionType,
     PayrollEntry,
+    ReplacementReserveTransaction,
+    ReserveTransactionType,
+    SharedConsumableLot,
     SharedExpense,
     SharedExpenseScope,
 )
-from .batch_lifecycle import calculate_bird_balance
+from apps.poultry.services.batch_lifecycle import calculate_bird_balance
 from .profitability import batch_profitability, money, percent
 
 
@@ -51,6 +62,34 @@ def _period_sales(period: AccountingPeriod):
         sale_date__date__gte=period.period_start,
         sale_date__date__lte=period.period_end,
     ).exclude(payment_status=PaymentStatus.CANCELLED)
+
+
+def _management_cogs(period: AccountingPeriod) -> Decimal:
+    bird_sales = (
+        _period_sales(period)
+        .filter(
+            product_type__in=[
+                ProductType.LIVE_CHICKEN,
+                ProductType.DRESSED_CHICKEN,
+            ]
+        )
+        .values("batch_id")
+        .annotate(units=Sum("quantity_sold"))
+    )
+    cogs = Decimal("0.00")
+
+    for row in bird_sales:
+        batch = Batch.objects.get(pk=row["batch_id"])
+        data = batch_profitability(batch)
+        cost_per_bird = (
+            data["final_cost_per_bird_sold"]
+            if data["profitability_status"] == "final"
+            else data["provisional_cost_per_saleable_bird"]
+        )
+        if cost_per_bird:
+            cogs += money(Decimal(row["units"] or 0) * cost_per_bird)
+
+    return money(cogs)
 
 
 def monthly_profitability_report(period: AccountingPeriod) -> dict:
@@ -100,12 +139,34 @@ def monthly_profitability_report(period: AccountingPeriod) -> dict:
             shared_expense__scope=SharedExpenseScope.SHARED_PRODUCTION,
         ).aggregate(total=Sum("allocated_amount"))["total"]
     )
+    direct_consumable_usage = money(
+        ConsumableUsage.objects.filter(
+            accounting_period=period,
+            usage_scope=ConsumableUsageScope.BATCH_DIRECT,
+        ).aggregate(total=Sum("recognized_cost"))["total"]
+    )
+    shared_consumable_allocations = money(
+        CostAllocation.objects.filter(
+            accounting_period=period,
+            source_type=AllocationSourceType.CONSUMABLE_USAGE,
+            consumable_usage__usage_scope=ConsumableUsageScope.SHARED_PRODUCTION,
+        ).aggregate(total=Sum("allocated_amount"))["total"]
+    )
+    production_depreciation = money(
+        CostAllocation.objects.filter(
+            accounting_period=period,
+            source_type=AllocationSourceType.DEPRECIATION,
+        ).aggregate(total=Sum("allocated_amount"))["total"]
+    )
     total_production_costs = (
         direct_batch_costs
         + batch_direct_labour
+        + direct_consumable_usage
         + allocated_payroll
         + temporary_production_labour
         + shared_production_overhead
+        + shared_consumable_allocations
+        + production_depreciation
     )
 
     active_batch_work_in_progress = Decimal("0.00")
@@ -115,13 +176,10 @@ def monthly_profitability_report(period: AccountingPeriod) -> dict:
             "active_batch_cost_exposure"
         ]
 
-    # Management COGS uses the current provisional/final cost pool. Closed-batch
-    # final snapshots can later true-up this line so cumulative recognized COGS
-    # reconciles to final total production cost.
-    cost_of_goods_sold = max(
-        total_production_costs - active_batch_work_in_progress,
-        Decimal("0.00"),
-    )
+    # Management COGS uses the same provisional/final batch cost-per-bird logic
+    # as the batch profitability endpoint. Closed batches use final cost per
+    # bird; active/selling batches use provisional saleable-bird cost.
+    cost_of_goods_sold = _management_cogs(period)
     gross_profit = total_revenue - cost_of_goods_sold
 
     administration_payroll = money(
@@ -140,7 +198,46 @@ def monthly_profitability_report(period: AccountingPeriod) -> dict:
         SharedExpense.objects.filter(
             accounting_period=period,
             scope__in=[SharedExpenseScope.ADMIN_OVERHEAD, SharedExpenseScope.OTHER],
+        )
+        .exclude(
+            recognition_type__in=[
+                ExpenseRecognitionType.CAPITAL_EXPENDITURE,
+                ExpenseRecognitionType.PREPAID_EXPENSE,
+                ExpenseRecognitionType.SHARED_CONSUMABLE,
+            ]
         ).aggregate(total=Sum("amount"))["total"]
+    )
+    asset_depreciation = AssetDepreciationEntry.objects.filter(
+        accounting_period=period
+    )
+    administration_depreciation = money(
+        asset_depreciation.aggregate(
+            total=Sum(
+                ExpressionWrapper(
+                    F("period_depreciation")
+                    * F("asset__administration_percentage")
+                    / Decimal("100.00"),
+                    output_field=DecimalField(max_digits=14, decimal_places=2),
+                )
+            )
+        )["total"]
+    )
+    selling_asset_depreciation = money(
+        asset_depreciation.aggregate(
+            total=Sum(
+                ExpressionWrapper(
+                    F("period_depreciation")
+                    * F("asset__selling_percentage")
+                    / Decimal("100.00"),
+                    output_field=DecimalField(max_digits=14, decimal_places=2),
+                )
+            )
+        )["total"]
+    )
+    idle_capacity_depreciation = money(
+        asset_depreciation.filter(asset__status=AssetStatus.IDLE).aggregate(
+            total=Sum("period_depreciation")
+        )["total"]
     )
     selling_distribution_costs = money(
         PayrollEntry.objects.filter(accounting_period=period).aggregate(
@@ -158,12 +255,14 @@ def monthly_profitability_report(period: AccountingPeriod) -> dict:
             accounting_period=period,
             scope=SharedExpenseScope.SELLING_EXPENSE,
         ).aggregate(total=Sum("amount"))["total"]
-    )
+    ) + selling_asset_depreciation
     operating_profit = (
         gross_profit
         - administration_payroll
         - general_operating_expenses
+        - administration_depreciation
         - selling_distribution_costs
+        - idle_capacity_depreciation
     )
     finance_costs = money(
         SharedExpense.objects.filter(
@@ -195,6 +294,89 @@ def monthly_profitability_report(period: AccountingPeriod) -> dict:
             accounting_period=period,
             payment_status=PaymentStatus.PAID,
         ).aggregate(total=Sum("amount"))["total"]
+    )
+    capital_expenditure_paid = money(
+        SharedExpense.objects.filter(
+            accounting_period=period,
+            payment_status=PaymentStatus.PAID,
+            recognition_type=ExpenseRecognitionType.CAPITAL_EXPENDITURE,
+        ).aggregate(total=Sum("amount"))["total"]
+    )
+    reserve_contributions = money(
+        ReplacementReserveTransaction.objects.filter(
+            accounting_period=period,
+            transaction_type=ReserveTransactionType.CONTRIBUTION,
+        ).aggregate(total=Sum("amount"))["total"]
+    )
+    reserve_withdrawals = money(
+        ReplacementReserveTransaction.objects.filter(
+            accounting_period=period,
+            transaction_type=ReserveTransactionType.WITHDRAWAL,
+        ).aggregate(total=Sum("amount"))["total"]
+    )
+    consumables_purchased = money(
+        SharedConsumableLot.objects.filter(
+            purchase_date__gte=period.period_start,
+            purchase_date__lte=period.period_end,
+        ).aggregate(total=Sum("total_purchase_cost"))["total"]
+    )
+    consumables_consumed = money(
+        ConsumableUsage.objects.filter(
+            accounting_period=period,
+        ).aggregate(total=Sum("recognized_cost"))["total"]
+    )
+    closing_consumable_inventory = money(
+        SharedConsumableLot.objects.aggregate(
+            total=Sum(
+                ExpressionWrapper(
+                    F("quantity_available") * F("unit_cost"),
+                    output_field=DecimalField(max_digits=16, decimal_places=2),
+                )
+            )
+        )["total"]
+    )
+    prepaid_recognized = money(
+        ExpenseRecognitionSchedule.objects.filter(accounting_period=period).aggregate(
+            total=Sum("amount_recognized")
+        )["total"]
+    )
+    prepaid_closing_balance = money(
+        ExpenseRecognitionSchedule.objects.aggregate(
+            total=Sum("remaining_deferred_amount")
+        )["total"]
+    )
+    asset_additions = money(
+        Asset.objects.filter(
+            purchase_date__gte=period.period_start,
+            purchase_date__lte=period.period_end,
+        ).aggregate(total=Sum("total_capitalized_cost"))["total"]
+    )
+    disposal_proceeds = money(
+        Asset.objects.filter(
+            disposal_date__gte=period.period_start,
+            disposal_date__lte=period.period_end,
+        ).aggregate(total=Sum("disposal_proceeds"))["total"]
+    )
+    gross_asset_cost = money(Asset.objects.aggregate(total=Sum("total_capitalized_cost"))["total"])
+    accumulated_depreciation = money(
+        AssetDepreciationEntry.objects.aggregate(total=Sum("period_depreciation"))["total"]
+    )
+    impairment = money(Asset.objects.aggregate(total=Sum("recognized_impairment_amount"))["total"])
+    carrying_amount = gross_asset_cost - accumulated_depreciation - impairment
+    reserve_balance = (
+        money(
+            ReplacementReserveTransaction.objects.filter(
+                transaction_type__in=[
+                    ReserveTransactionType.CONTRIBUTION,
+                    ReserveTransactionType.RETURN,
+                ]
+            ).aggregate(total=Sum("amount"))["total"]
+        )
+        - money(
+            ReplacementReserveTransaction.objects.filter(
+                transaction_type=ReserveTransactionType.WITHDRAWAL
+            ).aggregate(total=Sum("amount"))["total"]
+        )
     )
 
     birds_sold = (
@@ -255,9 +437,12 @@ def monthly_profitability_report(period: AccountingPeriod) -> dict:
         },
         "production": {
             "direct_batch_costs": direct_batch_costs + batch_direct_labour,
+            "direct_consumable_usage": direct_consumable_usage,
             "allocated_production_payroll": allocated_payroll,
             "temporary_production_labour": temporary_production_labour,
             "shared_production_overhead": shared_production_overhead,
+            "shared_consumable_allocations": shared_consumable_allocations,
+            "production_depreciation": production_depreciation,
             "cost_of_goods_sold": cost_of_goods_sold,
             "active_batch_work_in_progress": active_batch_work_in_progress,
             "gross_profit": gross_profit,
@@ -266,7 +451,10 @@ def monthly_profitability_report(period: AccountingPeriod) -> dict:
         "operating_costs": {
             "administration_payroll": administration_payroll,
             "general_operating_expenses": general_operating_expenses,
+            "administration_depreciation": administration_depreciation,
             "selling_distribution_costs": selling_distribution_costs,
+            "selling_asset_depreciation": selling_asset_depreciation,
+            "idle_capacity_depreciation": idle_capacity_depreciation,
             "operating_profit": operating_profit,
         },
         "other_costs": {
@@ -279,8 +467,52 @@ def monthly_profitability_report(period: AccountingPeriod) -> dict:
             "opening_cash": None,
             "cash_received": cash_received,
             "cash_paid": cash_paid,
+            "capital_expenditure_paid": capital_expenditure_paid,
+            "asset_purchases": asset_additions,
+            "reserve_contributions": reserve_contributions,
+            "reserve_withdrawals": reserve_withdrawals,
+            "disposal_proceeds": disposal_proceeds,
             "net_cash_movement": cash_received - cash_paid,
             "closing_cash": None,
+        },
+        "deferred_balances": {
+            "consumables_purchased": consumables_purchased,
+            "consumables_consumed": consumables_consumed,
+            "closing_consumable_inventory": closing_consumable_inventory,
+            "prepaid_expense_opening_balance": None,
+            "prepaid_expense_recognized": prepaid_recognized,
+            "prepaid_expense_closing_balance": prepaid_closing_balance,
+        },
+        "asset_reporting": {
+            "additions": asset_additions,
+            "disposals": Asset.objects.filter(
+                disposal_date__gte=period.period_start,
+                disposal_date__lte=period.period_end,
+            ).count(),
+            "gross_asset_cost": gross_asset_cost,
+            "accumulated_depreciation": accumulated_depreciation,
+            "carrying_amount": carrying_amount,
+            "impairment": impairment,
+            "reserve_balance": reserve_balance,
+            "current_replacement_estimate": money(
+                Asset.objects.filter(replacement_plan__isnull=False).aggregate(
+                    total=Sum("replacement_plan__current_replacement_cost")
+                )["total"]
+            ),
+            "projected_future_replacement_cost": money(
+                Asset.objects.filter(replacement_plan__isnull=False).aggregate(
+                    total=Sum("replacement_plan__projected_future_replacement_cost")
+                )["total"]
+            ),
+            "replacement_funding_gap": max(
+                money(
+                    Asset.objects.filter(replacement_plan__isnull=False).aggregate(
+                        total=Sum("replacement_plan__target_reserve_balance")
+                    )["total"]
+                )
+                - reserve_balance,
+                Decimal("0.00"),
+            ),
         },
         "operational_metrics": {
             "batches_active": Batch.objects.exclude(status=BatchStatus.CLOSED).count(),
@@ -415,6 +647,88 @@ def dashboard_warnings(period: AccountingPeriod | None = None) -> list[dict[str,
                 }
             )
 
+        unlinked_capex = SharedExpense.objects.filter(
+            accounting_period=period,
+            recognition_type=ExpenseRecognitionType.CAPITAL_EXPENDITURE,
+            capitalized_asset_links__isnull=True,
+        )
+        if unlinked_capex.exists():
+            warnings.append(
+                {
+                    "code": "capital_expenditure_not_linked",
+                    "severity": "warning",
+                    "message": (
+                        f"{unlinked_capex.count()} capital expenditure item(s) "
+                        "are not linked to an asset."
+                    ),
+                }
+            )
+
+        depreciation_entries = AssetDepreciationEntry.objects.filter(
+            accounting_period=period
+        )
+        unreconciled_depreciation = 0
+        for entry in depreciation_entries:
+            allocated = money(
+                entry.cost_allocations.aggregate(total=Sum("allocated_amount"))[
+                    "total"
+                ]
+            )
+            expected = money(
+                entry.period_depreciation
+                * entry.asset.production_percentage
+                / Decimal("100.00")
+            )
+            if expected and allocated != expected:
+                unreconciled_depreciation += 1
+        if unreconciled_depreciation:
+            warnings.append(
+                {
+                    "code": "depreciation_allocations_not_reconciling",
+                    "severity": "warning",
+                    "message": (
+                        f"{unreconciled_depreciation} depreciation allocation(s) "
+                        "do not reconcile to the production share."
+                    ),
+                }
+            )
+
+    expired_lots = SharedConsumableLot.objects.filter(
+        expiry_date__lt=today,
+        quantity_available__gt=0,
+    )
+    if expired_lots.exists():
+        warnings.append(
+            {
+                "code": "expired_consumables",
+                "severity": "warning",
+                "message": (
+                    f"{expired_lots.count()} consumable lot(s) are expired "
+                    "and still show available stock."
+                ),
+            }
+        )
+
+    overdue_maintenance = Asset.objects.filter(
+        status__in=[
+            AssetStatus.AVAILABLE_FOR_USE,
+            AssetStatus.IDLE,
+            AssetStatus.UNDER_MAINTENANCE,
+            AssetStatus.IMPAIRED,
+        ],
+        maintenance_records__next_due_date__lt=today,
+    ).distinct()
+    if overdue_maintenance.exists():
+        warnings.append(
+            {
+                "code": "maintenance_overdue",
+                "severity": "warning",
+                "message": (
+                    f"{overdue_maintenance.count()} asset(s) have overdue maintenance."
+                ),
+            }
+        )
+
     return warnings
 
 
@@ -422,13 +736,15 @@ def dashboard_indicators() -> dict:
     latest_period = AccountingPeriod.objects.order_by("-period_start").first()
     active_batches = Batch.objects.exclude(status=BatchStatus.CLOSED)
     active_cost_exposure = Decimal("0.00")
-    closed_batch_profit = Decimal("0.00")
+    closed_batch_profit = money(
+        BatchProfitabilitySnapshot.objects.filter(final=True).aggregate(
+            total=Sum("batch_gross_profit")
+        )["total"]
+    )
 
     for batch in Batch.objects.all():
         data = batch_profitability(batch)
         active_cost_exposure += data["active_batch_cost_exposure"]
-        if data["profitability_status"] == "final":
-            closed_batch_profit += data["batch_gross_profit"]
 
     receivable_total = money(
         Sales.objects.exclude(payment_status=PaymentStatus.CANCELLED).aggregate(

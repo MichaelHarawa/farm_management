@@ -4,16 +4,24 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     AccountingPeriodViewSet,
     AdHocLabourPaymentViewSet,
+    AssetCategoryViewSet,
+    AssetDepreciationEntryViewSet,
+    AssetUsageRecordViewSet,
+    AssetViewSet,
     BatchProfitabilityView,
     BirdDaySnapshotViewSet,
+    ConsumableUsageViewSet,
     CostAllocationViewSet,
     DashboardView,
     EmployeeBatchWorkLogViewSet,
     EmployeeProfileViewSet,
+    ExpenseRecognitionScheduleViewSet,
     MonthlyReportView,
     PayrollEntryViewSet,
     ReceivablesView,
+    ReplacementReserveTransactionViewSet,
     SharedExpenseViewSet,
+    SharedConsumableLotViewSet,
 )
 
 
@@ -27,6 +35,34 @@ router.register(
 router.register("payroll-entries", PayrollEntryViewSet, basename="finance-payroll-entry")
 router.register("ad-hoc-labour", AdHocLabourPaymentViewSet, basename="finance-labour")
 router.register("expenses", SharedExpenseViewSet, basename="finance-expense")
+router.register(
+    "consumable-lots",
+    SharedConsumableLotViewSet,
+    basename="finance-consumable-lot",
+)
+router.register(
+    "consumable-usages",
+    ConsumableUsageViewSet,
+    basename="finance-consumable-usage",
+)
+router.register(
+    "prepaid-recognition",
+    ExpenseRecognitionScheduleViewSet,
+    basename="finance-prepaid-recognition",
+)
+router.register("asset-categories", AssetCategoryViewSet, basename="finance-asset-category")
+router.register("assets", AssetViewSet, basename="finance-asset")
+router.register("asset-usage", AssetUsageRecordViewSet, basename="finance-asset-usage")
+router.register(
+    "asset-depreciation",
+    AssetDepreciationEntryViewSet,
+    basename="finance-asset-depreciation",
+)
+router.register(
+    "reserve-transactions",
+    ReplacementReserveTransactionViewSet,
+    basename="finance-reserve-transaction",
+)
 router.register("work-logs", EmployeeBatchWorkLogViewSet, basename="finance-work-log")
 router.register("bird-day-snapshots", BirdDaySnapshotViewSet, basename="finance-bird-days")
 router.register("allocations", CostAllocationViewSet, basename="finance-allocation")

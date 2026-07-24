@@ -12,13 +12,26 @@ from apps.accounts.serializers import RoleSummarySerializer
 from .models import (
     AccountingPeriod,
     AdHocLabourPayment,
+    Asset,
+    AssetCapitalizedCost,
+    AssetCategory,
+    AssetDepreciationEntry,
+    AssetMaintenanceRecord,
+    AssetReplacementPlan,
+    AssetStatus,
+    AssetUsageRecord,
     BatchProfitabilitySnapshot,
     BirdDaySnapshot,
+    ConsumableUsage,
     CostAllocation,
     EmployeeBatchWorkLog,
     EmployeeProfile,
+    ExpenseRecognitionSchedule,
     PayrollEntry,
+    PeriodStatus,
+    ReplacementReserveTransaction,
     SharedExpense,
+    SharedConsumableLot,
 )
 
 
@@ -77,6 +90,8 @@ class EmployeeProfileSerializer(serializers.ModelSerializer):
             "employment_start_date",
             "employment_end_date",
             "base_monthly_salary",
+            "usd_exchange_rate",
+            "usd_equivalent",
             "standard_working_hours_per_day",
             "standard_working_days_per_week",
             "production_percentage",
@@ -223,12 +238,22 @@ class PayrollEntrySerializer(serializers.ModelSerializer):
             "updated_at",
         )
 
+    def validate(self, attrs):
+        period = attrs.get("accounting_period", getattr(self.instance, "accounting_period", None))
+        ensure_period_open(period)
+        return attrs
+
 
 class AdHocLabourPaymentSerializer(serializers.ModelSerializer):
     class Meta:
         model = AdHocLabourPayment
         fields = "__all__"
         read_only_fields = ("created_by", "created_at", "updated_at")
+
+    def validate(self, attrs):
+        period = attrs.get("accounting_period", getattr(self.instance, "accounting_period", None))
+        ensure_period_open(period)
+        return attrs
 
 
 class SharedExpenseSerializer(serializers.ModelSerializer):
@@ -238,6 +263,62 @@ class SharedExpenseSerializer(serializers.ModelSerializer):
         model = SharedExpense
         fields = "__all__"
         read_only_fields = ("created_by", "created_at", "updated_at")
+
+    def validate(self, attrs):
+        period = attrs.get("accounting_period", getattr(self.instance, "accounting_period", None))
+        ensure_period_open(period)
+        return attrs
+
+
+class SharedConsumableLotSerializer(serializers.ModelSerializer):
+    is_expired = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        model = SharedConsumableLot
+        fields = "__all__"
+        read_only_fields = (
+            "unit_cost",
+            "quantity_available",
+            "usd_equivalent",
+            "created_by",
+            "created_at",
+            "updated_at",
+        )
+
+
+class ConsumableUsageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ConsumableUsage
+        fields = "__all__"
+        read_only_fields = (
+            "recognized_cost",
+            "recorded_by",
+            "created_at",
+            "updated_at",
+        )
+
+    def validate(self, attrs):
+        period = attrs.get("accounting_period", getattr(self.instance, "accounting_period", None))
+        ensure_period_open(period)
+        return attrs
+
+
+class ExpenseRecognitionScheduleSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ExpenseRecognitionSchedule
+        fields = "__all__"
+        read_only_fields = (
+            "usd_equivalent",
+            "generated_at",
+            "generated_by",
+            "created_at",
+            "updated_at",
+        )
+
+    def validate(self, attrs):
+        period = attrs.get("accounting_period", getattr(self.instance, "accounting_period", None))
+        ensure_period_open(period)
+        return attrs
 
 
 class EmployeeBatchWorkLogSerializer(serializers.ModelSerializer):
@@ -261,8 +342,111 @@ class CostAllocationSerializer(serializers.ModelSerializer):
         read_only_fields = ("generated_at", "generated_by", "created_at", "updated_at")
 
 
+class AssetCategorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AssetCategory
+        fields = "__all__"
+        read_only_fields = ("created_at", "updated_at")
+
+
+class AssetSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Asset
+        fields = "__all__"
+        read_only_fields = (
+            "asset_code",
+            "total_capitalized_cost",
+            "usd_equivalent",
+            "disposal_gain_loss",
+            "created_by",
+            "created_at",
+            "updated_at",
+        )
+
+
+class AssetCapitalizedCostSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AssetCapitalizedCost
+        fields = "__all__"
+        read_only_fields = (
+            "usd_equivalent",
+            "created_by",
+            "created_at",
+            "updated_at",
+        )
+
+
+class AssetUsageRecordSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AssetUsageRecord
+        fields = "__all__"
+        read_only_fields = ("recorded_by", "created_at", "updated_at")
+
+    def validate(self, attrs):
+        period = attrs.get("accounting_period", getattr(self.instance, "accounting_period", None))
+        ensure_period_open(period)
+        return attrs
+
+
+class AssetDepreciationEntrySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AssetDepreciationEntry
+        fields = "__all__"
+        read_only_fields = (
+            "opening_carrying_amount",
+            "depreciation_method_snapshot",
+            "useful_life_snapshot",
+            "residual_value_snapshot",
+            "period_depreciation",
+            "closing_carrying_amount",
+            "usd_equivalent",
+            "generated_at",
+            "generated_by",
+            "created_at",
+            "updated_at",
+        )
+
+
+class AssetMaintenanceRecordSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AssetMaintenanceRecord
+        fields = "__all__"
+        read_only_fields = ("usd_equivalent", "recorded_by", "created_at", "updated_at")
+
+
+class AssetReplacementPlanSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AssetReplacementPlan
+        fields = "__all__"
+        read_only_fields = ("usd_equivalent", "updated_by", "created_at", "updated_at")
+
+
+class ReplacementReserveTransactionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ReplacementReserveTransaction
+        fields = "__all__"
+        read_only_fields = (
+            "usd_equivalent",
+            "authorized_by",
+            "created_at",
+            "updated_at",
+        )
+
+    def validate(self, attrs):
+        period = attrs.get("accounting_period", getattr(self.instance, "accounting_period", None))
+        ensure_period_open(period)
+        return attrs
+
+
 class BatchProfitabilitySnapshotSerializer(serializers.ModelSerializer):
     class Meta:
         model = BatchProfitabilitySnapshot
         fields = "__all__"
         read_only_fields = ("created_at", "updated_at")
+
+
+def ensure_period_open(period):
+    if period and period.status == PeriodStatus.CLOSED:
+        raise serializers.ValidationError(
+            {"accounting_period": "Closed accounting periods cannot be changed."}
+        )

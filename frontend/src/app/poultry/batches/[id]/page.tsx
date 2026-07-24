@@ -1,6 +1,9 @@
 import { notFound } from "next/navigation";
 
 import {
+  getBatchProfitability,
+} from "@/features/finance/api/finance";
+import {
   getBatchFeedInputCosts,
   getBatchFeedUsage,
   getBatchInputCosts,
@@ -95,10 +98,23 @@ export default async function BatchDetailPage({
         returnTo
       ),
     ]);
+  const profitabilityReport = await getBatchProfitability(batchId, returnTo).catch(
+    (error) => {
+      if (
+        error instanceof BackendApiError &&
+        [403, 404].includes(error.status)
+      ) {
+        return null;
+      }
+
+      throw error;
+    }
+  );
 
   return (
     <BatchDetailView
       batch={batch}
+      profitabilityReport={profitabilityReport}
       inputCosts={inputCosts}
       feedInputCosts={feedInputCosts}
       sales={sales}

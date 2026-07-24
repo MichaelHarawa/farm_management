@@ -26,6 +26,8 @@ import type {
   AuthUser,
 } from "../types";
 
+const AUTH_CHANNEL_NAME = "farm-auth-state";
+
 type AuthNavigationProps = {
   initialUser: AuthUser | null;
 };
@@ -62,6 +64,8 @@ export function AuthNavigation({
   const pathname = usePathname();
   const panelRef =
     useRef<HTMLDivElement | null>(null);
+  const channelRef =
+    useRef<BroadcastChannel | null>(null);
 
   const [user, setUser] =
     useState<
@@ -91,16 +95,16 @@ export function AuthNavigation({
   useEffect(() => {
     let isActive = true;
 
-    async function loadSession() {
+    async function loadSession(touch = true) {
       try {
         const sessionUser =
-          await getSession();
+          await getSession({ touch });
 
-        if (isActive && sessionUser) {
+        if (isActive) {
           setUser(sessionUser);
         }
       } catch {
-        if (isActive && !initialUser) {
+        if (isActive) {
           setUser(null);
         }
       }
@@ -108,10 +112,52 @@ export function AuthNavigation({
 
     void loadSession();
 
+    function revalidateWithoutTouch() {
+      void loadSession(false);
+    }
+
+    function revalidateVisibleTab() {
+      if (document.visibilityState === "visible") {
+        void loadSession(true);
+      }
+    }
+
+    window.addEventListener("focus", revalidateVisibleTab);
+    document.addEventListener("visibilitychange", revalidateVisibleTab);
+    const sessionInterval = window.setInterval(
+      revalidateWithoutTouch,
+      5 * 60 * 1000
+    );
+
     return () => {
       isActive = false;
+      window.removeEventListener("focus", revalidateVisibleTab);
+      document.removeEventListener("visibilitychange", revalidateVisibleTab);
+      window.clearInterval(sessionInterval);
     };
   }, [initialUser]);
+
+  useEffect(() => {
+    if (typeof BroadcastChannel === "undefined") {
+      return;
+    }
+
+    const channel = new BroadcastChannel(AUTH_CHANNEL_NAME);
+    channelRef.current = channel;
+
+    channel.onmessage = (event) => {
+      if (event.data?.type === "logout") {
+        setIsMenuOpen(false);
+        setUser(null);
+        router.refresh();
+      }
+    };
+
+    return () => {
+      channel.close();
+      channelRef.current = null;
+    };
+  }, [router]);
 
   useEffect(() => {
     if (!isMenuOpen) {
@@ -168,6 +214,7 @@ export function AuthNavigation({
     } finally {
       setIsMenuOpen(false);
       setUser(null);
+      channelRef.current?.postMessage({ type: "logout" });
       router.replace("/login");
       router.refresh();
       setIsLoggingOut(false);

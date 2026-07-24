@@ -13,7 +13,11 @@ from ..models import (
     AdHocLabourPayment,
     AllocationMethod,
     AllocationSourceType,
+    AssetDepreciationEntry,
+    AssetProductionScope,
     BirdDaySnapshot,
+    ConsumableUsage,
+    ConsumableUsageScope,
     CostAllocation,
     CostScope,
     PayrollEntry,
@@ -90,6 +94,8 @@ def _create_allocation(
     payroll_entry: PayrollEntry | None = None,
     ad_hoc_labour_payment: AdHocLabourPayment | None = None,
     shared_expense: SharedExpense | None = None,
+    consumable_usage: ConsumableUsage | None = None,
+    depreciation_entry: AssetDepreciationEntry | None = None,
 ) -> CostAllocation:
     percentage = Decimal("0.0000")
     if total_driver_quantity:
@@ -104,6 +110,8 @@ def _create_allocation(
         payroll_entry=payroll_entry,
         ad_hoc_labour_payment=ad_hoc_labour_payment,
         shared_expense=shared_expense,
+        consumable_usage=consumable_usage,
+        depreciation_entry=depreciation_entry,
         allocation_method=allocation_method,
         driver_quantity=driver_quantity,
         total_driver_quantity=total_driver_quantity,
@@ -127,6 +135,8 @@ def _allocate_by_bird_days(
     payroll_entry: PayrollEntry | None = None,
     ad_hoc_labour_payment: AdHocLabourPayment | None = None,
     shared_expense: SharedExpense | None = None,
+    consumable_usage: ConsumableUsage | None = None,
+    depreciation_entry: AssetDepreciationEntry | None = None,
 ) -> list[CostAllocation]:
     drivers = _driver_map(period)
     total = _total_driver(drivers)
@@ -142,6 +152,8 @@ def _allocate_by_bird_days(
                 payroll_entry=payroll_entry,
                 ad_hoc_labour_payment=ad_hoc_labour_payment,
                 shared_expense=shared_expense,
+                consumable_usage=consumable_usage,
+                depreciation_entry=depreciation_entry,
                 allocation_method=AllocationMethod.BIRD_DAYS,
                 driver_quantity=drivers[batch_id],
                 total_driver_quantity=total,
@@ -185,6 +197,8 @@ def _allocate_by_revenue_share(
     payroll_entry: PayrollEntry | None = None,
     ad_hoc_labour_payment: AdHocLabourPayment | None = None,
     shared_expense: SharedExpense | None = None,
+    consumable_usage: ConsumableUsage | None = None,
+    depreciation_entry: AssetDepreciationEntry | None = None,
 ) -> list[CostAllocation]:
     drivers = _sales_revenue_drivers(period)
     total = _total_driver(drivers)
@@ -199,6 +213,8 @@ def _allocate_by_revenue_share(
                 payroll_entry=payroll_entry,
                 ad_hoc_labour_payment=ad_hoc_labour_payment,
                 shared_expense=shared_expense,
+                consumable_usage=consumable_usage,
+                depreciation_entry=depreciation_entry,
                 allocation_method=AllocationMethod.REVENUE_SHARE,
                 driver_quantity=drivers[batch_id],
                 total_driver_quantity=total,
@@ -206,6 +222,65 @@ def _allocate_by_revenue_share(
                 generated_by=generated_by,
             )
         )
+    return allocations
+
+
+def _active_batch_drivers(period: AccountingPeriod) -> dict[int, Decimal]:
+    drivers = _driver_map(period)
+    if drivers:
+        return drivers
+
+    return {
+        batch_id: Decimal("1.0000")
+        for batch_id in BirdDaySnapshot.objects.filter(
+            accounting_period=period
+        ).values_list("batch_id", flat=True)
+    }
+
+
+def _allocate_by_selected_driver(
+    *,
+    period: AccountingPeriod,
+    amount: Decimal,
+    source_type: str,
+    selected_driver: str,
+    generated_by,
+    consumable_usage: ConsumableUsage | None = None,
+    depreciation_entry: AssetDepreciationEntry | None = None,
+) -> list[CostAllocation]:
+    if selected_driver == AllocationMethod.REVENUE_SHARE:
+        return _allocate_by_revenue_share(
+            period=period,
+            amount=amount,
+            source_type=source_type,
+            generated_by=generated_by,
+            consumable_usage=consumable_usage,
+            depreciation_entry=depreciation_entry,
+        )
+
+    drivers = _active_batch_drivers(period)
+    if selected_driver == AllocationMethod.EQUAL_SHARE:
+        drivers = {batch_id: Decimal("1.0000") for batch_id in drivers}
+
+    total = _total_driver(drivers)
+    shares = allocate_amount_by_driver(_money(amount), drivers)
+    allocations = []
+    for batch_id, allocated_amount in shares.items():
+        allocations.append(
+            _create_allocation(
+                period=period,
+                batch_id=batch_id,
+                source_type=source_type,
+                consumable_usage=consumable_usage,
+                depreciation_entry=depreciation_entry,
+                allocation_method=selected_driver,
+                driver_quantity=drivers[batch_id],
+                total_driver_quantity=total,
+                allocated_amount=allocated_amount,
+                generated_by=generated_by,
+            )
+        )
+
     return allocations
 
 
@@ -347,5 +422,70 @@ def regenerate_allocations_for_period(
                         generated_by=generated_by,
                     )
                 )
+
+    for usage in ConsumableUsage.objects.filter(accounting_period=period):
+        if _source_locked({"consumable_usage": usage}):
+            continue
+
+        if usage.usage_scope == ConsumableUsageScope.BATCH_DIRECT and usage.batch_id:
+            allocations.append(
+                _create_allocation(
+                    period=period,
+                    batch_id=usage.batch_id,
+                    source_type=AllocationSourceType.CONSUMABLE_USAGE,
+                    consumable_usage=usage,
+                    allocation_method=AllocationMethod.DIRECT,
+                    driver_quantity=Decimal("1.0000"),
+                    total_driver_quantity=Decimal("1.0000"),
+                    allocated_amount=usage.recognized_cost,
+                    generated_by=generated_by,
+                )
+            )
+        elif usage.usage_scope == ConsumableUsageScope.SHARED_PRODUCTION:
+            driver = (
+                usage.allocation_driver
+                if usage.allocation_driver != AllocationMethod.NONE
+                else AllocationMethod.BIRD_DAYS
+            )
+            allocations.extend(
+                _allocate_by_selected_driver(
+                    period=period,
+                    amount=usage.recognized_cost,
+                    source_type=AllocationSourceType.CONSUMABLE_USAGE,
+                    selected_driver=driver,
+                    consumable_usage=usage,
+                    generated_by=generated_by,
+                )
+            )
+
+    for depreciation in AssetDepreciationEntry.objects.filter(accounting_period=period):
+        if _source_locked({"depreciation_entry": depreciation}):
+            continue
+
+        asset = depreciation.asset
+        if asset.production_scope in {
+            AssetProductionScope.FARM_ADMINISTRATION,
+            AssetProductionScope.SELLING_AND_DISTRIBUTION,
+        }:
+            continue
+
+        production_amount = _money(
+            depreciation.period_depreciation
+            * asset.production_percentage
+            / Decimal("100.00")
+        )
+        if production_amount <= Decimal("0.00"):
+            continue
+
+        allocations.extend(
+            _allocate_by_selected_driver(
+                period=period,
+                amount=production_amount,
+                source_type=AllocationSourceType.DEPRECIATION,
+                selected_driver=asset.default_allocation_driver,
+                depreciation_entry=depreciation,
+                generated_by=generated_by,
+            )
+        )
 
     return allocations

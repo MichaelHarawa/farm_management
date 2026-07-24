@@ -82,6 +82,8 @@ Current frontend finance routes:
 | `/finance/payroll` | Generate payroll snapshots, recalculate allocations, and close periods |
 | `/finance/labour` | Record ad-hoc labour payments by cost scope |
 | `/finance/expenses` | Record shared, admin, selling, finance, capital, tax, and other expenses |
+| `/finance/consumables` | Record shared consumable purchases as inventory and usage as recognized cost |
+| `/finance/assets` | Manage asset categories, fixed assets, depreciation runs, and depreciation allocation |
 | `/finance/monthly` | Monthly farm profitability report |
 | `/finance/batches/[id]` | Batch profitability report |
 
@@ -144,6 +146,21 @@ Current finance API routes:
 | `GET/POST` | `/api/v1/finance/payroll-entries` | Manage payroll entries |
 | `GET/POST` | `/api/v1/finance/ad-hoc-labour` | Manage temporary and ad-hoc labour payments |
 | `GET/POST` | `/api/v1/finance/expenses` | Manage shared expenses |
+| `GET/POST` | `/api/v1/finance/consumable-lots` | Record shared consumable purchase lots |
+| `GET/POST` | `/api/v1/finance/consumable-usages` | Recognize consumable usage by period, batch, or allocation driver |
+| `GET/POST` | `/api/v1/finance/asset-categories` | Configure asset categories and depreciation defaults |
+| `GET/POST` | `/api/v1/finance/assets` | Manage fixed assets |
+| `POST` | `/api/v1/finance/assets/from-expense` | Create an asset from a capital-expenditure expense |
+| `GET/POST` | `/api/v1/finance/assets/{id}/usage` | Record usage for units-of-production depreciation or allocation |
+| `GET/POST` | `/api/v1/finance/assets/{id}/maintenance` | Record asset maintenance |
+| `GET/POST` | `/api/v1/finance/assets/{id}/replacement-plan` | Record replacement cost and reserve target |
+| `GET/POST` | `/api/v1/finance/assets/{id}/reserve-transactions` | Record replacement reserve contributions, withdrawals, and returns |
+| `POST` | `/api/v1/finance/assets/{id}/impair` | Record an impairment against carrying value |
+| `POST` | `/api/v1/finance/assets/{id}/dispose` | Dispose an asset and calculate gain or loss |
+| `GET` | `/api/v1/finance/assets/{id}/depreciation-schedule` | Review depreciation entries |
+| `GET` | `/api/v1/finance/assets/{id}/recovery` | Review gross cost, accumulated depreciation, reserve balance, and unrecovered amount |
+| `POST` | `/api/v1/finance/accounting-periods/{id}/generate-depreciation` | Generate monthly depreciation entries |
+| `POST` | `/api/v1/finance/accounting-periods/{id}/allocate-depreciation` | Allocate production depreciation through `CostAllocation` |
 | `GET` | `/api/v1/finance/reports/monthly?period=YYYY-MM` | Monthly profitability report |
 | `GET` | `/api/v1/finance/reports/batches/{batch_id}` | Batch profitability report |
 | `GET` | `/api/v1/finance/dashboard` | Dashboard indicators and warnings |
@@ -271,6 +288,157 @@ created once and protected from casual overwrite.
 
 Monthly profitability separates profitability, cash movement, receivables, and
 active-batch work in progress. Cash flow is not presented as net profit.
+Monthly cost of goods sold uses the same backend batch profitability service:
+period bird sales are multiplied by final cost per bird for closed batches, or
+provisional saleable-bird cost for active/selling batches.
+
+## Integrated Finance User Manual
+
+### Accounting periods
+
+Create periods from `/finance/payroll` before payroll, labour, consumable usage,
+expense recognition, or depreciation runs. A normal period is one month, for
+example `2026-07-01` to `2026-07-31`.
+
+Open periods can be recalculated. Closing a period locks allocations,
+consumable usage, prepaid recognition, asset usage, and depreciation entries.
+Reopening requires an audit reason and increments the period recalculation
+version. Closed periods are not silently changed.
+
+### Direct, shared, deferred, and capital costs
+
+Direct batch costs are costs traceable to one batch: poultry `InputCosts`,
+batch-direct temporary labour, directly assigned production expenses, and
+batch-direct consumable usage.
+
+Shared production costs are allocated through `CostAllocation`. Payroll,
+shared temporary labour, shared production overhead, shared consumable usage,
+and production depreciation all use the same allocation engine. Bird-days is
+the default driver, but consumable and asset records can carry a more suitable
+driver such as equal share, house occupancy days, revenue share, or manual with
+reason.
+
+Prepaid expenses use recognition schedules. Payment affects cash flow on the
+payment date; recognized expense affects profit in the benefiting period. The
+same cost should not be counted both at payment and through the schedule.
+
+Capital expenditure is isolated from ordinary operating expense. Capital asset
+costs are recovered through depreciation, impairment, and disposal calculations,
+not by charging the whole purchase to one batch.
+
+### Consumables
+
+Use `/finance/consumables` to record a lot when disinfectant, fuel, bedding,
+medication, packaging, or other shared supplies are purchased. A lot stores:
+
+```text
+unit_cost = total_purchase_cost / quantity_purchased
+```
+
+When stock is used, record a consumable usage. Recognized cost is:
+
+```text
+recognized_consumable_cost = quantity_used * lot_unit_cost
+```
+
+Unused quantity remains consumable inventory. The service prevents negative
+stock and usage above available quantity. Expired lots with stock appear as
+warnings.
+
+Worked example: MWK 300,000 of disinfectant bought once and consumed over
+three months stays in inventory until usage is recorded. If MWK 100,000 is used
+in July, only MWK 100,000 affects July profit; the remaining MWK 200,000 stays
+as consumable inventory.
+
+### Assets and depreciation
+
+Use `/finance/assets` to configure asset categories, create assets, and run
+period depreciation. Asset categories provide defaults only; useful lives,
+residual values, and capitalization thresholds are configurable.
+
+Straight-line depreciation:
+
+```text
+depreciable_amount =
+  total_capitalized_cost - residual_value - recognized_impairment_amount
+
+full_month_depreciation =
+  depreciable_amount / useful_life_months
+
+period_depreciation =
+  full_month_depreciation * eligible_depreciation_days / total_days_in_period
+```
+
+Example:
+
+```text
+Capitalized cost: MWK 12,000,000
+Residual value: MWK 1,200,000
+Useful life: 120 months
+Monthly depreciation: MWK 90,000
+```
+
+Units-of-production depreciation:
+
+```text
+unit_depreciation =
+  depreciable_amount / estimated_total_lifetime_units
+
+period_depreciation =
+  actual_period_units * unit_depreciation
+```
+
+Depreciation method and allocation driver are separate. A vehicle can depreciate
+straight-line while allocation uses delivery kilometres; a generator can use
+units-of-production depreciation while allocation is based on batch usage.
+
+Production depreciation allocations reconcile exactly through the same
+deterministic remainder rule used for payroll. Example:
+
+```text
+MWK 90,000 depreciation
+Batch A bird-days: 5,400
+Batch B bird-days: 5,000
+Batch A: MWK 46,730.77
+Batch B: MWK 43,269.23
+```
+
+### Replacement reserves and future value
+
+Replacement reserve contributions affect cash planning but do not reduce profit
+again. Depreciation already records the economic use of the asset; reserve
+contributions are funding movements.
+
+Book value is historical cost less depreciation and impairment. Future
+replacement value estimates what a comparable replacement may cost later:
+
+```text
+future_replacement_cost =
+  current_replacement_cost * (1 + annual_inflation_rate) ^ years
+```
+
+### Dollar reference values
+
+Money-entry records can store `usd_exchange_rate` as MWK per USD at entry time.
+When supplied, the backend stores:
+
+```text
+usd_equivalent = kwacha_amount / usd_exchange_rate
+```
+
+This is for future inflation and purchasing-power reference. It does not change
+the authoritative MWK accounting amount.
+
+### Batch and monthly profit alignment
+
+Poultry operational pages now consume the finance batch profitability report for
+profit, receivable, bird-balance, and provisional/final status cards. React
+still renders operational tables, but authoritative accounting calculations live
+in Django services.
+
+Closed-batch dashboard profit uses the final `BatchProfitabilitySnapshot`.
+Active and selling batches remain provisional and show active-batch work in
+progress rather than a completed loss before sales occur.
 
 ## Bird-Day Allocation
 
@@ -453,6 +621,13 @@ DJANGO_DEBUG=True
 DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0
 ```
 
+The Next.js auth BFF also supports session timeout settings:
+
+```env
+AUTH_IDLE_TIMEOUT_SECONDS=7200
+AUTH_REFRESH_TOKEN_MAX_AGE_SECONDS=43200
+```
+
 The frontend requires:
 
 ```env
@@ -490,11 +665,15 @@ Manual finance smoke test:
 3. Open `/finance/payroll`, generate payroll, recalculate allocations, and close the period when ready.
 4. Record ad-hoc labour in `/finance/labour`.
 5. Record shared expenses in `/finance/expenses`.
-6. Create poultry mortality and valid bird sales until a batch reaches zero remaining birds.
-7. Review `/finance/batches/{batch_id}` for provisional or final profitability.
-8. Review `/finance/monthly` for profitability, cash movement, receivables, WIP, and warnings.
-9. Log out and confirm finance pages redirect through the existing auth flow.
-10. Sign in as a stakeholder and confirm write actions are rejected by the backend.
+6. Open `/finance/consumables`, record a consumable lot, then record usage against the accounting period.
+7. Recalculate the accounting period and confirm shared usage creates `CostAllocation` rows.
+8. Open `/finance/assets`, confirm default categories exist, create an asset, generate depreciation, and allocate depreciation.
+9. Record asset usage for a units-of-production asset, maintenance due dates, replacement plan values, reserve contributions, impairment, and disposal through the asset API routes.
+10. Create poultry mortality and valid bird sales until a batch reaches zero remaining birds.
+11. Review `/finance/batches/{batch_id}` for provisional or final profitability.
+12. Review `/finance/monthly` for profitability, cash movement, receivables, WIP, deferred balances, asset reporting, reserves, and warnings.
+13. Log out and confirm the avatar clears immediately; leave a tab idle longer than `AUTH_IDLE_TIMEOUT_SECONDS` and confirm it returns to login.
+14. Sign in as a stakeholder and confirm write actions are rejected by the backend.
 
 ## Project Structure
 

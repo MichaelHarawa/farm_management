@@ -6,7 +6,7 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from apps.finance.services.batch_lifecycle import (
+from apps.poultry.services.batch_lifecycle import (
     create_mortality_with_lifecycle,
     create_sale_with_lifecycle,
     recalculate_batch_status,

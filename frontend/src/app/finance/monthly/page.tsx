@@ -76,6 +76,29 @@ export default async function FinanceMonthlyPage() {
                 ]}
               />
             </Panel>
+            <Panel title="Deferred Balances">
+              <ReportRows
+                rows={[
+                  ["Consumables purchased", formatCurrency(report.deferred_balances.consumables_purchased)],
+                  ["Consumables consumed", formatCurrency(report.deferred_balances.consumables_consumed)],
+                  ["Closing inventory", formatCurrency(report.deferred_balances.closing_consumable_inventory)],
+                  ["Prepaid recognized", formatCurrency(report.deferred_balances.prepaid_expense_recognized)],
+                  ["Prepaid closing", formatCurrency(report.deferred_balances.prepaid_expense_closing_balance)],
+                ]}
+              />
+            </Panel>
+            <Panel title="Assets And Reserves">
+              <ReportRows
+                rows={[
+                  ["Asset additions", formatCurrency(report.asset_reporting.additions)],
+                  ["Gross asset cost", formatCurrency(report.asset_reporting.gross_asset_cost)],
+                  ["Accumulated depreciation", formatCurrency(report.asset_reporting.accumulated_depreciation)],
+                  ["Carrying amount", formatCurrency(report.asset_reporting.carrying_amount)],
+                  ["Reserve balance", formatCurrency(report.asset_reporting.reserve_balance)],
+                  ["Replacement funding gap", formatCurrency(report.asset_reporting.replacement_funding_gap)],
+                ]}
+              />
+            </Panel>
             <Panel title="Warnings">
               {report.warnings.length ? (
                 <ul className="grid gap-3">

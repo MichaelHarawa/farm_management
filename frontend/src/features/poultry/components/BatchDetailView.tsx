@@ -6,6 +6,9 @@ import { useMemo, useState, type ReactNode } from "react";
 import { X } from "lucide-react";
 
 import type {
+  BatchProfitabilityReport,
+} from "@/features/finance/types";
+import type {
   InputCost,
   PoultryBatch,
   PoultryFeedUsage,
@@ -26,6 +29,7 @@ import { AddVaccinationForm } from "./AddVaccinationForm";
 
 type BatchDetailViewProps = {
   batch: PoultryBatch;
+  profitabilityReport: BatchProfitabilityReport | null;
   inputCosts: InputCost[];
   feedInputCosts: InputCost[];
   sales: PoultrySale[];
@@ -197,6 +201,16 @@ function formatSignedCurrency(value: number): string {
   }
 
   return formatCurrency(value);
+}
+
+function decimalToNumber(value: string | null | undefined): number | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  const parsed = Number(value);
+
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function addDays(value: string | Date, days: number): Date {
@@ -401,6 +415,7 @@ function buildBreakdown<T>(
 
 export function BatchDetailView({
   batch,
+  profitabilityReport,
   inputCosts,
   feedInputCosts,
   sales,
@@ -412,25 +427,64 @@ export function BatchDetailView({
   const [openModal, setOpenModal] = useState<ModalKind>(null);
 
   const metrics = useMemo(() => {
-    const totalInputCosts = inputCosts.reduce(
+    const recordedInputCosts = inputCosts.reduce(
       (total, cost) => total + calculateInputCostTotal(cost),
       0
     );
-    const totalSales = sales.reduce(
-      (total, sale) => total + calculateSaleTotal(sale),
+    const localSalesTotal = sales.reduce(
+      (total, sale) =>
+        sale.payment_status === "cancelled"
+          ? total
+          : total + calculateSaleTotal(sale),
       0
     );
-    const totalPaid = sales.reduce((total, sale) => total + sale.amount_paid, 0);
-    const totalBalance = sales.reduce((total, sale) => total + sale.balance, 0);
-    const totalBirdsSold = sales.reduce(
-      (total, sale) => total + sale.quantity_sold,
+    const localPaid = sales.reduce(
+      (total, sale) =>
+        sale.payment_status === "cancelled" ? total : total + sale.amount_paid,
+      0
+    );
+    const localBalance = sales.reduce(
+      (total, sale) =>
+        sale.payment_status === "cancelled" ? total : total + sale.balance,
+      0
+    );
+    const localBirdsSold = sales.reduce(
+      (total, sale) =>
+        sale.payment_status !== "cancelled" &&
+        ["live_chicken", "dressed_chicken"].includes(sale.product_type)
+          ? total + sale.quantity_sold
+          : total,
       0
     );
     const mortality = calculateMortalityTotal(mortalities);
-    const currentBirds = Math.max(
-      batch.quantity - totalBirdsSold - mortality,
+    const localCurrentBirds = Math.max(
+      batch.quantity - localBirdsSold - mortality,
       0
     );
+    const totalInputCosts =
+      decimalToNumber(profitabilityReport?.direct_batch_cost) ??
+      recordedInputCosts;
+    const totalSales =
+      decimalToNumber(profitabilityReport?.revenue) ?? localSalesTotal;
+    const totalPaid =
+      decimalToNumber(profitabilityReport?.cash_collected) ?? localPaid;
+    const totalBalance =
+      decimalToNumber(profitabilityReport?.accounts_receivable) ?? localBalance;
+    const totalBirdsSold =
+      profitabilityReport?.valid_bird_units_sold ?? localBirdsSold;
+    const currentBirds =
+      profitabilityReport?.remaining_live_birds ?? localCurrentBirds;
+    const reportMortality = profitabilityReport?.mortality ?? mortality;
+    const grossProfit =
+      decimalToNumber(profitabilityReport?.batch_gross_profit) ??
+      totalSales - totalInputCosts;
+    const collectionRate =
+      decimalToNumber(profitabilityReport?.collection_rate_percent);
+    const reportCostPerBird =
+      decimalToNumber(profitabilityReport?.final_cost_per_bird_sold) ??
+      decimalToNumber(profitabilityReport?.provisional_cost_per_saleable_bird);
+    const profitabilityStatus: Metrics["profitabilityStatus"] =
+      profitabilityReport?.profitability_status ?? "local";
     const totalFeedKg = feedUsages.reduce(
       (total, feedUsage) => total + getFeedQuantityInKg(feedUsage),
       0
@@ -445,24 +499,28 @@ export function BatchDetailView({
 
     return {
       totalInputCosts,
+      recordedInputCosts,
       totalSales,
       totalPaid,
       totalBalance,
       totalBirdsSold,
-      mortality,
+      mortality: reportMortality,
       currentBirds,
-      grossProfit: totalSales - totalInputCosts,
+      grossProfit,
       survivalPercent: getPercent(currentBirds, batch.quantity),
       soldPercent: getPercent(totalBirdsSold, batch.quantity),
-      mortalityPercent: getPercent(mortality, batch.quantity),
-      collectionPercent: getPercent(totalPaid, totalSales),
-      costPerBird: batch.quantity > 0 ? totalInputCosts / batch.quantity : 0,
+      mortalityPercent: getPercent(reportMortality, batch.quantity),
+      collectionPercent: collectionRate ?? getPercent(totalPaid, totalSales),
+      costPerBird:
+        reportCostPerBird ??
+        (batch.quantity > 0 ? totalInputCosts / batch.quantity : 0),
+      profitabilityStatus,
       totalFeedKg,
       feedPerLiveBird,
       dayOfCycle,
       cycleLength,
     };
-  }, [batch, inputCosts, sales, mortalities, feedUsages]);
+  }, [batch, inputCosts, sales, mortalities, feedUsages, profitabilityReport]);
 
   const costBreakdown = useMemo(
     () =>
@@ -834,6 +892,7 @@ function getPageHeader(activeTab: ActiveTab, batch: PoultryBatch) {
 
 type Metrics = {
   totalInputCosts: number;
+  recordedInputCosts: number;
   totalSales: number;
   totalPaid: number;
   totalBalance: number;
@@ -846,6 +905,7 @@ type Metrics = {
   mortalityPercent: number;
   collectionPercent: number;
   costPerBird: number;
+  profitabilityStatus: "provisional" | "final" | "local";
   totalFeedKg: number;
   feedPerLiveBird: number;
   dayOfCycle: number;
@@ -1048,9 +1108,9 @@ function OverviewTab({
                 tone={metrics.mortality > 0 ? "red" : "muted"}
               />
               <ExecutiveMetric
-                label="Input Cost"
+                label="Production Cost"
                 value={formatCurrency(metrics.totalInputCosts)}
-                detail={`${formatCurrency(metrics.costPerBird)} per initial bird`}
+                detail={`${formatCurrency(metrics.costPerBird)} per saleable bird`}
                 tone="navy"
               />
               <ExecutiveMetric
@@ -1063,7 +1123,7 @@ function OverviewTab({
               <ExecutiveMetric
                 label="Net Position"
                 value={formatSignedCurrency(metrics.grossProfit)}
-                detail="Sales less input costs"
+                detail={`${formatLabel(metrics.profitabilityStatus)} finance gross profit`}
                 tone={metrics.grossProfit < 0 ? "red" : "navy"}
               />
             </div>
@@ -1360,7 +1420,7 @@ function CostsTab({
       <div className="grid gap-6 lg:grid-cols-3">
         <KpiCard
           label="Total Input Costs"
-          value={formatCurrency(metrics.totalInputCosts)}
+          value={formatCurrency(metrics.recordedInputCosts)}
           detail={formatRecordCount(inputCosts.length)}
         />
         <KpiCard
@@ -1374,7 +1434,7 @@ function CostsTab({
           detail={
             largestCategory
               ? `${formatDecimalPercent(
-                  getPercent(largestCategory.value, metrics.totalInputCosts)
+                  getPercent(largestCategory.value, metrics.recordedInputCosts)
                 )} of recorded spend`
               : "No recorded spend"
           }
@@ -1391,7 +1451,7 @@ function CostsTab({
                 <CategoryBar
                   key={item.label}
                   item={item}
-                  total={metrics.totalInputCosts}
+                  total={metrics.recordedInputCosts}
                 />
               ))
             ) : (

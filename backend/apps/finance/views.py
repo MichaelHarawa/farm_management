@@ -7,6 +7,7 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -15,26 +16,54 @@ from apps.poultry.models import Batch
 from .models import (
     AccountingPeriod,
     AdHocLabourPayment,
+    Asset,
+    AssetDepreciationEntry,
+    AssetMaintenanceRecord,
+    AssetReplacementPlan,
+    AssetUsageRecord,
+    AssetCategory,
+    AssetStatus,
     BirdDaySnapshot,
+    ConsumableUsage,
     CostAllocation,
     EmployeeBatchWorkLog,
     EmployeeProfile,
+    ExpenseRecognitionSchedule,
     PayrollEntry,
     PeriodStatus,
+    ReplacementReserveTransaction,
     SharedExpense,
+    SharedConsumableLot,
 )
 from .permissions import FinancePermission
 from .serializers import (
     AccountingPeriodSerializer,
     AdHocLabourPaymentSerializer,
+    AssetCapitalizedCostSerializer,
+    AssetCategorySerializer,
+    AssetDepreciationEntrySerializer,
+    AssetMaintenanceRecordSerializer,
+    AssetReplacementPlanSerializer,
+    AssetSerializer,
+    AssetUsageRecordSerializer,
     BirdDaySnapshotSerializer,
+    ConsumableUsageSerializer,
     CostAllocationSerializer,
     EmployeeBatchWorkLogSerializer,
     EmployeeProfileSerializer,
+    ExpenseRecognitionScheduleSerializer,
     PayrollEntrySerializer,
+    ReplacementReserveTransactionSerializer,
     SharedExpenseSerializer,
+    SharedConsumableLotSerializer,
 )
 from .services.allocations import regenerate_allocations_for_period
+from .services.assets import dispose_asset, impair_asset, link_capital_expense_to_asset
+from .services.consumables import record_consumable_usage
+from .services.depreciation import (
+    asset_recovery_summary,
+    generate_depreciation_for_period,
+)
 from .services.payroll import generate_payroll_for_period
 from .services.profitability import batch_profitability
 from .services.reporting import (
@@ -144,7 +173,73 @@ class AccountingPeriodViewSet(viewsets.ModelViewSet):
         period.closed_by = request.user
         period.save(update_fields=["status", "closed_at", "closed_by", "updated_at"])
         CostAllocation.objects.filter(accounting_period=period).update(locked=True)
+        ConsumableUsage.objects.filter(accounting_period=period).update(locked=True)
+        ExpenseRecognitionSchedule.objects.filter(accounting_period=period).update(
+            locked=True
+        )
+        AssetUsageRecord.objects.filter(accounting_period=period).update(locked=True)
+        AssetDepreciationEntry.objects.filter(accounting_period=period).update(
+            locked=True
+        )
         return Response(self.get_serializer(period).data)
+
+    @action(detail=True, methods=["post"], url_path="reopen")
+    def reopen(self, request, pk=None):
+        period = self.get_object()
+        reason = str(request.data.get("reason", "")).strip()
+        if not reason:
+            return Response(
+                {"detail": "A reopening reason is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        period.status = PeriodStatus.OPEN
+        period.reopened_at = timezone.now()
+        period.reopened_by = request.user
+        period.reopening_reason = reason
+        period.recalculation_version += 1
+        period.save(
+            update_fields=[
+                "status",
+                "reopened_at",
+                "reopened_by",
+                "reopening_reason",
+                "recalculation_version",
+                "updated_at",
+            ]
+        )
+        return Response(self.get_serializer(period).data)
+
+    @action(detail=True, methods=["post"], url_path="generate-depreciation")
+    def generate_depreciation(self, request, pk=None):
+        period = self.get_object()
+        try:
+            entries = generate_depreciation_for_period(
+                period,
+                generated_by=request.user,
+            )
+        except ValueError as error:
+            return Response({"detail": str(error)}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(AssetDepreciationEntrySerializer(entries, many=True).data)
+
+    @action(detail=True, methods=["post"], url_path="allocate-depreciation")
+    def allocate_depreciation(self, request, pk=None):
+        period = self.get_object()
+        try:
+            generate_depreciation_for_period(period, generated_by=request.user)
+            allocations = regenerate_allocations_for_period(
+                period,
+                generated_by=request.user,
+            )
+        except ValueError as error:
+            return Response({"detail": str(error)}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(
+            {
+                "period": period.pk,
+                "allocations_created": len(allocations),
+            }
+        )
 
 
 class PayrollEntryViewSet(viewsets.ModelViewSet):
@@ -186,6 +281,251 @@ class SharedExpenseViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
+
+
+class SharedConsumableLotViewSet(viewsets.ModelViewSet):
+    serializer_class = SharedConsumableLotSerializer
+    permission_classes = (FinancePermission,)
+    queryset = SharedConsumableLot.objects.select_related(
+        "linked_expense",
+        "created_by",
+    )
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
+
+
+class ConsumableUsageViewSet(
+    mixins.CreateModelMixin,
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    viewsets.GenericViewSet,
+):
+    serializer_class = ConsumableUsageSerializer
+    permission_classes = (FinancePermission,)
+    queryset = ConsumableUsage.objects.select_related(
+        "consumable_lot",
+        "accounting_period",
+        "batch",
+        "recorded_by",
+        "approved_by",
+    )
+
+    def perform_create(self, serializer):
+        try:
+            usage = record_consumable_usage(
+                recorded_by=self.request.user,
+                **serializer.validated_data,
+            )
+        except ValueError as error:
+            raise ValidationError({"detail": str(error)}) from error
+        serializer.instance = usage
+
+
+class ExpenseRecognitionScheduleViewSet(viewsets.ModelViewSet):
+    serializer_class = ExpenseRecognitionScheduleSerializer
+    permission_classes = (FinancePermission,)
+    queryset = ExpenseRecognitionSchedule.objects.select_related(
+        "source_expense",
+        "accounting_period",
+        "generated_by",
+    )
+
+    def perform_create(self, serializer):
+        serializer.save(generated_by=self.request.user)
+
+
+class AssetCategoryViewSet(viewsets.ModelViewSet):
+    serializer_class = AssetCategorySerializer
+    permission_classes = (FinancePermission,)
+    queryset = AssetCategory.objects.all()
+
+
+class AssetViewSet(viewsets.ModelViewSet):
+    serializer_class = AssetSerializer
+    permission_classes = (FinancePermission,)
+    queryset = Asset.objects.select_related("asset_category", "created_by")
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
+
+    @action(detail=False, methods=["post"], url_path="from-expense")
+    def from_expense(self, request):
+        expense = get_object_or_404(SharedExpense, pk=request.data.get("expense"))
+        asset_payload = request.data.copy()
+        asset_payload.pop("expense", None)
+        serializer = self.get_serializer(data=asset_payload)
+        serializer.is_valid(raise_exception=True)
+        asset = serializer.save(created_by=request.user)
+        link = link_capital_expense_to_asset(
+            asset=asset,
+            expense=expense,
+            amount=expense.amount,
+            created_by=request.user,
+            notes="Created from capital expenditure.",
+        )
+        return Response(
+            {
+                "asset": self.get_serializer(asset).data,
+                "capitalized_cost": AssetCapitalizedCostSerializer(link).data,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+    @action(detail=True, methods=["get", "post"], url_path="usage")
+    def usage(self, request, pk=None):
+        asset = self.get_object()
+        if request.method == "GET":
+            records = asset.usage_records.select_related(
+                "accounting_period",
+                "batch",
+                "recorded_by",
+                "approved_by",
+            )
+            return Response(AssetUsageRecordSerializer(records, many=True).data)
+
+        serializer = AssetUsageRecordSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save(asset=asset, recorded_by=request.user)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["get", "post"], url_path="maintenance")
+    def maintenance(self, request, pk=None):
+        asset = self.get_object()
+        if request.method == "GET":
+            records = asset.maintenance_records.select_related(
+                "accounting_period",
+                "linked_expense",
+                "recorded_by",
+            )
+            return Response(AssetMaintenanceRecordSerializer(records, many=True).data)
+
+        serializer = AssetMaintenanceRecordSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save(asset=asset, recorded_by=request.user)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["get", "post"], url_path="replacement-plan")
+    def replacement_plan(self, request, pk=None):
+        asset = self.get_object()
+        if request.method == "GET":
+            plan = getattr(asset, "replacement_plan", None)
+            if not plan:
+                return Response(
+                    {"detail": "No replacement plan exists."},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+            return Response(AssetReplacementPlanSerializer(plan).data)
+
+        serializer = AssetReplacementPlanSerializer(
+            getattr(asset, "replacement_plan", None),
+            data={**request.data, "asset": asset.pk},
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save(asset=asset, updated_by=request.user)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=["get", "post"], url_path="reserve-transactions")
+    def reserve_transactions(self, request, pk=None):
+        asset = self.get_object()
+        if request.method == "GET":
+            rows = asset.reserve_transactions.select_related(
+                "accounting_period",
+                "authorized_by",
+            )
+            return Response(ReplacementReserveTransactionSerializer(rows, many=True).data)
+
+        serializer = ReplacementReserveTransactionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save(asset=asset, authorized_by=request.user)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["post"], url_path="impair")
+    def impair(self, request, pk=None):
+        asset = self.get_object()
+        try:
+            updated = impair_asset(
+                asset=asset,
+                amount=Decimal(str(request.data.get("amount", "0.00"))),
+            )
+        except ValueError as error:
+            return Response({"detail": str(error)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(self.get_serializer(updated).data)
+
+    @action(detail=True, methods=["post"], url_path="dispose")
+    def dispose(self, request, pk=None):
+        asset = self.get_object()
+        disposal_date = request.data.get("disposal_date")
+        if not disposal_date:
+            return Response(
+                {"detail": "disposal_date is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            parsed_date = datetime.strptime(disposal_date, "%Y-%m-%d").date()
+            updated = dispose_asset(
+                asset=asset,
+                disposal_date=parsed_date,
+                proceeds=Decimal(str(request.data.get("proceeds", "0.00"))),
+            )
+        except (ValueError, TypeError) as error:
+            return Response({"detail": str(error)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(self.get_serializer(updated).data)
+
+    @action(detail=True, methods=["get"], url_path="depreciation-schedule")
+    def depreciation_schedule(self, request, pk=None):
+        asset = self.get_object()
+        rows = asset.depreciation_entries.select_related(
+            "accounting_period",
+            "generated_by",
+        )
+        return Response(AssetDepreciationEntrySerializer(rows, many=True).data)
+
+    @action(detail=True, methods=["get"], url_path="recovery")
+    def recovery(self, request, pk=None):
+        return Response(json_safe(asset_recovery_summary(self.get_object())))
+
+
+class AssetUsageRecordViewSet(viewsets.ModelViewSet):
+    serializer_class = AssetUsageRecordSerializer
+    permission_classes = (FinancePermission,)
+    queryset = AssetUsageRecord.objects.select_related(
+        "asset",
+        "accounting_period",
+        "batch",
+        "recorded_by",
+        "approved_by",
+    )
+
+    def perform_create(self, serializer):
+        serializer.save(recorded_by=self.request.user)
+
+
+class AssetDepreciationEntryViewSet(
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    viewsets.GenericViewSet,
+):
+    serializer_class = AssetDepreciationEntrySerializer
+    permission_classes = (FinancePermission,)
+    queryset = AssetDepreciationEntry.objects.select_related(
+        "asset",
+        "accounting_period",
+        "generated_by",
+    )
+
+
+class ReplacementReserveTransactionViewSet(viewsets.ModelViewSet):
+    serializer_class = ReplacementReserveTransactionSerializer
+    permission_classes = (FinancePermission,)
+    queryset = ReplacementReserveTransaction.objects.select_related(
+        "asset",
+        "accounting_period",
+        "authorized_by",
+    )
+
+    def perform_create(self, serializer):
+        serializer.save(authorized_by=self.request.user)
 
 
 class EmployeeBatchWorkLogViewSet(viewsets.ModelViewSet):

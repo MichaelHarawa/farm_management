@@ -19,12 +19,14 @@ from ..models import (
     AdHocLabourPayment,
     AllocationSourceType,
     BatchProfitabilitySnapshot,
+    ConsumableUsage,
+    ConsumableUsageScope,
     CostAllocation,
     CostScope,
     SharedExpense,
     SharedExpenseScope,
 )
-from .batch_lifecycle import calculate_bird_balance
+from apps.poultry.services.batch_lifecycle import calculate_bird_balance
 
 
 ZERO = Decimal("0.00")
@@ -92,6 +94,15 @@ def direct_production_expense_total(batch: Batch) -> Decimal:
     )
 
 
+def direct_consumable_usage_total(batch: Batch) -> Decimal:
+    return money(
+        ConsumableUsage.objects.filter(
+            batch=batch,
+            usage_scope=ConsumableUsageScope.BATCH_DIRECT,
+        ).aggregate(total=Sum("recognized_cost"))["total"]
+    )
+
+
 def allocated_production_total(batch: Batch) -> Decimal:
     payroll = CostAllocation.objects.filter(
         batch=batch,
@@ -108,10 +119,23 @@ def allocated_production_total(batch: Batch) -> Decimal:
         shared_expense__scope=SharedExpenseScope.SHARED_PRODUCTION,
         shared_expense__directly_assigned_batch__isnull=True,
     )
+    consumables = CostAllocation.objects.filter(
+        batch=batch,
+        source_type=AllocationSourceType.CONSUMABLE_USAGE,
+        consumable_usage__usage_scope=ConsumableUsageScope.SHARED_PRODUCTION,
+    )
+    depreciation = CostAllocation.objects.filter(
+        batch=batch,
+        source_type=AllocationSourceType.DEPRECIATION,
+    )
     return money(
         payroll.aggregate(total=Sum("allocated_amount"))["total"]
     ) + money(shared_labour.aggregate(total=Sum("allocated_amount"))["total"]) + money(
         shared_expenses.aggregate(total=Sum("allocated_amount"))["total"]
+    ) + money(
+        consumables.aggregate(total=Sum("allocated_amount"))["total"]
+    ) + money(
+        depreciation.aggregate(total=Sum("allocated_amount"))["total"]
     )
 
 
@@ -140,6 +164,7 @@ def batch_profitability(batch: Batch) -> dict:
         input_cost_total(batch)
         + direct_labour_total(batch)
         + direct_production_expense_total(batch)
+        + direct_consumable_usage_total(batch)
     )
     allocated_cost = allocated_production_total(batch)
     total_production_cost = direct_cost + allocated_cost

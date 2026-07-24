@@ -100,6 +100,99 @@ export type SharedExpense = {
   is_capital_expenditure: boolean;
 };
 
+export type SharedConsumableLot = {
+  id: number;
+  item: string;
+  category: string;
+  purchase_date: string;
+  supplier: string;
+  invoice_reference: string;
+  quantity_purchased: DecimalString;
+  unit_of_measurement: string;
+  total_purchase_cost: DecimalString;
+  unit_cost: DecimalString;
+  expiry_date: string | null;
+  storage_location: string;
+  quantity_available: DecimalString;
+  payment_status: string;
+  payment_date: string | null;
+  usd_exchange_rate: DecimalString | null;
+  usd_equivalent: DecimalString | null;
+  is_expired: boolean;
+};
+
+export type ConsumableUsage = {
+  id: number;
+  consumable_lot: number;
+  usage_date: string;
+  accounting_period: number;
+  quantity_used: DecimalString;
+  batch: number | null;
+  poultry_house: string;
+  usage_scope: string;
+  allocation_driver: string;
+  task_or_purpose: string;
+  recognized_cost: DecimalString;
+  locked: boolean;
+};
+
+export type AssetCategory = {
+  id: number;
+  name: string;
+  code: string;
+  default_useful_life_months: number;
+  default_residual_value_percentage: DecimalString;
+  default_depreciation_method: string;
+  default_production_scope: string;
+  default_allocation_driver: string;
+  capitalization_threshold: DecimalString;
+  requires_serial_number: boolean;
+  is_active: boolean;
+};
+
+export type Asset = {
+  id: string;
+  asset_code: string;
+  name: string;
+  asset_category: number;
+  category_other: string;
+  purchase_date: string;
+  available_for_use_date: string | null;
+  purchase_price: DecimalString;
+  delivery_cost: DecimalString;
+  installation_cost: DecimalString;
+  non_refundable_tax_cost: DecimalString;
+  other_capitalized_cost: DecimalString;
+  total_capitalized_cost: DecimalString;
+  residual_value: DecimalString;
+  recognized_impairment_amount: DecimalString;
+  useful_life_months: number;
+  depreciation_method: string;
+  depreciation_unit: string;
+  estimated_total_lifetime_units: DecimalString | null;
+  production_scope: string;
+  production_percentage: DecimalString;
+  administration_percentage: DecimalString;
+  selling_percentage: DecimalString;
+  default_allocation_driver: string;
+  fallback_allocation_driver: string;
+  status: string;
+  location: string;
+  custodian: string;
+  supplier: string;
+  usd_exchange_rate: DecimalString | null;
+  usd_equivalent: DecimalString | null;
+};
+
+export type AssetDepreciationEntry = {
+  id: number;
+  asset: string;
+  accounting_period: number;
+  period_depreciation: DecimalString;
+  closing_carrying_amount: DecimalString;
+  locked: boolean;
+};
+
 export type FinanceWarning = {
   code: string;
   severity: "info" | "warning" | "critical";
@@ -148,6 +241,8 @@ export type MonthlyReport = {
   operating_costs: Record<string, DecimalString>;
   other_costs: Record<string, DecimalString>;
   cash_flow: Record<string, DecimalString | null>;
+  deferred_balances: Record<string, DecimalString | null>;
+  asset_reporting: Record<string, DecimalString | number | null>;
   operational_metrics: Record<string, DecimalString | number | null>;
   warnings: FinanceWarning[];
 };

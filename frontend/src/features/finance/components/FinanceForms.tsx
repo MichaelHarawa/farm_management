@@ -3,7 +3,11 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import type { AccountingPeriod } from "../types";
+import type {
+  AccountingPeriod,
+  AssetCategory,
+  SharedConsumableLot,
+} from "../types";
 
 type SubmitState = {
   status: "idle" | "loading" | "error";
@@ -336,7 +340,7 @@ export function AccountingPeriodCreateForm() {
   }
 
   return (
-    <form action={onSubmit} className="grid gap-4 md:grid-cols-[1fr_1fr_1.2fr_auto] md:items-end">
+    <form action={onSubmit} className="grid gap-4 md:grid-cols-[1fr_1fr_1.2fr_auto] md:items-start">
       <TextInput
         label="Period start"
         name="period_start"
@@ -358,7 +362,7 @@ export function AccountingPeriodCreateForm() {
         name="notes"
         placeholder="Example: July 2026 payroll and operating period"
       />
-      <div>
+      <div className="md:pt-[1.72rem]">
         <button
           type="submit"
           disabled={state.status === "loading"}
@@ -495,6 +499,393 @@ export function ExpenseForm({ periods }: { periods: AccountingPeriod[] }) {
       />
       <FormFooter state={state} label="Record expense" />
     </form>
+  );
+}
+
+export function ConsumableLotForm() {
+  const router = useRouter();
+  const [state, setState] = useState(initialState);
+
+  async function onSubmit(formData: FormData) {
+    setState({ status: "loading", message: "" });
+    try {
+      await postJson("/api/finance/consumable-lots", {
+        item: formData.get("item"),
+        category: formData.get("category"),
+        purchase_date: formData.get("purchase_date"),
+        supplier: formData.get("supplier") || "",
+        invoice_reference: formData.get("invoice_reference") || "",
+        quantity_purchased: formData.get("quantity_purchased"),
+        unit_of_measurement: formData.get("unit_of_measurement"),
+        total_purchase_cost: formData.get("total_purchase_cost"),
+        expiry_date: formData.get("expiry_date") || null,
+        storage_location: formData.get("storage_location") || "",
+        payment_status: formData.get("payment_status"),
+        payment_date: formData.get("payment_date") || null,
+        usd_exchange_rate: formData.get("usd_exchange_rate") || null,
+        notes: formData.get("notes") || "",
+      });
+      setState(initialState);
+      router.refresh();
+    } catch (error) {
+      setState({
+        status: "error",
+        message: error instanceof Error ? error.message : "Request failed.",
+      });
+    }
+  }
+
+  return (
+    <form action={onSubmit} className="grid gap-4 md:grid-cols-2">
+      <TextInput label="Item" name="item" required />
+      <TextInput label="Category" name="category" required />
+      <TextInput label="Purchase date" name="purchase_date" type="date" required />
+      <TextInput label="Supplier" name="supplier" />
+      <TextInput label="Invoice reference" name="invoice_reference" />
+      <TextInput label="Quantity purchased" name="quantity_purchased" type="number" step="0.0001" required />
+      <TextInput label="Unit" name="unit_of_measurement" placeholder="kg, litres, packets" required />
+      <TextInput label="Total purchase cost" name="total_purchase_cost" type="number" step="0.01" required />
+      <TextInput label="Expiry date" name="expiry_date" type="date" />
+      <TextInput label="Storage location" name="storage_location" />
+      <SelectInput
+        label="Payment status"
+        name="payment_status"
+        options={[
+          ["unpaid", "Unpaid"],
+          ["paid", "Paid"],
+          ["partial", "Partial"],
+          ["pending", "Pending"],
+        ]}
+      />
+      <TextInput label="Payment date" name="payment_date" type="date" />
+      <TextInput label="MWK per USD" name="usd_exchange_rate" type="number" step="0.000001" />
+      <TextInput label="Notes" name="notes" />
+      <FormFooter state={state} label="Record lot" />
+    </form>
+  );
+}
+
+export function ConsumableUsageForm({
+  periods,
+  lots,
+}: {
+  periods: AccountingPeriod[];
+  lots: SharedConsumableLot[];
+}) {
+  const router = useRouter();
+  const [state, setState] = useState(initialState);
+
+  async function onSubmit(formData: FormData) {
+    setState({ status: "loading", message: "" });
+    try {
+      await postJson("/api/finance/consumable-usages", {
+        consumable_lot: Number(formData.get("consumable_lot")),
+        usage_date: formData.get("usage_date"),
+        accounting_period: Number(formData.get("accounting_period")),
+        quantity_used: formData.get("quantity_used"),
+        usage_scope: formData.get("usage_scope"),
+        allocation_driver: formData.get("allocation_driver"),
+        task_or_purpose: formData.get("task_or_purpose"),
+        poultry_house: formData.get("poultry_house") || "",
+        notes: formData.get("notes") || "",
+      });
+      setState(initialState);
+      router.refresh();
+    } catch (error) {
+      setState({
+        status: "error",
+        message: error instanceof Error ? error.message : "Request failed.",
+      });
+    }
+  }
+
+  return (
+    <form action={onSubmit} className="grid gap-4 md:grid-cols-2">
+      <label className="grid gap-2 text-sm font-bold text-[var(--navy)]">
+        Consumable lot
+        <select name="consumable_lot" className="form-input" required>
+          {lots.map((lot) => (
+            <option key={lot.id} value={lot.id}>
+              {lot.item} ({lot.quantity_available} {lot.unit_of_measurement} available)
+            </option>
+          ))}
+        </select>
+      </label>
+      <TextInput label="Usage date" name="usage_date" type="date" required />
+      <TextInput label="Quantity used" name="quantity_used" type="number" step="0.0001" required />
+      <PeriodSelect periods={periods} />
+      <SelectInput
+        label="Usage scope"
+        name="usage_scope"
+        options={[
+          ["batch_direct", "Batch Direct"],
+          ["shared_production", "Shared Production"],
+          ["administration", "Administration"],
+          ["selling_and_distribution", "Selling And Distribution"],
+        ]}
+      />
+      <SelectInput
+        label="Allocation driver"
+        name="allocation_driver"
+        options={[
+          ["bird_days", "Bird-Days"],
+          ["equal_share", "Equal Share"],
+          ["house_occupancy_days", "House Occupancy Days"],
+          ["manual_with_reason", "Manual With Reason"],
+          ["none", "None"],
+        ]}
+      />
+      <TextInput label="Task or purpose" name="task_or_purpose" required />
+      <TextInput label="House or location" name="poultry_house" />
+      <TextInput label="Notes" name="notes" />
+      <FormFooter state={state} label="Record usage" />
+    </form>
+  );
+}
+
+export function AssetCategoryForm() {
+  const router = useRouter();
+  const [state, setState] = useState(initialState);
+
+  async function onSubmit(formData: FormData) {
+    setState({ status: "loading", message: "" });
+    try {
+      await postJson("/api/finance/asset-categories", {
+        name: formData.get("name"),
+        code: formData.get("code"),
+        default_useful_life_months: Number(formData.get("default_useful_life_months")),
+        default_residual_value_percentage:
+          formData.get("default_residual_value_percentage") || "0.00",
+        default_depreciation_method: formData.get("default_depreciation_method"),
+        default_production_scope: formData.get("default_production_scope"),
+        default_allocation_driver: formData.get("default_allocation_driver"),
+        capitalization_threshold: formData.get("capitalization_threshold") || "0.00",
+        requires_serial_number: formData.get("requires_serial_number") === "on",
+        is_active: true,
+      });
+      setState(initialState);
+      router.refresh();
+    } catch (error) {
+      setState({
+        status: "error",
+        message: error instanceof Error ? error.message : "Request failed.",
+      });
+    }
+  }
+
+  return (
+    <form action={onSubmit} className="grid gap-4 md:grid-cols-2">
+      <TextInput label="Category name" name="name" required />
+      <SelectInput
+        label="Category code"
+        name="code"
+        options={[
+          ["poultry_house", "Poultry House"],
+          ["feeding_equipment", "Feeding Equipment"],
+          ["watering_equipment", "Watering Equipment"],
+          ["brooding_equipment", "Brooding Equipment"],
+          ["vehicle", "Vehicle"],
+          ["office_equipment", "Office Equipment"],
+          ["other", "Other"],
+        ]}
+      />
+      <TextInput label="Useful life months" name="default_useful_life_months" type="number" defaultValue="60" required />
+      <TextInput label="Residual value %" name="default_residual_value_percentage" type="number" step="0.01" defaultValue="0.00" />
+      <SelectInput
+        label="Depreciation method"
+        name="default_depreciation_method"
+        options={[
+          ["straight_line", "Straight Line"],
+          ["units_of_production", "Units Of Production"],
+        ]}
+      />
+      <SelectInput
+        label="Production scope"
+        name="default_production_scope"
+        options={[
+          ["poultry_production", "Poultry Production"],
+          ["farm_administration", "Farm Administration"],
+          ["selling_and_distribution", "Selling And Distribution"],
+          ["mixed_use", "Mixed Use"],
+        ]}
+      />
+      <SelectInput
+        label="Default allocation driver"
+        name="default_allocation_driver"
+        options={[
+          ["bird_days", "Bird-Days"],
+          ["equal_share", "Equal Share"],
+          ["house_occupancy_days", "House Occupancy Days"],
+        ]}
+      />
+      <TextInput label="Capitalization threshold" name="capitalization_threshold" type="number" step="0.01" defaultValue="0.00" />
+      <label className="flex items-center gap-3 text-sm font-bold text-[var(--navy)]">
+        <input type="checkbox" name="requires_serial_number" />
+        Requires serial number
+      </label>
+      <FormFooter state={state} label="Create category" />
+    </form>
+  );
+}
+
+export function AssetForm({ categories }: { categories: AssetCategory[] }) {
+  const router = useRouter();
+  const [state, setState] = useState(initialState);
+
+  async function onSubmit(formData: FormData) {
+    setState({ status: "loading", message: "" });
+    try {
+      const category = categories.find(
+        (item) => item.id === Number(formData.get("asset_category"))
+      );
+      await postJson("/api/finance/assets", {
+        name: formData.get("name"),
+        asset_category: Number(formData.get("asset_category")),
+        category_other: formData.get("category_other") || "",
+        purchase_date: formData.get("purchase_date"),
+        available_for_use_date: formData.get("available_for_use_date") || null,
+        purchase_price: formData.get("purchase_price"),
+        delivery_cost: formData.get("delivery_cost") || "0.00",
+        installation_cost: formData.get("installation_cost") || "0.00",
+        non_refundable_tax_cost: formData.get("non_refundable_tax_cost") || "0.00",
+        other_capitalized_cost: formData.get("other_capitalized_cost") || "0.00",
+        residual_value: formData.get("residual_value") || "0.00",
+        useful_life_months:
+          Number(formData.get("useful_life_months")) ||
+          category?.default_useful_life_months ||
+          60,
+        depreciation_method: formData.get("depreciation_method"),
+        depreciation_unit: formData.get("depreciation_unit") || "",
+        estimated_total_lifetime_units:
+          formData.get("estimated_total_lifetime_units") || null,
+        production_scope: formData.get("production_scope"),
+        production_percentage: formData.get("production_percentage") || "100.00",
+        administration_percentage: formData.get("administration_percentage") || "0.00",
+        selling_percentage: formData.get("selling_percentage") || "0.00",
+        default_allocation_driver: formData.get("default_allocation_driver"),
+        fallback_allocation_driver: "equal_share",
+        status: formData.get("status"),
+        supplier: formData.get("supplier") || "",
+        location: formData.get("location") || "",
+        custodian: formData.get("custodian") || "",
+        usd_exchange_rate: formData.get("usd_exchange_rate") || null,
+      });
+      setState(initialState);
+      router.refresh();
+    } catch (error) {
+      setState({
+        status: "error",
+        message: error instanceof Error ? error.message : "Request failed.",
+      });
+    }
+  }
+
+  return (
+    <form action={onSubmit} className="grid gap-4 md:grid-cols-2">
+      <TextInput label="Asset name" name="name" required />
+      <label className="grid gap-2 text-sm font-bold text-[var(--navy)]">
+        Asset category
+        <select name="asset_category" className="form-input" required>
+          {categories.map((category) => (
+            <option key={category.id} value={category.id}>
+              {category.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <TextInput label="Other category" name="category_other" />
+      <TextInput label="Purchase date" name="purchase_date" type="date" required />
+      <TextInput label="Available for use" name="available_for_use_date" type="date" />
+      <TextInput label="Purchase price" name="purchase_price" type="number" step="0.01" required />
+      <TextInput label="Delivery cost" name="delivery_cost" type="number" step="0.01" />
+      <TextInput label="Installation cost" name="installation_cost" type="number" step="0.01" />
+      <TextInput label="Non-refundable tax" name="non_refundable_tax_cost" type="number" step="0.01" />
+      <TextInput label="Other capitalized cost" name="other_capitalized_cost" type="number" step="0.01" />
+      <TextInput label="Residual value" name="residual_value" type="number" step="0.01" />
+      <TextInput label="Useful life months" name="useful_life_months" type="number" defaultValue="60" />
+      <SelectInput
+        label="Depreciation method"
+        name="depreciation_method"
+        options={[
+          ["straight_line", "Straight Line"],
+          ["units_of_production", "Units Of Production"],
+        ]}
+      />
+      <TextInput label="Depreciation unit" name="depreciation_unit" placeholder="hours, km, birds" />
+      <TextInput label="Lifetime units" name="estimated_total_lifetime_units" type="number" step="0.0001" />
+      <SelectInput
+        label="Production scope"
+        name="production_scope"
+        options={[
+          ["poultry_production", "Poultry Production"],
+          ["farm_administration", "Farm Administration"],
+          ["selling_and_distribution", "Selling And Distribution"],
+          ["mixed_use", "Mixed Use"],
+        ]}
+      />
+      <TextInput label="Production %" name="production_percentage" type="number" step="0.01" defaultValue="100.00" />
+      <TextInput label="Administration %" name="administration_percentage" type="number" step="0.01" defaultValue="0.00" />
+      <TextInput label="Selling %" name="selling_percentage" type="number" step="0.01" defaultValue="0.00" />
+      <SelectInput
+        label="Allocation driver"
+        name="default_allocation_driver"
+        options={[
+          ["bird_days", "Bird-Days"],
+          ["equal_share", "Equal Share"],
+          ["house_occupancy_days", "House Occupancy Days"],
+        ]}
+      />
+      <SelectInput
+        label="Status"
+        name="status"
+        options={[
+          ["draft", "Draft"],
+          ["available_for_use", "Available For Use"],
+          ["idle", "Idle"],
+          ["under_maintenance", "Under Maintenance"],
+        ]}
+      />
+      <TextInput label="Supplier" name="supplier" />
+      <TextInput label="Location" name="location" />
+      <TextInput label="Custodian" name="custodian" />
+      <TextInput label="MWK per USD" name="usd_exchange_rate" type="number" step="0.000001" />
+      <FormFooter state={state} label="Create asset" />
+    </form>
+  );
+}
+
+export function PeriodDepreciationButtons({ period }: { period: AccountingPeriod }) {
+  const router = useRouter();
+  const [state, setState] = useState(initialState);
+
+  async function runAction(action: "generate-depreciation" | "allocate-depreciation") {
+    setState({ status: "loading", message: "" });
+    try {
+      await postJson(`/api/finance/accounting-periods/${period.id}/${action}`, {});
+      setState(initialState);
+      router.refresh();
+    } catch (error) {
+      setState({
+        status: "error",
+        message: error instanceof Error ? error.message : "Request failed.",
+      });
+    }
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <button type="button" onClick={() => runAction("generate-depreciation")} className="finance-button">
+        Generate Depreciation
+      </button>
+      <button type="button" onClick={() => runAction("allocate-depreciation")} className="finance-button">
+        Allocate Depreciation
+      </button>
+      {state.status === "error" ? (
+        <span className="text-sm font-semibold text-[var(--danger)]">
+          {state.message}
+        </span>
+      ) : null}
+    </div>
   );
 }
 

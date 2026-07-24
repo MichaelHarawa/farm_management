@@ -8,8 +8,10 @@ import {
 } from "@/features/auth/server/django-auth";
 
 import {
+  AUTH_LAST_ACTIVITY_COOKIE,
   REFRESH_TOKEN_COOKIE,
   clearAuthCookies,
+  isSessionIdleExpired,
   setAuthCookies,
 } from "@/features/auth/server/token-cookies";
 
@@ -50,8 +52,12 @@ export async function GET(
     request.cookies.get(
       REFRESH_TOKEN_COOKIE
     )?.value;
+  const lastActivity =
+    request.cookies.get(
+      AUTH_LAST_ACTIVITY_COOKIE
+    )?.value;
 
-  if (!refreshToken) {
+  if (!refreshToken || isSessionIdleExpired(lastActivity)) {
     return redirectToLogin(
       request,
       returnTo

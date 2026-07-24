@@ -97,11 +97,19 @@ export async function login(
   ).user;
 }
 
-export async function getSession(): Promise<
-  AuthUser | null
-> {
+type GetSessionOptions = {
+  touch?: boolean;
+};
+
+export async function getSession(
+  options: GetSessionOptions = {}
+): Promise<AuthUser | null> {
+  const path =
+    options.touch === false
+      ? "/api/auth/session?touch=0"
+      : "/api/auth/session";
   const response = await fetch(
-    "/api/auth/session",
+    path,
     {
       headers: {
         Accept: "application/json",

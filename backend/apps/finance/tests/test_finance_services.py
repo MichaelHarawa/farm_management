@@ -12,24 +12,39 @@ from apps.accounts.models import Role, RoleChoices
 from apps.finance.models import (
     AccountingPeriod,
     AdHocLabourPayment,
+    AllocationSourceType,
+    Asset,
+    AssetCategory,
+    AssetProductionScope,
+    AssetStatus,
+    AssetUsageRecord,
+    ConsumableUsageScope,
     CostAllocation,
     CostScope,
     EmployeeProfile,
     EmploymentType,
     PeriodStatus,
+    ReplacementReserveTransaction,
+    ReserveTransactionType,
+    SharedConsumableLot,
+    SharedExpense,
+    SharedExpenseScope,
 )
 from apps.finance.services.allocations import (
     allocate_amount_by_driver,
     regenerate_allocations_for_period,
 )
-from apps.finance.services.batch_lifecycle import (
+from apps.poultry.services.batch_lifecycle import (
     calculate_bird_balance,
     create_mortality_with_lifecycle,
     create_sale_with_lifecycle,
 )
 from apps.finance.services.bird_days import recalculate_bird_day_snapshots
+from apps.finance.services.consumables import record_consumable_usage
+from apps.finance.services.depreciation import generate_depreciation_for_period
 from apps.finance.services.payroll import generate_payroll_for_period
 from apps.finance.services.profitability import batch_profitability
+from apps.finance.services.reporting import monthly_profitability_report
 from apps.poultry.models import (
     Batch,
     BatchStatus,
@@ -391,6 +406,259 @@ class FinanceServiceTests(TestCase):
 
         with self.assertRaises(ValueError):
             regenerate_allocations_for_period(period, generated_by=self.user)
+
+    def asset_category(self, **overrides):
+        values = {
+            "name": "Poultry house",
+            "code": "poultry_house",
+            "default_useful_life_months": 120,
+            "default_production_scope": AssetProductionScope.POULTRY_PRODUCTION,
+            "default_allocation_driver": "bird_days",
+            "capitalization_threshold": Decimal("0.00"),
+        }
+        values.update(overrides)
+        category, _ = AssetCategory.objects.update_or_create(
+            code=values.pop("code"),
+            defaults=values,
+        )
+        return category
+
+    def test_consumable_lot_usage_preserves_stock_and_recognizes_cost(self):
+        period = AccountingPeriod.objects.create(
+            period_start=date(2026, 1, 1),
+            period_end=date(2026, 1, 31),
+        )
+        batch = self.batch()
+        lot = SharedConsumableLot.objects.create(
+            item="Disinfectant",
+            category="Biosecurity",
+            purchase_date=date(2026, 1, 1),
+            quantity_purchased=Decimal("30.0000"),
+            unit_of_measurement="litres",
+            total_purchase_cost=Decimal("3000.00"),
+            usd_exchange_rate=Decimal("2000.000000"),
+            created_by=self.user,
+        )
+
+        usage = record_consumable_usage(
+            recorded_by=self.user,
+            consumable_lot=lot,
+            usage_date=date(2026, 1, 5),
+            accounting_period=period,
+            quantity_used=Decimal("10.0000"),
+            batch=batch,
+            usage_scope=ConsumableUsageScope.BATCH_DIRECT,
+            allocation_driver="direct",
+            task_or_purpose="House disinfection",
+        )
+        lot.refresh_from_db()
+
+        self.assertEqual(lot.unit_cost, Decimal("100.000000"))
+        self.assertEqual(lot.usd_equivalent, Decimal("1.50"))
+        self.assertEqual(usage.recognized_cost, Decimal("1000.00"))
+        self.assertEqual(lot.quantity_available, Decimal("20.0000"))
+
+    def test_consumable_usage_cannot_exceed_available_stock(self):
+        period = AccountingPeriod.objects.create(
+            period_start=date(2026, 1, 1),
+            period_end=date(2026, 1, 31),
+        )
+        lot = SharedConsumableLot.objects.create(
+            item="Detergent",
+            category="Cleaning",
+            purchase_date=date(2026, 1, 1),
+            quantity_purchased=Decimal("5.0000"),
+            unit_of_measurement="litres",
+            total_purchase_cost=Decimal("500.00"),
+            created_by=self.user,
+        )
+
+        with self.assertRaises(ValueError):
+            record_consumable_usage(
+                recorded_by=self.user,
+                consumable_lot=lot,
+                usage_date=date(2026, 1, 5),
+                accounting_period=period,
+                quantity_used=Decimal("6.0000"),
+                usage_scope=ConsumableUsageScope.ADMINISTRATION,
+                allocation_driver="none",
+                task_or_purpose="Office cleaning",
+            )
+
+    def test_shared_consumable_usage_allocates_by_bird_days(self):
+        period = AccountingPeriod.objects.create(
+            period_start=date(2026, 1, 1),
+            period_end=date(2026, 1, 30),
+        )
+        batch_a = self.batch(quantity=180, entry=date(2026, 1, 1))
+        batch_b = self.batch(quantity=250, entry=date(2026, 1, 11))
+        lot = SharedConsumableLot.objects.create(
+            item="Pest control",
+            category="Biosecurity",
+            purchase_date=date(2026, 1, 1),
+            quantity_purchased=Decimal("10.0000"),
+            unit_of_measurement="litres",
+            total_purchase_cost=Decimal("600000.00"),
+            created_by=self.user,
+        )
+        usage = record_consumable_usage(
+            recorded_by=self.user,
+            consumable_lot=lot,
+            usage_date=date(2026, 1, 12),
+            accounting_period=period,
+            quantity_used=Decimal("10.0000"),
+            usage_scope=ConsumableUsageScope.SHARED_PRODUCTION,
+            allocation_driver="bird_days",
+            task_or_purpose="Shared pest control",
+        )
+
+        regenerate_allocations_for_period(period, generated_by=self.user)
+        allocations = {
+            allocation.batch_id: allocation.allocated_amount
+            for allocation in CostAllocation.objects.filter(
+                accounting_period=period,
+                source_type=AllocationSourceType.CONSUMABLE_USAGE,
+                consumable_usage=usage,
+            )
+        }
+
+        self.assertEqual(allocations[batch_a.id], Decimal("311538.46"))
+        self.assertEqual(allocations[batch_b.id], Decimal("288461.54"))
+
+    def test_straight_line_depreciation_example(self):
+        period = AccountingPeriod.objects.create(
+            period_start=date(2026, 1, 1),
+            period_end=date(2026, 1, 31),
+        )
+        category = self.asset_category()
+        asset = Asset.objects.create(
+            name="Poultry house 1",
+            asset_category=category,
+            purchase_date=date(2026, 1, 1),
+            available_for_use_date=date(2026, 1, 1),
+            purchase_price=Decimal("12000000.00"),
+            residual_value=Decimal("1200000.00"),
+            useful_life_months=120,
+            status=AssetStatus.AVAILABLE_FOR_USE,
+            created_by=self.user,
+        )
+
+        entries = generate_depreciation_for_period(period, generated_by=self.user)
+
+        self.assertEqual(entries[0].asset, asset)
+        self.assertEqual(entries[0].period_depreciation, Decimal("90000.00"))
+
+    def test_depreciation_allocation_reconciles_by_bird_days(self):
+        period = AccountingPeriod.objects.create(
+            period_start=date(2026, 1, 1),
+            period_end=date(2026, 1, 30),
+        )
+        batch_a = self.batch(quantity=180, entry=date(2026, 1, 1))
+        batch_b = self.batch(quantity=250, entry=date(2026, 1, 11))
+        category = self.asset_category(code="feeding_equipment", name="Feeding")
+        Asset.objects.create(
+            name="Feeder set",
+            asset_category=category,
+            purchase_date=date(2026, 1, 1),
+            available_for_use_date=date(2026, 1, 1),
+            purchase_price=Decimal("11160000.00"),
+            residual_value=Decimal("0.00"),
+            useful_life_months=120,
+            status=AssetStatus.AVAILABLE_FOR_USE,
+            created_by=self.user,
+        )
+
+        generate_depreciation_for_period(period, generated_by=self.user)
+        regenerate_allocations_for_period(period, generated_by=self.user)
+        allocations = {
+            allocation.batch_id: allocation.allocated_amount
+            for allocation in CostAllocation.objects.filter(
+                accounting_period=period,
+                source_type=AllocationSourceType.DEPRECIATION,
+            )
+        }
+
+        self.assertEqual(allocations[batch_a.id], Decimal("46730.77"))
+        self.assertEqual(allocations[batch_b.id], Decimal("43269.23"))
+        self.assertEqual(sum(allocations.values()), Decimal("90000.00"))
+
+    def test_units_of_production_depreciation_uses_actual_usage(self):
+        period = AccountingPeriod.objects.create(
+            period_start=date(2026, 1, 1),
+            period_end=date(2026, 1, 31),
+        )
+        category = self.asset_category(code="vehicle", name="Vehicle")
+        asset = Asset.objects.create(
+            name="Delivery vehicle",
+            asset_category=category,
+            purchase_date=date(2026, 1, 1),
+            available_for_use_date=date(2026, 1, 1),
+            purchase_price=Decimal("1000.00"),
+            residual_value=Decimal("0.00"),
+            useful_life_months=60,
+            depreciation_method="units_of_production",
+            depreciation_unit="km",
+            estimated_total_lifetime_units=Decimal("100.0000"),
+            status=AssetStatus.AVAILABLE_FOR_USE,
+            created_by=self.user,
+        )
+        AssetUsageRecord.objects.create(
+            asset=asset,
+            usage_date=date(2026, 1, 5),
+            accounting_period=period,
+            usage_unit="km",
+            quantity=Decimal("5.0000"),
+            recorded_by=self.user,
+        )
+
+        entries = generate_depreciation_for_period(period, generated_by=self.user)
+
+        self.assertEqual(entries[0].period_depreciation, Decimal("50.00"))
+
+    def test_capital_expenditure_is_excluded_from_operating_expense(self):
+        period = AccountingPeriod.objects.create(
+            period_start=date(2026, 1, 1),
+            period_end=date(2026, 1, 31),
+        )
+        SharedExpense.objects.create(
+            description="Feeder purchase",
+            category="Equipment",
+            expense_date=date(2026, 1, 10),
+            accounting_period=period,
+            amount=Decimal("100000.00"),
+            scope=SharedExpenseScope.CAPITAL_EXPENDITURE,
+            payment_status=PaymentStatus.PAID,
+            created_by=self.user,
+        )
+
+        report = monthly_profitability_report(period)
+
+        self.assertEqual(
+            report["operating_costs"]["general_operating_expenses"],
+            Decimal("0.00"),
+        )
+        self.assertEqual(
+            report["cash_flow"]["capital_expenditure_paid"],
+            Decimal("100000.00"),
+        )
+
+    def test_replacement_reserve_changes_cash_not_profit(self):
+        period = AccountingPeriod.objects.create(
+            period_start=date(2026, 1, 1),
+            period_end=date(2026, 1, 31),
+        )
+        ReplacementReserveTransaction.objects.create(
+            accounting_period=period,
+            transaction_date=date(2026, 1, 20),
+            transaction_type=ReserveTransactionType.CONTRIBUTION,
+            amount=Decimal("50000.00"),
+            authorized_by=self.user,
+        )
+
+        report = monthly_profitability_report(period)
+
+        self.assertEqual(report["cash_flow"]["reserve_contributions"], Decimal("50000.00"))
+        self.assertEqual(report["other_costs"]["net_profit_before_tax"], Decimal("0.00"))
 
 
 class FinancePermissionTests(TestCase):

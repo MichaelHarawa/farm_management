@@ -25,6 +25,8 @@ class BatchSerializer(serializers.ModelSerializer):
             "bird_type",
             "source",
             "source_other",
+            "booking_date",
+            "estimated_chick_arrival_date",
             "entry_date",
             "expected_maturity_date",
             "quantity",
@@ -96,6 +98,8 @@ class InputCostsSerializer(serializers.ModelSerializer):
             "unit_measurement",
             "unit",
             "unit_cost",
+            "usd_exchange_rate",
+            "usd_equivalent",
             "direct_input_total",
             "purchase_date",
             "notes",
@@ -111,6 +115,7 @@ class InputCostsSerializer(serializers.ModelSerializer):
             "updated_at",
             "created_by",
             "created_by_name",
+            "usd_equivalent",
             "direct_input_total",
         )
 
@@ -158,6 +163,8 @@ class SalesSerializer(serializers.ModelSerializer):
             "product_type",
             "quantity_sold",
             "unit_price",
+            "usd_exchange_rate",
+            "usd_equivalent",
             "sale_total",
             "buyer_name",
             "buyer_type",
@@ -182,6 +189,7 @@ class SalesSerializer(serializers.ModelSerializer):
             "updated_at",
             "created_by",
             "created_by_name",
+            "usd_equivalent",
         )
 
     def validate(self, attrs):

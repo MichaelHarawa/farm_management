@@ -47,7 +47,15 @@ class FinancePermission(BasePermission):
         if action in {"close", "reopen"}:
             return user.has_any_role(FINANCE_CLOSE_ROLES)
 
-        if action in {"generate_payroll", "recalculate"}:
+        if action in {
+            "generate_payroll",
+            "generate_depreciation",
+            "allocate_depreciation",
+            "recalculate",
+            "from_expense",
+            "impair",
+            "dispose",
+        }:
             return user.has_any_role(FINANCE_MANAGEMENT_ROLES)
 
         return user.has_any_role(FINANCE_WRITE_ROLES)
