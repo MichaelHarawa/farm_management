@@ -39,7 +39,11 @@ export function formatDate(value: string | null | undefined): string {
   }).format(new Date(value));
 }
 
-export function formatLabel(value: string): string {
+export function formatLabel(value: string | null | undefined): string {
+  if (value === null || value === undefined || value === "") {
+    return "-";
+  }
+
   return value
     .replace(/_/g, " ")
     .replace(/\b\w/g, (letter) => letter.toUpperCase());

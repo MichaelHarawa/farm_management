@@ -18,7 +18,11 @@ export function formatCurrency(value: number): string {
   }).format(value);
 }
 
-export function formatLabel(value: string): string {
+export function formatLabel(value: string | null | undefined): string {
+  if (value === null || value === undefined || value === "") {
+    return "-";
+  }
+
   return value
     .replace(/_/g, " ")
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
