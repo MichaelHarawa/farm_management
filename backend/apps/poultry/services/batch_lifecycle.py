@@ -21,6 +21,10 @@ BIRD_PRODUCT_TYPES = {
     ProductType.LIVE_CHICKEN,
     ProductType.DRESSED_CHICKEN,
 }
+PRE_PRODUCTION_STATUSES = {
+    BatchStatus.BOOKED,
+    BatchStatus.DELIVERED,
+}
 
 
 @dataclass(frozen=True)
@@ -80,10 +84,16 @@ def calculate_bird_balance(batch: Batch | int) -> BirdBalance:
 
 
 def calculate_batch_status(batch: Batch) -> str:
+    if batch.booking_date and not batch.delivery_confirmed_at:
+        return BatchStatus.BOOKED
+
+    if batch.status == BatchStatus.DELIVERED:
+        return BatchStatus.DELIVERED
+
     balance = calculate_bird_balance(batch)
     today = timezone.localdate()
 
-    if balance.remaining_live_birds <= 0:
+    if batch.quantity > 0 and balance.remaining_live_birds <= 0:
         return BatchStatus.CLOSED
 
     if balance.valid_bird_units_sold > 0:
@@ -131,9 +141,17 @@ def assert_non_negative_bird_balance(batch: Batch) -> BirdBalance:
     return balance
 
 
+def assert_batch_in_production(batch: Batch) -> None:
+    if batch.status in PRE_PRODUCTION_STATUSES:
+        raise ValueError(
+            "Complete delivery and batch details before recording production activity."
+        )
+
+
 def create_sale_with_lifecycle(*, batch_id: int, created_by, **data) -> Sales:
     with transaction.atomic():
         batch = Batch.objects.select_for_update().get(pk=batch_id)
+        assert_batch_in_production(batch)
         sale = Sales(batch=batch, created_by=created_by, **data)
         if not sale.sale_id:
             sale.sale_id = sale.next_sale_id()
@@ -149,6 +167,7 @@ def create_sale_with_lifecycle(*, batch_id: int, created_by, **data) -> Sales:
 def create_mortality_with_lifecycle(*, batch_id: int, created_by, **data) -> Mortality:
     with transaction.atomic():
         batch = Batch.objects.select_for_update().get(pk=batch_id)
+        assert_batch_in_production(batch)
         mortality = Mortality(batch=batch, created_by=created_by, **data)
         mortality.full_clean()
         mortality.save()

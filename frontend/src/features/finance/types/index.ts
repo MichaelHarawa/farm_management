@@ -203,7 +203,7 @@ export type BatchProfitabilityReport = {
   batch: number;
   batch_id: string;
   status: string;
-  profitability_status: "provisional" | "final";
+  profitability_status: "booked" | "provisional" | "final";
   revenue: DecimalString;
   cash_collected: DecimalString;
   accounts_receivable: DecimalString;

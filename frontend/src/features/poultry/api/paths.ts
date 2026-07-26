@@ -6,6 +6,12 @@ export const poultryApiPaths = {
   batch: (batchId: number) =>
     `${POULTRY_ROOT}/${batchId}`,
 
+  markDelivered: (batchId: number) =>
+    `${POULTRY_ROOT}/${batchId}/mark-delivered`,
+
+  confirmDelivery: (batchId: number) =>
+    `${POULTRY_ROOT}/${batchId}/confirm-delivery`,
+
   inputCosts: (batchId: number) =>
     `${POULTRY_ROOT}/${batchId}/input_costs`,
 

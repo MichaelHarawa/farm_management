@@ -43,6 +43,20 @@ from apps.poultry.services.batch_lifecycle import calculate_bird_balance
 from .profitability import batch_profitability, money, percent
 
 
+PRE_PRODUCTION_BATCH_STATUSES = [
+    BatchStatus.BOOKED,
+    BatchStatus.DELIVERED,
+]
+ACTIVE_BATCH_EXCLUDED_STATUSES = [
+    *PRE_PRODUCTION_BATCH_STATUSES,
+    BatchStatus.CLOSED,
+]
+
+
+def _active_production_batches():
+    return Batch.objects.exclude(status__in=ACTIVE_BATCH_EXCLUDED_STATUSES)
+
+
 def _sales_expression():
     return ExpressionWrapper(
         F("quantity_sold") * F("unit_price"),
@@ -111,7 +125,9 @@ def monthly_profitability_report(period: AccountingPeriod) -> dict:
         InputCosts.objects.filter(
             purchase_date__date__gte=period.period_start,
             purchase_date__date__lte=period.period_end,
-        ).aggregate(total=Sum(_input_cost_expression()))["total"]
+        )
+        .exclude(batch__status__in=PRE_PRODUCTION_BATCH_STATUSES)
+        .aggregate(total=Sum(_input_cost_expression()))["total"]
     )
     batch_direct_labour = money(
         AdHocLabourPayment.objects.filter(
@@ -170,7 +186,7 @@ def monthly_profitability_report(period: AccountingPeriod) -> dict:
     )
 
     active_batch_work_in_progress = Decimal("0.00")
-    active_batches = Batch.objects.exclude(status=BatchStatus.CLOSED)
+    active_batches = _active_production_batches()
     for batch in active_batches.prefetch_related("sales_row", "input_costs"):
         active_batch_work_in_progress += batch_profitability(batch)[
             "active_batch_cost_exposure"
@@ -399,11 +415,13 @@ def monthly_profitability_report(period: AccountingPeriod) -> dict:
         Batch.objects.filter(
             entry_date__date__gte=period.period_start,
             entry_date__date__lte=period.period_end,
-        ).aggregate(total=Sum("quantity"))["total"]
+        )
+        .exclude(status__in=PRE_PRODUCTION_BATCH_STATUSES)
+        .aggregate(total=Sum("quantity"))["total"]
         or 0
     )
     birds_remaining = 0
-    for batch in Batch.objects.all():
+    for batch in _active_production_batches():
         birds_remaining += max(calculate_bird_balance(batch).remaining_live_birds, 0)
 
     feed_consumed = (
@@ -515,7 +533,7 @@ def monthly_profitability_report(period: AccountingPeriod) -> dict:
             ),
         },
         "operational_metrics": {
-            "batches_active": Batch.objects.exclude(status=BatchStatus.CLOSED).count(),
+            "batches_active": _active_production_batches().count(),
             "batches_closed": Batch.objects.filter(status=BatchStatus.CLOSED).count(),
             "birds_placed": birds_placed,
             "birds_sold": birds_sold,
@@ -555,7 +573,7 @@ def dashboard_warnings(period: AccountingPeriod | None = None) -> list[dict[str,
     today = timezone.localdate()
     warnings: list[dict[str, str]] = []
 
-    for batch in Batch.objects.exclude(status=BatchStatus.CLOSED):
+    for batch in _active_production_batches():
         balance = calculate_bird_balance(batch)
         mortality_rate = percent(
             Decimal(balance.mortality),
@@ -734,7 +752,7 @@ def dashboard_warnings(period: AccountingPeriod | None = None) -> list[dict[str,
 
 def dashboard_indicators() -> dict:
     latest_period = AccountingPeriod.objects.order_by("-period_start").first()
-    active_batches = Batch.objects.exclude(status=BatchStatus.CLOSED)
+    active_batches = _active_production_batches()
     active_cost_exposure = Decimal("0.00")
     closed_batch_profit = money(
         BatchProfitabilitySnapshot.objects.filter(final=True).aggregate(
@@ -742,7 +760,7 @@ def dashboard_indicators() -> dict:
         )["total"]
     )
 
-    for batch in Batch.objects.all():
+    for batch in active_batches:
         data = batch_profitability(batch)
         active_cost_exposure += data["active_batch_cost_exposure"]
 

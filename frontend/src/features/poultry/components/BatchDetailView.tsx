@@ -905,7 +905,7 @@ type Metrics = {
   mortalityPercent: number;
   collectionPercent: number;
   costPerBird: number;
-  profitabilityStatus: "provisional" | "final" | "local";
+  profitabilityStatus: "booked" | "provisional" | "final" | "local";
   totalFeedKg: number;
   feedPerLiveBird: number;
   dayOfCycle: number;

@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from datetime import timedelta
+
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from django.utils import timezone
 
 from apps.poultry.services.batch_lifecycle import (
     create_mortality_with_lifecycle,
@@ -24,7 +27,9 @@ from .models import(
 )
 
 from .serializers import(
+    BatchDeliverySerializer,
     BatchSerializer,
+    BatchStatusTransitionSerializer,
     InputCostsSerializer,
     SalesSerializer,
     MortalitySerializer,
@@ -48,7 +53,11 @@ class BatchViewset(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retrie
         )
 
     def get_serializer_class(self):
-        if self.action in {"input_costs", "feed_input_costs"}:
+        if self.action == "confirm_delivery":
+            return BatchDeliverySerializer
+        elif self.action == "mark_delivered":
+            return BatchStatusTransitionSerializer
+        elif self.action in {"input_costs", "feed_input_costs"}:
             return InputCostsSerializer
         elif self.action == "sales":
             return SalesSerializer
@@ -59,6 +68,84 @@ class BatchViewset(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retrie
         elif self.action == "drugs_vaccine":
             return DrugsVaccinationSerializer
         return BatchSerializer
+
+    @action(detail=True, methods=["post"], url_path="mark-delivered")
+    def mark_delivered(self, request, pk=None):
+        poultry_batch = self.get_object()
+
+        if poultry_batch.status == BatchStatus.CLOSED:
+            raise ValidationError({"status": "Closed batches cannot be changed."})
+
+        if poultry_batch.status != BatchStatus.BOOKED:
+            raise ValidationError(
+                {
+                    "status": (
+                        "Only booked batches can be marked delivered before "
+                        "batch details are added."
+                    )
+                }
+            )
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        poultry_batch.status = BatchStatus.DELIVERED
+        poultry_batch.delivery_confirmed_at = timezone.now()
+        poultry_batch.save(update_fields=["status", "delivery_confirmed_at", "updated_at"])
+
+        return Response(
+            BatchSerializer(poultry_batch, context=self.get_serializer_context()).data,
+            status=status.HTTP_200_OK,
+        )
+
+    @action(detail=True, methods=["post"], url_path="confirm-delivery")
+    def confirm_delivery(self, request, pk=None):
+        poultry_batch = self.get_object()
+
+        if poultry_batch.status == BatchStatus.CLOSED:
+            raise ValidationError({"status": "Closed batches cannot be changed."})
+
+        if poultry_batch.status != BatchStatus.DELIVERED:
+            raise ValidationError(
+                {
+                    "status": (
+                        "Mark the booked chicks as delivered before adding "
+                        "batch details."
+                    )
+                }
+            )
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        entry_date = data["entry_date"]
+
+        poultry_batch.entry_date = entry_date
+        poultry_batch.expected_maturity_date = data.get(
+            "expected_maturity_date",
+            entry_date + timedelta(days=46),
+        )
+        poultry_batch.quantity = data.get("quantity", poultry_batch.quantity)
+        poultry_batch.delivery_confirmed_at = (
+            poultry_batch.delivery_confirmed_at or timezone.now()
+        )
+        poultry_batch.status = BatchStatus.PLANNED
+        poultry_batch.save(
+            update_fields=[
+                "entry_date",
+                "expected_maturity_date",
+                "quantity",
+                "delivery_confirmed_at",
+                "status",
+                "updated_at",
+            ]
+        )
+        recalculate_batch_status(poultry_batch)
+
+        return Response(
+            BatchSerializer(poultry_batch, context=self.get_serializer_context()).data,
+            status=status.HTTP_200_OK,
+        )
 
     @action(detail=True, methods=["get", "post"], url_path="input_costs")
     def input_costs(self, request, pk=None):

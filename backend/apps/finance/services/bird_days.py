@@ -15,6 +15,7 @@ from ..models import AccountingPeriod, BirdDaySnapshot, PeriodStatus
 
 CALCULATION_VERSION = "bird-days-v1"
 BIRD_PRODUCTS = {ProductType.LIVE_CHICKEN, ProductType.DRESSED_CHICKEN}
+PRE_PRODUCTION_STATUSES = [BatchStatus.BOOKED, BatchStatus.DELIVERED]
 
 
 def _date_range(start: date, end: date):
@@ -159,7 +160,7 @@ def recalculate_bird_day_snapshots(
     ).filter(
         models.Q(closed_at__isnull=True)
         | models.Q(closed_at__date__gte=period.period_start)
-    )
+    ).exclude(status__in=PRE_PRODUCTION_STATUSES)
 
     snapshots: list[BirdDaySnapshot] = []
     for batch in batches:

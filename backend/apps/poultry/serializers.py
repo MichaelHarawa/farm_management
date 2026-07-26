@@ -5,6 +5,7 @@ from rest_framework import serializers
 
 from .models import(
     Batch,
+    BatchStatus,
     ChicksSource,
     PaymentStatus,
     InputCosts,
@@ -27,6 +28,7 @@ class BatchSerializer(serializers.ModelSerializer):
             "source_other",
             "booking_date",
             "estimated_chick_arrival_date",
+            "delivery_confirmed_at",
             "entry_date",
             "expected_maturity_date",
             "quantity",
@@ -45,6 +47,7 @@ class BatchSerializer(serializers.ModelSerializer):
             "id",
             "batch_id",
             "status",
+            "delivery_confirmed_at",
             "closed_at",
             "closure_reason",
             "profitability_finalized_at",
@@ -78,6 +81,35 @@ class BatchSerializer(serializers.ModelSerializer):
             return ""
 
         return obj.created_by.get_full_name() or obj.created_by.username
+
+
+class BatchStatusTransitionSerializer(serializers.Serializer):
+    status = serializers.ChoiceField(
+        choices=[
+            (BatchStatus.DELIVERED, BatchStatus.DELIVERED.label),
+        ]
+    )
+
+
+class BatchDeliverySerializer(serializers.Serializer):
+    entry_date = serializers.DateTimeField()
+    expected_maturity_date = serializers.DateTimeField(required=False)
+    quantity = serializers.IntegerField(min_value=1, required=False)
+
+    def validate(self, attrs):
+        entry_date = attrs.get("entry_date")
+        maturity_date = attrs.get("expected_maturity_date")
+
+        if maturity_date and maturity_date <= entry_date:
+            raise serializers.ValidationError(
+                {
+                    "expected_maturity_date": (
+                        "Expected maturity date must be after the entry date."
+                    )
+                }
+            )
+
+        return attrs
 
 class InputCostsSerializer(serializers.ModelSerializer):
     created_by_name = serializers.SerializerMethodField()

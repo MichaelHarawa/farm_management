@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
@@ -44,7 +44,7 @@ from apps.finance.services.consumables import record_consumable_usage
 from apps.finance.services.depreciation import generate_depreciation_for_period
 from apps.finance.services.payroll import generate_payroll_for_period
 from apps.finance.services.profitability import batch_profitability
-from apps.finance.services.reporting import monthly_profitability_report
+from apps.finance.services.reporting import dashboard_indicators, monthly_profitability_report
 from apps.poultry.models import (
     Batch,
     BatchStatus,
@@ -200,6 +200,118 @@ class FinanceServiceTests(TestCase):
         self.assertEqual(data["revenue"], Decimal("0.00"))
         self.assertEqual(data["accounts_receivable"], Decimal("0.00"))
         self.assertEqual(balance.remaining_live_birds, 20)
+
+    def test_booking_flow_waits_for_delivery_before_batch_details(self):
+        client = APIClient()
+        client.force_authenticate(self.user)
+        booking_day = timezone.localdate()
+        expected_delivery = booking_day + timedelta(days=10)
+        placeholder_entry = aware(expected_delivery)
+        placeholder_maturity = placeholder_entry + timedelta(days=46)
+
+        response = client.post(
+            "/api/v1/poultry-management/",
+            {
+                "bird_type": "broilers",
+                "source": ChicksSource.PROTO,
+                "source_other": "",
+                "booking_date": booking_day.isoformat(),
+                "estimated_chick_arrival_date": expected_delivery.isoformat(),
+                "entry_date": placeholder_entry.isoformat(),
+                "expected_maturity_date": placeholder_maturity.isoformat(),
+                "quantity": 200,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["status"], BatchStatus.BOOKED)
+
+        batch_id = response.data["id"]
+        mark_response = client.post(
+            f"/api/v1/poultry-management/{batch_id}/mark-delivered",
+            {"status": BatchStatus.DELIVERED},
+            format="json",
+        )
+
+        self.assertEqual(mark_response.status_code, 200)
+        self.assertEqual(mark_response.data["status"], BatchStatus.DELIVERED)
+
+        entry_date = timezone.now().replace(second=0, microsecond=0)
+        maturity_date = entry_date + timedelta(days=46)
+        confirm_response = client.post(
+            f"/api/v1/poultry-management/{batch_id}/confirm-delivery",
+            {
+                "entry_date": entry_date.isoformat(),
+                "expected_maturity_date": maturity_date.isoformat(),
+                "quantity": 190,
+            },
+            format="json",
+        )
+
+        self.assertEqual(confirm_response.status_code, 200)
+        self.assertEqual(confirm_response.data["status"], BatchStatus.ACTIVE)
+        self.assertEqual(confirm_response.data["quantity"], 190)
+
+    def test_booked_batches_do_not_enter_production_finance(self):
+        today = timezone.localdate()
+        period = AccountingPeriod.objects.create(
+            period_start=today - timedelta(days=1),
+            period_end=today + timedelta(days=1),
+        )
+        active_batch = self.batch(
+            quantity=100,
+            entry=today - timedelta(days=1),
+            maturity=today + timedelta(days=46),
+        )
+        booked_batch = Batch.objects.create(
+            bird_type="broilers",
+            source=ChicksSource.PROTO,
+            booking_date=today,
+            estimated_chick_arrival_date=today + timedelta(days=10),
+            entry_date=aware(today + timedelta(days=10)),
+            expected_maturity_date=aware(today + timedelta(days=56)),
+            quantity=250,
+            status=BatchStatus.BOOKED,
+            created_by=self.user,
+        )
+
+        for batch, unit_cost in [
+            (active_batch, Decimal("100.00")),
+            (booked_batch, Decimal("500.00")),
+        ]:
+            InputCosts.objects.create(
+                batch=batch,
+                item="Feed",
+                category="Feed",
+                quantity=1,
+                unit=1,
+                unit_measurement="kg",
+                unit_cost=unit_cost,
+                purchase_date=aware(today),
+                notes="",
+                created_by=self.user,
+            )
+
+        report = monthly_profitability_report(period)
+        dashboard = dashboard_indicators()
+        booked_profitability = batch_profitability(booked_batch)
+
+        self.assertEqual(
+            report["production"]["direct_batch_costs"],
+            Decimal("100.00"),
+        )
+        self.assertEqual(report["operational_metrics"]["batches_active"], 1)
+        self.assertEqual(dashboard["active_batches"], 1)
+        self.assertEqual(
+            dashboard["active_batch_cost_exposure"],
+            Decimal("100.00"),
+        )
+        self.assertEqual(booked_profitability["profitability_status"], "booked")
+        self.assertEqual(
+            booked_profitability["active_batch_cost_exposure"],
+            Decimal("0.00"),
+        )
 
     def test_overselling_is_rejected_transactionally(self):
         batch = self.batch(quantity=10)

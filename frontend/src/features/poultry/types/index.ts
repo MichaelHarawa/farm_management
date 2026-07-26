@@ -15,10 +15,18 @@ export type PoultryBatch = {
   source_other: string;
   booking_date: string | null;
   estimated_chick_arrival_date: string | null;
+  delivery_confirmed_at: string | null;
   entry_date: string;
   expected_maturity_date: string;
   quantity: number;
-  status: "planned" | "active" | "mature" | "selling" | "closed";
+  status:
+    | "booked"
+    | "planned"
+    | "delivered"
+    | "active"
+    | "mature"
+    | "selling"
+    | "closed";
   target_selling_price: number | null;
   closure_notes: string;
   created_at: string;
@@ -31,9 +39,17 @@ export type CreatePoultryBatchPayload = {
   bird_type: BirdType;
   source: ChicksSource;
   source_other: string;
+  booking_date?: string;
+  estimated_chick_arrival_date?: string;
   entry_date: string;
   expected_maturity_date: string;
   quantity: number;
+};
+
+export type ConfirmBatchDeliveryPayload = {
+  entry_date: string;
+  expected_maturity_date?: string;
+  quantity?: number;
 };
 
 export type InputCost = {

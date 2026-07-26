@@ -1,13 +1,28 @@
 import { BatchList } from "@/features/poultry/components/BatchList";
-import { AddBatchDialog } from "@/features/poultry/components/AddBatchDialog";
+import { BookChicksDialog } from "@/features/poultry/components/AddBatchDialog";
 import { getPoultryBatches } from "@/features/poultry/api/batches";
 import Link from "next/link";
 
 export default async function PoultryPage() {
   const batches = await getPoultryBatches("/poultry");
-  const totalBirds = batches.reduce((total, batch) => total + batch.quantity, 0);
-  const nextMaturityDate = batches
+  const productionBatches = batches.filter(
+    (batch) => batch.status !== "booked" && batch.status !== "delivered"
+  );
+  const bookedBatches = batches.filter((batch) => batch.status === "booked");
+  const totalBirds = productionBatches.reduce(
+    (total, batch) => total + batch.quantity,
+    0
+  );
+  const nextMaturityDate = productionBatches
     .map((batch) => new Date(batch.expected_maturity_date))
+    .sort((a, b) => a.getTime() - b.getTime())[0];
+  const nextDeliveryDate = bookedBatches
+    .map((batch) =>
+      batch.estimated_chick_arrival_date
+        ? new Date(batch.estimated_chick_arrival_date)
+        : null
+    )
+    .filter((date): date is Date => date !== null)
     .sort((a, b) => a.getTime() - b.getTime())[0];
 
   return (
@@ -32,7 +47,7 @@ export default async function PoultryPage() {
           <div className="grid content-center gap-4">
             <HeroMetric
               label="Live batches"
-              value={batches.length.toString().padStart(2, "0")}
+              value={productionBatches.length.toString().padStart(2, "0")}
               detail="Production cycles currently tracked"
             />
             <HeroMetric
@@ -41,16 +56,20 @@ export default async function PoultryPage() {
               detail="Initial flock volume in register"
             />
             <HeroMetric
-              label="Next maturity"
+              label={nextDeliveryDate ? "Next delivery" : "Next maturity"}
               value={
-                nextMaturityDate
+                nextDeliveryDate || nextMaturityDate
                   ? new Intl.DateTimeFormat("en", {
                       month: "short",
                       day: "2-digit",
-                    }).format(nextMaturityDate)
+                    }).format(nextDeliveryDate ?? nextMaturityDate)
                   : "-"
               }
-              detail="Nearest expected maturity date"
+              detail={
+                nextDeliveryDate
+                  ? "Nearest booked chick delivery"
+                  : "Nearest expected maturity date"
+              }
             />
           </div>
         </div>
@@ -77,7 +96,7 @@ export default async function PoultryPage() {
             />
           </div>
 
-          <BatchList batches={batches} addBatchAction={<AddBatchDialog />} />
+          <BatchList batches={batches} addBatchAction={<BookChicksDialog />} />
         </div>
       </section>
     </main>

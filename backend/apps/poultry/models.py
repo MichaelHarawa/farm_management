@@ -99,7 +99,9 @@ class DrugCategory(models.TextChoices):
 
 
 class BatchStatus(models.TextChoices):
+    BOOKED = "booked", "Booked"
     PLANNED = "planned", "Planned"
+    DELIVERED = "delivered", "Delivered at farm"
     ACTIVE = "active", "Active"
     MATURE = "mature", "Mature"
     SELLING = "selling", "Selling"
@@ -142,6 +144,7 @@ class Batch(models.Model):
     source_other = models.CharField(max_length=200, blank=True, default="")
     booking_date = models.DateField(null=True, blank=True)
     estimated_chick_arrival_date = models.DateField(null=True, blank=True)
+    delivery_confirmed_at = models.DateTimeField(null=True, blank=True)
     entry_date = models.DateTimeField()
     expected_maturity_date = models.DateTimeField()
     quantity = models.PositiveIntegerField(default=0)

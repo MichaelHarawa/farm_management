@@ -30,6 +30,10 @@ from apps.poultry.services.batch_lifecycle import calculate_bird_balance
 
 
 ZERO = Decimal("0.00")
+PRE_PRODUCTION_STATUSES = {
+    BatchStatus.BOOKED,
+    BatchStatus.DELIVERED,
+}
 
 
 def money(value: Decimal | int | None) -> Decimal:
@@ -156,6 +160,7 @@ def selling_cost_total(batch: Batch) -> Decimal:
 
 
 def batch_profitability(batch: Batch) -> dict:
+    is_pre_production = batch.status in PRE_PRODUCTION_STATUSES
     balance = calculate_bird_balance(batch)
     revenue = sales_revenue(batch)
     collected = cash_collected(batch)
@@ -196,7 +201,11 @@ def batch_profitability(batch: Batch) -> dict:
         "batch": batch.pk,
         "batch_id": batch.batch_id,
         "status": batch.status,
-        "profitability_status": "final" if is_final else "provisional",
+        "profitability_status": (
+            "booked"
+            if is_pre_production
+            else "final" if is_final else "provisional"
+        ),
         "revenue": revenue,
         "cash_collected": collected,
         "accounts_receivable": outstanding,
@@ -231,7 +240,9 @@ def batch_profitability(batch: Batch) -> dict:
             ZERO,
         ),
         "active_batch_cost_exposure": (
-            total_production_cost if not is_final else ZERO
+            total_production_cost
+            if not is_final and not is_pre_production
+            else ZERO
         ),
     }
 
