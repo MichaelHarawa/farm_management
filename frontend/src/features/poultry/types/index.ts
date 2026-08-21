@@ -116,7 +116,8 @@ export type BuyerType =
   | "market_vendor"
   | "retail"
   | "retail_supply"
-  | "bulk_order";
+  | "bulk_order"
+  | "other";
 
 export type PoultrySale = {
   id: number;
@@ -130,6 +131,7 @@ export type PoultrySale = {
   usd_equivalent: number | null;
   buyer_name: string;
   buyer_type: BuyerType;
+  buyer_type_other: string;
   payment_status: PaymentStatus;
   payment_method: PaymentMethod;
   amount_paid: number;
@@ -231,6 +233,7 @@ export type CreateSalePayload = {
   unit_price: number;
   buyer_name: string;
   buyer_type: BuyerType;
+  buyer_type_other: string;
   payment_status: PaymentStatus;
   payment_method: PaymentMethod;
   amount_paid: number;

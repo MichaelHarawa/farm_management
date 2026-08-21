@@ -6,6 +6,7 @@ from rest_framework import serializers
 from .models import(
     Batch,
     BatchStatus,
+    BuyerType,
     ChicksSource,
     PaymentStatus,
     InputCosts,
@@ -200,6 +201,7 @@ class SalesSerializer(serializers.ModelSerializer):
             "sale_total",
             "buyer_name",
             "buyer_type",
+            "buyer_type_other",
             "payment_status",
             "payment_method",
             "amount_paid",
@@ -223,6 +225,9 @@ class SalesSerializer(serializers.ModelSerializer):
             "created_by_name",
             "usd_equivalent",
         )
+        extra_kwargs = {
+            "amount_paid": {"required": False},
+        }
 
     def validate(self, attrs):
         quantity_sold = attrs.get(
@@ -233,19 +238,43 @@ class SalesSerializer(serializers.ModelSerializer):
             "unit_price",
             getattr(self.instance, "unit_price", Decimal("0.00")),
         )
-        amount_paid = attrs.get(
-            "amount_paid",
-            getattr(self.instance, "amount_paid", Decimal("0.00")),
-        )
         payment_status = attrs.get(
             "payment_status",
             getattr(self.instance, "payment_status", None),
         )
+        amount_paid_supplied = "amount_paid" in attrs
+        amount_paid = attrs.get(
+            "amount_paid",
+            getattr(self.instance, "amount_paid", Decimal("0.00")),
+        )
+        buyer_type = attrs.get(
+            "buyer_type",
+            getattr(self.instance, "buyer_type", None),
+        )
+        buyer_type_other = (
+            attrs.get(
+                "buyer_type_other",
+                getattr(self.instance, "buyer_type_other", ""),
+            )
+            or ""
+        ).strip()
         sale_total = (Decimal(quantity_sold) * unit_price).quantize(
             Decimal("0.01")
         )
 
         errors = {}
+        if buyer_type == BuyerType.OTHER and len(buyer_type_other) < 2:
+            errors["buyer_type_other"] = (
+                "Other buyer type must contain at least 2 characters."
+            )
+        attrs["buyer_type_other"] = (
+            buyer_type_other if buyer_type == BuyerType.OTHER else ""
+        )
+        if payment_status == PaymentStatus.PAID:
+            amount_paid = sale_total
+            attrs["amount_paid"] = sale_total
+        elif self.instance is None and not amount_paid_supplied:
+            errors["amount_paid"] = "Amount paid is required unless the sale is paid."
         if quantity_sold <= 0:
             errors["quantity_sold"] = "Quantity sold must be greater than zero."
         if unit_price < Decimal("0.00"):

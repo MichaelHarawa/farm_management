@@ -40,6 +40,7 @@ type AddFeedUsageFormProps = {
   batchId: number;
   currentBirds: number;
   defaultAgeInDays: number;
+  defaultFeedingStartDate: string;
 };
 
 function toDateTimeLocal(date: Date): string {
@@ -49,15 +50,28 @@ function toDateTimeLocal(date: Date): string {
   return localDate.toISOString().slice(0, 16);
 }
 
+function getInitialDateRange(defaultFeedingStartDate: string) {
+  const now = new Date();
+  const requestedStart = new Date(defaultFeedingStartDate);
+  const start = Number.isNaN(requestedStart.getTime()) ? now : requestedStart;
+  const end = start > now ? start : now;
+
+  return {
+    start: toDateTimeLocal(start),
+    end: toDateTimeLocal(end),
+  };
+}
+
 export function AddFeedUsageForm({
   batchId,
   currentBirds,
   defaultAgeInDays,
+  defaultFeedingStartDate,
 }: AddFeedUsageFormProps) {
   const router = useRouter();
   const [serverError, setServerError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const now = toDateTimeLocal(new Date());
+  const initialDateRange = getInitialDateRange(defaultFeedingStartDate);
 
   const {
     register,
@@ -69,8 +83,8 @@ export function AddFeedUsageForm({
     resolver: zodResolver(feedUsageSchema),
     defaultValues: {
       initial_age: defaultAgeInDays,
-      feeding_start_date: now,
-      feeding_end_date: now,
+      feeding_start_date: initialDateRange.start,
+      feeding_end_date: initialDateRange.end,
       feed_type: "starter",
       feed_source: "cp_feed",
       quantity_given: 1,
@@ -108,11 +122,18 @@ export function AddFeedUsageForm({
     try {
       await createBatchFeedUsage(batchId, values);
 
-      const nextNow = toDateTimeLocal(new Date());
+      const nextStart = values.feeding_end_date;
+      const nextStartDate = new Date(nextStart);
+      const currentDate = new Date();
+      const nextEnd = toDateTimeLocal(
+        !Number.isNaN(nextStartDate.getTime()) && nextStartDate > currentDate
+          ? nextStartDate
+          : currentDate
+      );
       reset({
         initial_age: defaultAgeInDays,
-        feeding_start_date: nextNow,
-        feeding_end_date: nextNow,
+        feeding_start_date: nextStart,
+        feeding_end_date: nextEnd,
         feed_type: "starter",
         feed_source: "cp_feed",
         quantity_given: 1,

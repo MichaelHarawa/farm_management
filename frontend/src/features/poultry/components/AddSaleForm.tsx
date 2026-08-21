@@ -2,7 +2,7 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useForm, useWatch, type SubmitHandler } from "react-hook-form";
 
 import { getApiErrorMessage } from "@/lib/errors";
@@ -23,6 +23,7 @@ const buyerTypeOptions = [
   { value: "retail", label: "Retail" },
   { value: "retail_supply", label: "Retail Supply" },
   { value: "bulk_order", label: "Bulk Order" },
+  { value: "other", label: "Other" },
 ] as const;
 
 const paymentStatusOptions = [
@@ -60,6 +61,7 @@ export function AddSaleForm({ batchId }: AddSaleFormProps) {
     register,
     handleSubmit,
     reset,
+    setValue,
     control,
     formState: { errors, isSubmitting },
   } = useForm<SaleFormValues>({
@@ -71,6 +73,7 @@ export function AddSaleForm({ batchId }: AddSaleFormProps) {
       unit_price: 0,
       buyer_name: "",
       buyer_type: "market_vendor",
+      buyer_type_other: "",
       payment_status: "partial",
       payment_method: "cash",
       amount_paid: 0,
@@ -90,6 +93,24 @@ export function AddSaleForm({ batchId }: AddSaleFormProps) {
       control,
       name: "unit_price",
     }) ?? 0;
+  const buyerType = useWatch({
+    control,
+    name: "buyer_type",
+  });
+  const paymentStatus = useWatch({
+    control,
+    name: "payment_status",
+  });
+
+  useEffect(() => {
+    if (paymentStatus === "paid") {
+      setValue("amount_paid", 0, {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+    }
+  }, [paymentStatus, setValue]);
+
   const amountPaid =
     useWatch({
       control,
@@ -97,15 +118,24 @@ export function AddSaleForm({ batchId }: AddSaleFormProps) {
     }) ?? 0;
 
   const saleTotal = quantitySold * unitPrice;
-  const balance = Math.max(saleTotal - amountPaid, 0);
+  const effectiveAmountPaid = paymentStatus === "paid" ? saleTotal : amountPaid;
+  const balance = Math.max(saleTotal - effectiveAmountPaid, 0);
 
   const onSubmit: SubmitHandler<SaleFormValues> = async (values) => {
     setServerError(null);
     setSuccessMessage(null);
 
+    const submittedSaleTotal = values.quantity_sold * values.unit_price;
+    const submittedAmountPaid =
+      values.payment_status === "paid"
+        ? submittedSaleTotal
+        : values.amount_paid;
     const payload: CreateSalePayload = {
       ...values,
-      balance: Math.max(values.quantity_sold * values.unit_price - values.amount_paid, 0),
+      buyer_type_other:
+        values.buyer_type === "other" ? values.buyer_type_other.trim() : "",
+      amount_paid: submittedAmountPaid,
+      balance: Math.max(submittedSaleTotal - submittedAmountPaid, 0),
     };
 
     try {
@@ -118,6 +148,7 @@ export function AddSaleForm({ batchId }: AddSaleFormProps) {
         unit_price: 0,
         buyer_name: "",
         buyer_type: "market_vendor",
+        buyer_type_other: "",
         payment_status: "partial",
         payment_method: "cash",
         amount_paid: 0,
@@ -216,6 +247,22 @@ export function AddSaleForm({ batchId }: AddSaleFormProps) {
           </select>
         </FormField>
 
+        {buyerType === "other" ? (
+          <FormField
+            label="Other buyer type"
+            error={errors.buyer_type_other?.message}
+          >
+            <input
+              id="sale-buyer-type-other"
+              type="text"
+              placeholder="Enter buyer type"
+              maxLength={200}
+              {...register("buyer_type_other")}
+              className="form-input"
+            />
+          </FormField>
+        ) : null}
+
         <FormField
           label="Payment status"
           error={errors.payment_status?.message}
@@ -250,18 +297,20 @@ export function AddSaleForm({ batchId }: AddSaleFormProps) {
           </select>
         </FormField>
 
-        <FormField label="Amount paid" error={errors.amount_paid?.message}>
-          <input
-            id="sale-amount-paid"
-            type="number"
-            min="0"
-            step="1"
-            {...register("amount_paid", {
-              valueAsNumber: true,
-            })}
-            className="form-input"
-          />
-        </FormField>
+        {paymentStatus !== "paid" ? (
+          <FormField label="Amount paid" error={errors.amount_paid?.message}>
+            <input
+              id="sale-amount-paid"
+              type="number"
+              min="0"
+              step="1"
+              {...register("amount_paid", {
+                valueAsNumber: true,
+              })}
+              className="form-input"
+            />
+          </FormField>
+        ) : null}
 
         <FormField label="Sold by" error={errors.sold_by_name?.message}>
           <input

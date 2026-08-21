@@ -1,12 +1,18 @@
 import { getMonthlyReport } from "@/features/finance/api/finance";
 import {
   EmptyState,
+  FinanceBarChart,
   FinanceNav,
   FinancePageShell,
   MetricCard,
   Panel,
 } from "@/features/finance/components/FinanceUI";
-import { formatCurrency, formatNumber, formatPercent } from "@/features/finance/utils/formatters";
+import {
+  formatCurrency,
+  formatNumber,
+  formatPercent,
+  parseDecimal,
+} from "@/features/finance/utils/formatters";
 import type { MonthlyReport } from "@/features/finance/types";
 import { BackendApiError } from "@/lib/server/backend-api";
 
@@ -42,6 +48,92 @@ export default async function FinanceMonthlyPage() {
               value={formatCurrency(report.other_costs.net_profit_before_tax)}
             />
           </div>
+          <Panel title="Business Insights">
+            <div className="grid gap-4 lg:grid-cols-2">
+              <FinanceBarChart
+                title="Revenue Mix"
+                detail="Compare the products contributing to this month's farm revenue."
+                points={[
+                  {
+                    label: "Bird sales",
+                    value: parseDecimal(report.revenue.bird_sales),
+                    displayValue: formatCurrency(report.revenue.bird_sales),
+                    tone: "gold",
+                  },
+                  {
+                    label: "Egg sales",
+                    value: parseDecimal(report.revenue.egg_sales),
+                    displayValue: formatCurrency(report.revenue.egg_sales),
+                    tone: "green",
+                  },
+                  {
+                    label: "Manure sales",
+                    value: parseDecimal(report.revenue.manure_sales),
+                    displayValue: formatCurrency(report.revenue.manure_sales),
+                    tone: "muted",
+                  },
+                  {
+                    label: "Other batch revenue",
+                    value: parseDecimal(report.revenue.other_batch_revenue),
+                    displayValue: formatCurrency(
+                      report.revenue.other_batch_revenue
+                    ),
+                    tone: "navy",
+                  },
+                ]}
+              />
+              <FinanceBarChart
+                title="Asset And Replacement Position"
+                detail="Compare asset value with depreciation, reserves, and the replacement funding gap."
+                points={[
+                  {
+                    label: "Gross asset cost",
+                    value: parseDecimal(report.asset_reporting.gross_asset_cost),
+                    displayValue: formatCurrency(
+                      report.asset_reporting.gross_asset_cost
+                    ),
+                    tone: "gold",
+                  },
+                  {
+                    label: "Accumulated depreciation",
+                    value: parseDecimal(
+                      report.asset_reporting.accumulated_depreciation
+                    ),
+                    displayValue: formatCurrency(
+                      report.asset_reporting.accumulated_depreciation
+                    ),
+                    tone: "muted",
+                  },
+                  {
+                    label: "Carrying amount",
+                    value: parseDecimal(report.asset_reporting.carrying_amount),
+                    displayValue: formatCurrency(
+                      report.asset_reporting.carrying_amount
+                    ),
+                    tone: "navy",
+                  },
+                  {
+                    label: "Reserve balance",
+                    value: parseDecimal(report.asset_reporting.reserve_balance),
+                    displayValue: formatCurrency(
+                      report.asset_reporting.reserve_balance
+                    ),
+                    tone: "green",
+                  },
+                  {
+                    label: "Replacement funding gap",
+                    value: parseDecimal(
+                      report.asset_reporting.replacement_funding_gap
+                    ),
+                    displayValue: formatCurrency(
+                      report.asset_reporting.replacement_funding_gap
+                    ),
+                    tone: "danger",
+                  },
+                ]}
+              />
+            </div>
+          </Panel>
           <div className="grid gap-6 lg:grid-cols-2">
             <Panel title="Production">
               <ReportRows

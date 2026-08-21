@@ -4,6 +4,7 @@
   --page-cream: #f4eedf;
   --surface-cream: #fbf6e8;
   --surface-cream-soft: #f0e8d6;
+  --surface-white: #ffffff;
 
   --navy: #172443;
   --navy-soft: #22345f;
@@ -14,8 +15,10 @@
 
   --line: #d8cfbb;
   --danger: #b4533a;
+  --overlay: rgba(233, 236, 243, 0.8);
 
   --shadow-card: 0 18px 40px rgba(23, 36, 67, 0.12);
+  --shadow-modal: 0 30px 90px rgba(21, 31, 54, 0.24);
 }
 
 * {

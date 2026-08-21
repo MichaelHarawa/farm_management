@@ -648,14 +648,16 @@ npm.cmd run build
 Backend checks:
 
 ```powershell
-python backend/manage.py check
-python backend/manage.py test
+cd backend
+python manage.py check
+python manage.py test
 ```
 
 Finance-focused backend tests:
 
 ```powershell
-python backend/manage.py test apps.finance.tests
+cd backend
+python manage.py test apps.finance.tests
 ```
 
 Manual finance smoke test:

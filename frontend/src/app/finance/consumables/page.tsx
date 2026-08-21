@@ -4,8 +4,8 @@ import {
   getConsumableUsages,
 } from "@/features/finance/api/finance";
 import {
-  ConsumableLotForm,
-  ConsumableUsageForm,
+  ConsumableLotDialog,
+  ConsumableUsageDialog,
 } from "@/features/finance/components/FinanceForms";
 import {
   EmptyState,
@@ -34,16 +34,17 @@ export default async function FinanceConsumablesPage() {
       detail="Track shared purchases as stock, then recognize expense when the farm consumes them."
       actions={<FinanceNav />}
     >
-      <Panel title="Record Consumable Purchase">
-        <ConsumableLotForm />
-      </Panel>
-
-      <Panel title="Record Consumable Usage">
-        {periods.length && lots.length ? (
-          <ConsumableUsageForm periods={periods} lots={lots} />
-        ) : (
-          <EmptyState message="Create an accounting period and a consumable lot before recording usage." />
-        )}
+      <Panel title="Consumable Actions">
+        <div className="flex flex-wrap items-center gap-3">
+          <ConsumableLotDialog />
+          {periods.length && lots.length ? (
+            <ConsumableUsageDialog periods={periods} lots={lots} />
+          ) : (
+            <p className="text-sm text-[var(--navy-muted)]">
+              Create an accounting period and a consumable lot to record usage.
+            </p>
+          )}
+        </div>
       </Panel>
 
       <Panel title="Consumable Lots">

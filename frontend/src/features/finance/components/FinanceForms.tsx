@@ -1,7 +1,8 @@
 "use client";
 
+import { Dialog } from "@/components/ui";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
 import type {
   AccountingPeriod,
@@ -17,6 +18,10 @@ type SubmitState = {
 const initialState: SubmitState = {
   status: "idle",
   message: "",
+};
+
+type FormSuccessProps = {
+  onSuccess?: () => void;
 };
 
 const STANDARD_WORKING_DAYS_PER_WEEK = 6;
@@ -55,7 +60,45 @@ async function postJson(path: string, payload: unknown) {
   }
 }
 
-export function EmployeeCreateForm() {
+function FinanceFormDialog({
+  triggerLabel,
+  eyebrow,
+  title,
+  size = "xl",
+  children,
+}: {
+  triggerLabel: string;
+  eyebrow: string;
+  title: string;
+  size?: "md" | "lg" | "xl";
+  children: (close: () => void) => ReactNode;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const close = () => setIsOpen(false);
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setIsOpen(true)}
+        className="finance-button"
+      >
+        {triggerLabel}
+      </button>
+      <Dialog
+        open={isOpen}
+        onClose={close}
+        eyebrow={eyebrow}
+        title={title}
+        size={size}
+      >
+        {children(close)}
+      </Dialog>
+    </>
+  );
+}
+
+export function EmployeeCreateForm({ onSuccess }: FormSuccessProps = {}) {
   const router = useRouter();
   const [state, setState] = useState(initialState);
   const [departmentChoice, setDepartmentChoice] = useState("production");
@@ -99,6 +142,7 @@ export function EmployeeCreateForm() {
       await postJson("/api/finance/employees", payload);
       setState(initialState);
       router.refresh();
+      onSuccess?.();
     } catch (error) {
       setState({
         status: "error",
@@ -216,57 +260,14 @@ export function EmployeeCreateForm() {
 }
 
 export function EmployeeCreateDialog() {
-  const [isOpen, setIsOpen] = useState(false);
-
   return (
-    <>
-      <button
-        type="button"
-        onClick={() => setIsOpen(true)}
-        className="finance-button"
-      >
-        Create Employee
-      </button>
-      {isOpen ? (
-        <div
-          className="fixed inset-0 z-[100] overflow-y-auto bg-[#e9ecf3]/80 px-4 py-8 backdrop-blur-[7px]"
-          role="presentation"
-          onMouseDown={() => setIsOpen(false)}
-        >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="create-employee-title"
-            className="mx-auto w-full max-w-5xl rounded-lg border border-white/90 bg-white p-6 shadow-[0_30px_90px_rgba(21,31,54,0.24)] sm:p-8"
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-label text-[var(--navy-muted)]">
-                  Workforce
-                </p>
-                <h2
-                  id="create-employee-title"
-                  className="mt-2 text-2xl font-extrabold text-[var(--navy)]"
-                >
-                  Create employee
-                </h2>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsOpen(false)}
-                className="rounded-full border border-[var(--line)] px-4 py-2 text-xs font-extrabold uppercase tracking-[0.14em] text-[var(--navy-muted)] transition hover:bg-[var(--gold-soft)] hover:text-[var(--navy)]"
-              >
-                Close
-              </button>
-            </div>
-            <div className="mt-6">
-              <EmployeeCreateForm />
-            </div>
-          </div>
-        </div>
-      ) : null}
-    </>
+    <FinanceFormDialog
+      triggerLabel="Create Employee"
+      eyebrow="Workforce"
+      title="Create employee"
+    >
+      {(close) => <EmployeeCreateForm onSuccess={close} />}
+    </FinanceFormDialog>
   );
 }
 
@@ -317,7 +318,7 @@ export function PeriodActionButtons({ period }: { period: AccountingPeriod }) {
   );
 }
 
-export function AccountingPeriodCreateForm() {
+export function AccountingPeriodCreateForm({ onSuccess }: FormSuccessProps = {}) {
   const router = useRouter();
   const [state, setState] = useState(initialState);
 
@@ -331,6 +332,7 @@ export function AccountingPeriodCreateForm() {
       });
       setState(initialState);
       router.refresh();
+      onSuccess?.();
     } catch (error) {
       setState({
         status: "error",
@@ -380,7 +382,13 @@ export function AccountingPeriodCreateForm() {
   );
 }
 
-export function LabourPaymentForm({ periods }: { periods: AccountingPeriod[] }) {
+export function LabourPaymentForm({
+  periods,
+  onSuccess,
+}: {
+  periods: AccountingPeriod[];
+  onSuccess?: () => void;
+}) {
   const router = useRouter();
   const [state, setState] = useState(initialState);
 
@@ -399,6 +407,7 @@ export function LabourPaymentForm({ periods }: { periods: AccountingPeriod[] }) 
       });
       setState(initialState);
       router.refresh();
+      onSuccess?.();
     } catch (error) {
       setState({
         status: "error",
@@ -440,7 +449,13 @@ export function LabourPaymentForm({ periods }: { periods: AccountingPeriod[] }) 
   );
 }
 
-export function ExpenseForm({ periods }: { periods: AccountingPeriod[] }) {
+export function ExpenseForm({
+  periods,
+  onSuccess,
+}: {
+  periods: AccountingPeriod[];
+  onSuccess?: () => void;
+}) {
   const router = useRouter();
   const [state, setState] = useState(initialState);
 
@@ -459,6 +474,7 @@ export function ExpenseForm({ periods }: { periods: AccountingPeriod[] }) {
       });
       setState(initialState);
       router.refresh();
+      onSuccess?.();
     } catch (error) {
       setState({
         status: "error",
@@ -502,7 +518,7 @@ export function ExpenseForm({ periods }: { periods: AccountingPeriod[] }) {
   );
 }
 
-export function ConsumableLotForm() {
+export function ConsumableLotForm({ onSuccess }: FormSuccessProps = {}) {
   const router = useRouter();
   const [state, setState] = useState(initialState);
 
@@ -527,6 +543,7 @@ export function ConsumableLotForm() {
       });
       setState(initialState);
       router.refresh();
+      onSuccess?.();
     } catch (error) {
       setState({
         status: "error",
@@ -568,9 +585,11 @@ export function ConsumableLotForm() {
 export function ConsumableUsageForm({
   periods,
   lots,
+  onSuccess,
 }: {
   periods: AccountingPeriod[];
   lots: SharedConsumableLot[];
+  onSuccess?: () => void;
 }) {
   const router = useRouter();
   const [state, setState] = useState(initialState);
@@ -591,6 +610,7 @@ export function ConsumableUsageForm({
       });
       setState(initialState);
       router.refresh();
+      onSuccess?.();
     } catch (error) {
       setState({
         status: "error",
@@ -643,7 +663,7 @@ export function ConsumableUsageForm({
   );
 }
 
-export function AssetCategoryForm() {
+export function AssetCategoryForm({ onSuccess }: FormSuccessProps = {}) {
   const router = useRouter();
   const [state, setState] = useState(initialState);
 
@@ -665,6 +685,7 @@ export function AssetCategoryForm() {
       });
       setState(initialState);
       router.refresh();
+      onSuccess?.();
     } catch (error) {
       setState({
         status: "error",
@@ -728,7 +749,13 @@ export function AssetCategoryForm() {
   );
 }
 
-export function AssetForm({ categories }: { categories: AssetCategory[] }) {
+export function AssetForm({
+  categories,
+  onSuccess,
+}: {
+  categories: AssetCategory[];
+  onSuccess?: () => void;
+}) {
   const router = useRouter();
   const [state, setState] = useState(initialState);
 
@@ -772,6 +799,7 @@ export function AssetForm({ categories }: { categories: AssetCategory[] }) {
       });
       setState(initialState);
       router.refresh();
+      onSuccess?.();
     } catch (error) {
       setState({
         status: "error",
@@ -851,6 +879,111 @@ export function AssetForm({ categories }: { categories: AssetCategory[] }) {
       <TextInput label="MWK per USD" name="usd_exchange_rate" type="number" step="0.000001" />
       <FormFooter state={state} label="Create asset" />
     </form>
+  );
+}
+
+export function AccountingPeriodCreateDialog() {
+  return (
+    <FinanceFormDialog
+      triggerLabel="Create Accounting Period"
+      eyebrow="Payroll"
+      title="Create accounting period"
+      size="lg"
+    >
+      {(close) => <AccountingPeriodCreateForm onSuccess={close} />}
+    </FinanceFormDialog>
+  );
+}
+
+export function LabourPaymentDialog({
+  periods,
+}: {
+  periods: AccountingPeriod[];
+}) {
+  return (
+    <FinanceFormDialog
+      triggerLabel="Record Labour"
+      eyebrow="Labour"
+      title="Record ad-hoc labour"
+      size="lg"
+    >
+      {(close) => <LabourPaymentForm periods={periods} onSuccess={close} />}
+    </FinanceFormDialog>
+  );
+}
+
+export function ExpenseDialog({ periods }: { periods: AccountingPeriod[] }) {
+  return (
+    <FinanceFormDialog
+      triggerLabel="Record Expense"
+      eyebrow="Expenses"
+      title="Record shared expense"
+      size="lg"
+    >
+      {(close) => <ExpenseForm periods={periods} onSuccess={close} />}
+    </FinanceFormDialog>
+  );
+}
+
+export function ConsumableLotDialog() {
+  return (
+    <FinanceFormDialog
+      triggerLabel="Record Purchase"
+      eyebrow="Consumables"
+      title="Record consumable purchase"
+    >
+      {(close) => <ConsumableLotForm onSuccess={close} />}
+    </FinanceFormDialog>
+  );
+}
+
+export function ConsumableUsageDialog({
+  periods,
+  lots,
+}: {
+  periods: AccountingPeriod[];
+  lots: SharedConsumableLot[];
+}) {
+  return (
+    <FinanceFormDialog
+      triggerLabel="Record Usage"
+      eyebrow="Consumables"
+      title="Record consumable usage"
+      size="lg"
+    >
+      {(close) => (
+        <ConsumableUsageForm
+          periods={periods}
+          lots={lots}
+          onSuccess={close}
+        />
+      )}
+    </FinanceFormDialog>
+  );
+}
+
+export function AssetCategoryDialog() {
+  return (
+    <FinanceFormDialog
+      triggerLabel="Create Asset Category"
+      eyebrow="Assets"
+      title="Create asset category"
+      size="lg"
+    >
+      {(close) => <AssetCategoryForm onSuccess={close} />}
+    </FinanceFormDialog>
+  );
+}
+
+export function AssetDialog({ categories }: { categories: AssetCategory[] }) {
+  return (
+    <FinanceFormDialog
+      triggerLabel="Create Asset"
+      eyebrow="Assets"
+      title="Create asset"
+    >
+      {(close) => <AssetForm categories={categories} onSuccess={close} />}
+    </FinanceFormDialog>
   );
 }
 

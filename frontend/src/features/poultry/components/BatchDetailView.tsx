@@ -118,6 +118,24 @@ function getFeedQuantityInKg(feedUsage: PoultryFeedUsage): number {
   return feedUsage.quantity_given;
 }
 
+function getNextFeedingStartDate(
+  batchEntryDate: string,
+  feedUsages: PoultryFeedUsage[]
+): string {
+  if (feedUsages.length === 0) {
+    return batchEntryDate;
+  }
+
+  return feedUsages.reduce((latestEndDate, feedUsage) => {
+    const currentEndTime = new Date(feedUsage.feeding_end_date).getTime();
+    const latestEndTime = new Date(latestEndDate).getTime();
+
+    return currentEndTime > latestEndTime
+      ? feedUsage.feeding_end_date
+      : latestEndDate;
+  }, feedUsages[0].feeding_end_date);
+}
+
 function formatFeedQuantity(feedUsage: PoultryFeedUsage): string {
   return `${formatNumber(feedUsage.quantity_given)} ${feedUsage.unit_of_measurement}`;
 }
@@ -336,7 +354,13 @@ function saleDetail(sale: PoultrySale): TableRowDetail {
       { label: "Amount Paid", value: formatCurrency(sale.amount_paid) },
       { label: "Balance", value: formatCurrency(sale.balance) },
       { label: "Buyer", value: sale.buyer_name },
-      { label: "Buyer Type", value: formatLabel(sale.buyer_type) },
+      {
+        label: "Buyer Type",
+        value:
+          sale.buyer_type === "other"
+            ? sale.buyer_type_other?.trim() || "Other"
+            : formatLabel(sale.buyer_type),
+      },
       { label: "Payment Status", value: formatLabel(sale.payment_status) },
       { label: "Payment Method", value: formatLabel(sale.payment_method) },
       { label: "Sold By", value: sale.sold_by_name },
@@ -648,9 +672,7 @@ export function BatchDetailView({
     });
   }, [batch.entry_date, vaccinations]);
 
-  const nextCare =
-    vaccinationSchedule.find((item) => !item.record) ??
-    vaccinationSchedule[vaccinationSchedule.length - 1];
+  const nextCare = vaccinationSchedule.find((item) => !item.record);
   const largestCategory = costBreakdown[0];
   const followUpSale = sales.find((sale) => sale.balance > 0);
 
@@ -812,6 +834,10 @@ export function BatchDetailView({
           batchId={batch.id}
           currentBirds={metrics.currentBirds}
           defaultAgeInDays={metrics.dayOfCycle}
+          defaultFeedingStartDate={getNextFeedingStartDate(
+            batch.entry_date,
+            feedUsages
+          )}
         />
       </DetailModal>
 
@@ -1039,7 +1065,7 @@ type OverviewTabProps = {
   batch: PoultryBatch;
   metrics: Metrics;
   latestRecords: LatestRecord[];
-  nextCare: VaccinationScheduleItem;
+  nextCare: VaccinationScheduleItem | undefined;
 };
 
 function OverviewTab({
@@ -1206,17 +1232,27 @@ function OverviewTab({
         </Card>
 
         <Card className="p-6">
-          <SectionLabel>Next Up</SectionLabel>
-          <h2 className="mt-6 text-3xl font-extrabold">Upcoming care</h2>
-          <span className="mt-6 inline-flex rounded-full bg-[#fff4c6] px-5 py-3 text-sm font-extrabold uppercase">
-            Due in {getDaysBetween(new Date(), nextCare.date)} days
-          </span>
-          <h3 className="mt-6 text-xl font-extrabold">
-            {nextCare.title} vaccination
-          </h3>
-          <p className="mt-3 text-sm leading-6 text-[#747b8d]">
-            Scheduled for {formatDisplayDate(nextCare.date)}
-          </p>
+          <SectionLabel>{nextCare ? "Next Up" : "Care Plan"}</SectionLabel>
+          <h2 className="mt-6 text-3xl font-extrabold">
+            {nextCare ? "Upcoming care" : "Vaccination complete"}
+          </h2>
+          {nextCare ? (
+            <>
+              <span className="mt-6 inline-flex rounded-full bg-[#fff4c6] px-5 py-3 text-sm font-extrabold uppercase">
+                Due in {getDaysBetween(new Date(), nextCare.date)} days
+              </span>
+              <h3 className="mt-6 text-xl font-extrabold">
+                {nextCare.title} vaccination
+              </h3>
+              <p className="mt-3 text-sm leading-6 text-[#747b8d]">
+                Scheduled for {formatDisplayDate(nextCare.date)}
+              </p>
+            </>
+          ) : (
+            <p className="mt-3 text-sm leading-6 text-[#747b8d]">
+              All scheduled vaccine milestones have been recorded.
+            </p>
+          )}
           <div className="mt-6 border-t border-[#ddd7c9] pt-5">
             <p className="text-sm font-bold text-[#747b8d]">Batch note</p>
             <p className="mt-4 text-base leading-7">
@@ -1908,9 +1944,7 @@ function VaccinationTab({
   const delayedCount = vaccinations.filter((vaccination) =>
     vaccination.timely_status.toLowerCase().startsWith("delayed")
   ).length;
-  const nextDue =
-    vaccinationSchedule.find((item) => !item.record) ??
-    vaccinationSchedule[vaccinationSchedule.length - 1];
+  const nextDue = vaccinationSchedule.find((item) => !item.record);
 
   return (
     <div className="mt-8 grid gap-8">
@@ -1953,11 +1987,14 @@ function VaccinationTab({
         </Card>
 
         <Card className="p-6">
-          <SectionLabel>Next Due</SectionLabel>
-          <h2 className="mt-6 text-3xl font-extrabold">{nextDue.title}</h2>
+          <SectionLabel>{nextDue ? "Next Due" : "Care Plan"}</SectionLabel>
+          <h2 className="mt-6 text-3xl font-extrabold">
+            {nextDue ? nextDue.title : "Vaccination complete"}
+          </h2>
           <p className="mt-5 text-base leading-7 text-[#747b8d]">
-            Expected on {formatDisplayDate(nextDue.date)} from the batch arrival
-            date of {formatDisplayDate(batch.entry_date)}.
+            {nextDue
+              ? `Expected on ${formatDisplayDate(nextDue.date)} from the batch arrival date of ${formatDisplayDate(batch.entry_date)}.`
+              : "All scheduled vaccine milestones have been recorded."}
           </p>
           <button
             type="button"

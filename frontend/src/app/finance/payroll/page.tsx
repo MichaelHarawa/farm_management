@@ -3,7 +3,7 @@ import {
   getPayrollEntries,
 } from "@/features/finance/api/finance";
 import {
-  AccountingPeriodCreateForm,
+  AccountingPeriodCreateDialog,
   PeriodActionButtons,
 } from "@/features/finance/components/FinanceForms";
 import {
@@ -31,8 +31,8 @@ export default async function FinancePayrollPage() {
       detail="Generate monthly salary snapshots and allocate production portions by bird-days."
       actions={<FinanceNav />}
     >
-      <Panel title="Create Accounting Period">
-        <AccountingPeriodCreateForm />
+      <Panel title="Payroll Actions">
+        <AccountingPeriodCreateDialog />
       </Panel>
 
       {latestPeriod ? (

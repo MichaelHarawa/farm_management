@@ -1,0 +1,1 @@
+"""Farmnotes application packages."""

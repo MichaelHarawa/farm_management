@@ -27,7 +27,13 @@ export const saleSchema = z
       "retail",
       "retail_supply",
       "bulk_order",
+      "other",
     ]),
+
+    buyer_type_other: z
+      .string()
+      .trim()
+      .max(200, "Other buyer type cannot exceed 200 characters."),
 
     payment_status: z.enum(["paid", "partial", "loan", "unpaid", "cancelled"]),
 
@@ -53,7 +59,21 @@ export const saleSchema = z
   .superRefine((values, context) => {
     const saleTotal = values.quantity_sold * values.unit_price;
 
-    if (values.amount_paid > saleTotal) {
+    if (
+      values.buyer_type === "other" &&
+      values.buyer_type_other.length < 2
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["buyer_type_other"],
+        message: "Other buyer type must contain at least 2 characters.",
+      });
+    }
+
+    if (
+      values.payment_status !== "paid" &&
+      values.amount_paid > saleTotal
+    ) {
       context.addIssue({
         code: "custom",
         path: ["amount_paid"],

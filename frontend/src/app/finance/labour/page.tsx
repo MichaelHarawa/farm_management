@@ -2,7 +2,7 @@ import {
   getAccountingPeriods,
   getAdHocLabour,
 } from "@/features/finance/api/finance";
-import { LabourPaymentForm } from "@/features/finance/components/FinanceForms";
+import { LabourPaymentDialog } from "@/features/finance/components/FinanceForms";
 import {
   EmptyState,
   FinanceNav,
@@ -24,9 +24,9 @@ export default async function FinanceLabourPage() {
       detail="Record temporary and task-based labour by cost scope for direct or shared allocation."
       actions={<FinanceNav />}
     >
-      <Panel title="Record Labour">
+      <Panel title="Labour Actions">
         {periods.length ? (
-          <LabourPaymentForm periods={periods} />
+          <LabourPaymentDialog periods={periods} />
         ) : (
           <EmptyState message="Create an accounting period before recording labour." />
         )}

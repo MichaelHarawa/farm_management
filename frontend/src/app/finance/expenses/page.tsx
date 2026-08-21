@@ -2,7 +2,7 @@ import {
   getAccountingPeriods,
   getSharedExpenses,
 } from "@/features/finance/api/finance";
-import { ExpenseForm } from "@/features/finance/components/FinanceForms";
+import { ExpenseDialog } from "@/features/finance/components/FinanceForms";
 import {
   EmptyState,
   FinanceNav,
@@ -24,9 +24,9 @@ export default async function FinanceExpensesPage() {
       detail="Separate production overhead, administration, selling, finance costs, tax, and capital expenditure."
       actions={<FinanceNav />}
     >
-      <Panel title="Record Expense">
+      <Panel title="Expense Actions">
         {periods.length ? (
-          <ExpenseForm periods={periods} />
+          <ExpenseDialog periods={periods} />
         ) : (
           <EmptyState message="Create an accounting period before recording expenses." />
         )}

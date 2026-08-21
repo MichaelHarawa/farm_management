@@ -155,8 +155,7 @@ def create_sale_with_lifecycle(*, batch_id: int, created_by, **data) -> Sales:
         sale = Sales(batch=batch, created_by=created_by, **data)
         if not sale.sale_id:
             sale.sale_id = sale.next_sale_id()
-        sale.balance = sale.calculated_balance
-        sale.payment_status = sale.normalized_payment_status
+        sale.sync_payment_fields()
         sale.full_clean()
         sale.save()
         assert_non_negative_bird_balance(batch)

@@ -51,6 +51,7 @@ class BuyerType(models.TextChoices):
     RETAIL = "retail", "Retail"
     RETAIL_SUPPLY = "retail_supply", "Retail Supply" 
     BULK_ORDER = "bulk_order", "Bulk Order"
+    OTHER = "other", "Other"
 
 class FeedType(models.TextChoices):
     PRE_STARTER = "pre_starter", "Pre-Starter"
@@ -334,6 +335,7 @@ class Sales(models.Model):
         max_length=20,
         choices = BuyerType.choices,
     )
+    buyer_type_other = models.CharField(max_length=200, blank=True, default="")
     payment_status = models.CharField(
         max_length=20,
         choices = PaymentStatus.choices,
@@ -367,13 +369,24 @@ class Sales(models.Model):
     def save(self, *args, **kwargs):
         if not self.sale_id:
             self.sale_id = self.next_sale_id()
-        self.balance = self.calculated_balance
-        self.payment_status = self.normalized_payment_status
+        self.buyer_type_other = (
+            (self.buyer_type_other or "").strip()
+            if self.buyer_type == BuyerType.OTHER
+            else ""
+        )
+        self.sync_payment_fields()
         self.usd_equivalent = usd_equivalent(
             self.sale_total,
             self.usd_exchange_rate,
         )
         super().save(*args, **kwargs)
+
+    def sync_payment_fields(self) -> None:
+        if self.payment_status == PaymentStatus.PAID:
+            self.amount_paid = self.sale_total
+
+        self.balance = self.calculated_balance
+        self.payment_status = self.normalized_payment_status
 
     @staticmethod
     def next_sale_id() -> str:
@@ -412,6 +425,12 @@ class Sales(models.Model):
         if self.payment_status == PaymentStatus.CANCELLED:
             return PaymentStatus.CANCELLED
 
+        if (
+            self.payment_status == PaymentStatus.PAID
+            and self.sale_total == Decimal("0.00")
+        ):
+            return PaymentStatus.PAID
+
         if self.amount_paid == Decimal("0.00"):
             return PaymentStatus.UNPAID
 
@@ -430,6 +449,14 @@ class Sales(models.Model):
     def clean(self):
         super().clean()
         errors = {}
+        self.buyer_type_other = (self.buyer_type_other or "").strip()
+        if self.buyer_type == BuyerType.OTHER:
+            if len(self.buyer_type_other) < 2:
+                errors["buyer_type_other"] = (
+                    "Other buyer type must contain at least 2 characters."
+                )
+        else:
+            self.buyer_type_other = ""
         if self.quantity_sold <= 0:
             errors["quantity_sold"] = "Quantity sold must be greater than zero."
         if self.unit_price < Decimal("0.00"):

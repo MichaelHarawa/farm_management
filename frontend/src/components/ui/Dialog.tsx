@@ -4,6 +4,7 @@ import { X } from "lucide-react";
 import {
   useEffect,
   useId,
+  useRef,
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
@@ -23,6 +24,15 @@ const sizeClass: Record<NonNullable<DialogProps["size"]>, string> = {
   xl: "max-w-5xl",
 };
 
+const focusableSelector = [
+  "a[href]",
+  "button:not([disabled])",
+  "input:not([disabled]):not([type='hidden'])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  "[tabindex]:not([tabindex='-1'])",
+].join(",");
+
 export function Dialog({
   open,
   onClose,
@@ -32,6 +42,13 @@ export function Dialog({
   size = "xl",
 }: DialogProps) {
   const titleId = useId();
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
     if (!open) {
@@ -39,20 +56,89 @@ export function Dialog({
     }
 
     const previousOverflow = document.body.style.overflow;
+    const previouslyFocused =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    const overlay = overlayRef.current;
+    const backgroundElements = Array.from(document.body.children)
+      .filter(
+        (element): element is HTMLElement =>
+          element instanceof HTMLElement && element !== overlay
+      )
+      .map((element) => ({ element, wasInert: element.inert }));
+
     document.body.style.overflow = "hidden";
+    backgroundElements.forEach(({ element }) => {
+      element.inert = true;
+    });
+
+    const focusFrame = window.requestAnimationFrame(() => {
+      const dialog = dialogRef.current;
+      const firstFocusable = dialog?.querySelector<HTMLElement>(
+        focusableSelector
+      );
+
+      (firstFocusable ?? dialog)?.focus();
+    });
 
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
-        onClose();
+        event.preventDefault();
+        onCloseRef.current();
+        return;
+      }
+
+      if (event.key !== "Tab") {
+        return;
+      }
+
+      const dialog = dialogRef.current;
+
+      if (!dialog) {
+        return;
+      }
+
+      const focusableElements = Array.from(
+        dialog.querySelectorAll<HTMLElement>(focusableSelector)
+      ).filter(
+        (element) =>
+          element.tabIndex >= 0 && element.getClientRects().length > 0
+      );
+
+      if (focusableElements.length === 0) {
+        event.preventDefault();
+        dialog.focus();
+        return;
+      }
+
+      const firstFocusable = focusableElements[0];
+      const lastFocusable = focusableElements[focusableElements.length - 1];
+      const activeElement = document.activeElement;
+
+      if (
+        event.shiftKey &&
+        (activeElement === firstFocusable || !dialog.contains(activeElement))
+      ) {
+        event.preventDefault();
+        lastFocusable.focus();
+      } else if (!event.shiftKey && activeElement === lastFocusable) {
+        event.preventDefault();
+        firstFocusable.focus();
       }
     }
 
     window.addEventListener("keydown", onKeyDown);
     return () => {
+      window.cancelAnimationFrame(focusFrame);
       document.body.style.overflow = previousOverflow;
+      backgroundElements.forEach(({ element, wasInert }) => {
+        element.inert = wasInert;
+      });
       window.removeEventListener("keydown", onKeyDown);
+      previouslyFocused?.focus();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open || typeof document === "undefined") {
     return null;
@@ -60,14 +146,17 @@ export function Dialog({
 
   return createPortal(
     <div
+      ref={overlayRef}
       className="fixed inset-0 z-[100] overflow-y-auto bg-[var(--overlay)] px-4 py-8 backdrop-blur-[7px]"
       role="presentation"
       onMouseDown={onClose}
     >
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
+        tabIndex={-1}
         className={`relative mx-auto mt-8 w-full ${sizeClass[size]} overflow-hidden rounded-[1.5rem] border border-white/90 bg-[var(--surface-white)] shadow-[var(--shadow-modal)]`}
         onMouseDown={(event) => event.stopPropagation()}
       >

@@ -4,8 +4,8 @@ import {
   getAssets,
 } from "@/features/finance/api/finance";
 import {
-  AssetCategoryForm,
-  AssetForm,
+  AssetCategoryDialog,
+  AssetDialog,
   PeriodDepreciationButtons,
 } from "@/features/finance/components/FinanceForms";
 import {
@@ -35,18 +35,18 @@ export default async function FinanceAssetsPage() {
       detail="Capitalize durable assets, run depreciation, and keep replacement funding separate from profit."
       actions={<FinanceNav />}
     >
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Panel title="Create Asset Category">
-          <AssetCategoryForm />
-        </Panel>
-        <Panel title="Create Asset">
+      <Panel title="Asset Actions">
+        <div className="flex flex-wrap items-center gap-3">
+          <AssetCategoryDialog />
           {categories.length ? (
-            <AssetForm categories={categories} />
+            <AssetDialog categories={categories} />
           ) : (
-            <EmptyState message="Create an asset category before recording assets." />
+            <p className="text-sm text-[var(--navy-muted)]">
+              Create an asset category before recording assets.
+            </p>
           )}
-        </Panel>
-      </div>
+        </div>
+      </Panel>
 
       {latestPeriod ? (
         <Panel title={`Depreciation: ${formatDate(latestPeriod.period_start)} to ${formatDate(latestPeriod.period_end)}`}>
