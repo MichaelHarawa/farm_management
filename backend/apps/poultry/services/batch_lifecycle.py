@@ -141,10 +141,25 @@ def assert_non_negative_bird_balance(batch: Batch) -> BirdBalance:
     return balance
 
 
-def assert_batch_in_production(batch: Batch) -> None:
+def assert_batch_in_production(
+    batch: Batch,
+    *,
+    allow_closed_cost_correction: bool = False,
+) -> None:
     if batch.status in PRE_PRODUCTION_STATUSES:
         raise ValueError(
             "Complete delivery and batch details before recording production activity."
+        )
+    if batch.status == BatchStatus.CLOSED:
+        correction_window_is_open = (
+            allow_closed_cost_correction
+            and batch.profitability_finalized_at is None
+            and not batch.profitability_snapshots.filter(final=True).exists()
+        )
+        if correction_window_is_open:
+            return
+        raise ValueError(
+            "Closed batches are finalized and cannot receive new production activity."
         )
 
 

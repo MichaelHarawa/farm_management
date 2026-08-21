@@ -8,6 +8,7 @@ from .views import (
     AssetDepreciationEntryViewSet,
     AssetUsageRecordViewSet,
     AssetViewSet,
+    BatchPortfolioView,
     BatchProfitabilityView,
     BirdDaySnapshotViewSet,
     ConsumableUsageViewSet,
@@ -72,6 +73,11 @@ app_name = "finance"
 urlpatterns = [
     path("", include(router.urls)),
     path("reports/monthly", MonthlyReportView.as_view(), name="monthly-report"),
+    path(
+        "reports/batches",
+        BatchPortfolioView.as_view(),
+        name="batch-portfolio",
+    ),
     path(
         "reports/batches/<int:batch_id>",
         BatchProfitabilityView.as_view(),

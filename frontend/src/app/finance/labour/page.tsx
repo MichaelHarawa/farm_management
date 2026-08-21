@@ -3,6 +3,7 @@ import {
   getAdHocLabour,
 } from "@/features/finance/api/finance";
 import { LabourPaymentDialog } from "@/features/finance/components/FinanceForms";
+import { getPoultryBatches } from "@/features/poultry/api/batches";
 import {
   EmptyState,
   FinanceNav,
@@ -12,10 +13,17 @@ import {
 import { formatCurrency, formatDate, formatLabel } from "@/features/finance/utils/formatters";
 
 export default async function FinanceLabourPage() {
-  const [periods, labour] = await Promise.all([
+  const [periods, labour, batches] = await Promise.all([
     getAccountingPeriods("/finance/labour"),
     getAdHocLabour("/finance/labour"),
+    getPoultryBatches("/finance/labour"),
   ]);
+  const batchLabels = new Map(batches.map((batch) => [batch.id, batch.batch_id]));
+  const selectableBatches = batches.filter(
+    (batch) =>
+      !["booked", "delivered"].includes(batch.status) &&
+      !(batch.status === "closed" && batch.profitability_finalized_at)
+  );
 
   return (
     <FinancePageShell
@@ -26,7 +34,7 @@ export default async function FinanceLabourPage() {
     >
       <Panel title="Labour Actions">
         {periods.length ? (
-          <LabourPaymentDialog periods={periods} />
+          <LabourPaymentDialog periods={periods} batches={selectableBatches} />
         ) : (
           <EmptyState message="Create an accounting period before recording labour." />
         )}
@@ -42,6 +50,7 @@ export default async function FinanceLabourPage() {
                   <th className="py-3 pr-4">Task</th>
                   <th className="py-3 pr-4">Date</th>
                   <th className="py-3 pr-4">Scope</th>
+                  <th className="py-3 pr-4">Batch</th>
                   <th className="py-3 pr-4">Amount</th>
                 </tr>
               </thead>
@@ -52,6 +61,9 @@ export default async function FinanceLabourPage() {
                     <td className="py-4 pr-4">{item.task_description}</td>
                     <td className="py-4 pr-4">{formatDate(item.work_date)}</td>
                     <td className="py-4 pr-4">{formatLabel(item.cost_scope)}</td>
+                    <td className="py-4 pr-4">
+                      {item.batch ? batchLabels.get(item.batch) ?? `Batch ${item.batch}` : "Shared"}
+                    </td>
                     <td className="py-4 pr-4">{formatCurrency(item.payment_amount)}</td>
                   </tr>
                 ))}

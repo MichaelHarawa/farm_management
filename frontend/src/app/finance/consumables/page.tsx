@@ -19,13 +19,21 @@ import {
   formatLabel,
   formatNumber,
 } from "@/features/finance/utils/formatters";
+import { getPoultryBatches } from "@/features/poultry/api/batches";
 
 export default async function FinanceConsumablesPage() {
-  const [periods, lots, usages] = await Promise.all([
+  const [periods, lots, usages, batches] = await Promise.all([
     getAccountingPeriods("/finance/consumables"),
     getConsumableLots("/finance/consumables"),
     getConsumableUsages("/finance/consumables"),
+    getPoultryBatches("/finance/consumables"),
   ]);
+  const batchLabels = new Map(batches.map((batch) => [batch.id, batch.batch_id]));
+  const selectableBatches = batches.filter(
+    (batch) =>
+      !["booked", "delivered"].includes(batch.status) &&
+      !(batch.status === "closed" && batch.profitability_finalized_at)
+  );
 
   return (
     <FinancePageShell
@@ -38,7 +46,11 @@ export default async function FinanceConsumablesPage() {
         <div className="flex flex-wrap items-center gap-3">
           <ConsumableLotDialog />
           {periods.length && lots.length ? (
-            <ConsumableUsageDialog periods={periods} lots={lots} />
+            <ConsumableUsageDialog
+              periods={periods}
+              lots={lots}
+              batches={selectableBatches}
+            />
           ) : (
             <p className="text-sm text-[var(--navy-muted)]">
               Create an accounting period and a consumable lot to record usage.
@@ -97,6 +109,7 @@ export default async function FinanceConsumablesPage() {
                 <tr className="border-b border-[var(--line)] text-left text-[var(--navy-muted)]">
                   <th className="py-3 pr-4">Date</th>
                   <th className="py-3 pr-4">Scope</th>
+                  <th className="py-3 pr-4">Batch</th>
                   <th className="py-3 pr-4">Quantity</th>
                   <th className="py-3 pr-4">Recognized cost</th>
                   <th className="py-3 pr-4">Driver</th>
@@ -107,6 +120,11 @@ export default async function FinanceConsumablesPage() {
                   <tr key={usage.id} className="border-b border-[var(--line)]">
                     <td className="py-4 pr-4">{formatDate(usage.usage_date)}</td>
                     <td className="py-4 pr-4">{formatLabel(usage.usage_scope)}</td>
+                    <td className="py-4 pr-4">
+                      {usage.batch
+                        ? batchLabels.get(usage.batch) ?? `Batch ${usage.batch}`
+                        : "Shared"}
+                    </td>
                     <td className="py-4 pr-4">{formatNumber(usage.quantity_used)}</td>
                     <td className="py-4 pr-4">{formatCurrency(usage.recognized_cost)}</td>
                     <td className="py-4 pr-4">{formatLabel(usage.allocation_driver)}</td>

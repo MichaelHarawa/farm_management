@@ -60,6 +60,7 @@ export function FinancePageShell({
 export function FinanceNav() {
   const links = [
     ["Dashboard", "/finance"],
+    ["Batch Analysis", "/finance/batches"],
     ["Employees", "/finance/employees"],
     ["Payroll", "/finance/payroll"],
     ["Labour", "/finance/labour"],

@@ -1,6 +1,8 @@
 import {
   getFinanceDashboard,
 } from "@/features/finance/api/finance";
+import Link from "next/link";
+
 import {
   EmptyState,
   FinanceBarChart,
@@ -37,6 +39,17 @@ export default async function FinanceDashboardPage() {
         />
         <MetricCard label="Receivables" value={formatCurrency(dashboard.receivables)} />
       </div>
+
+      <Panel title="Poultry Batch Analysis">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <p className="max-w-3xl text-sm leading-6 text-[var(--navy-muted)]">
+            Select one poultry batch for a focused lifecycle result or combine batches to compare revenue, production cost, gross margin, collections, and mortality.
+          </p>
+          <Link href="/finance/batches" className="finance-button whitespace-nowrap">
+            Analyze batches
+          </Link>
+        </div>
+      </Panel>
 
       {latestMonth ? (
         <Panel title="Business Insights">

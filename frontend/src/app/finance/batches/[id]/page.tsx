@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { getBatchProfitability } from "@/features/finance/api/finance";
@@ -9,6 +10,7 @@ import {
 } from "@/features/finance/components/FinanceUI";
 import {
   formatCurrency,
+  formatLabel,
   formatNumber,
   formatPercent,
 } from "@/features/finance/utils/formatters";
@@ -46,11 +48,19 @@ export default async function FinanceBatchProfitabilityPage({ params }: PageProp
       detail="Revenue, cash collected, receivables, production cost, bird balance, and provisional or final profit."
       actions={<FinanceNav />}
     >
+      <div className="flex justify-end">
+        <Link
+          href={`/finance/batches?batch=${report.batch}`}
+          className="finance-button"
+        >
+          Compare with other batches
+        </Link>
+      </div>
       <div className="grid gap-4 md:grid-cols-4">
         <MetricCard label="Revenue" value={formatCurrency(report.revenue)} />
         <MetricCard label="Gross profit" value={formatCurrency(report.batch_gross_profit)} />
         <MetricCard label="Remaining birds" value={formatNumber(report.remaining_live_birds)} />
-        <MetricCard label="Status" value={report.profitability_status.toUpperCase()} />
+        <MetricCard label="Status" value={formatLabel(report.profitability_status)} />
       </div>
       <div className="grid gap-6 lg:grid-cols-2">
         <Panel title="Production Profit">
@@ -70,8 +80,8 @@ export default async function FinanceBatchProfitabilityPage({ params }: PageProp
               ["Cash collected", formatCurrency(report.cash_collected)],
               ["Receivables", formatCurrency(report.accounts_receivable)],
               ["Collection rate", formatPercent(report.collection_rate_percent)],
-              ["Break-even remaining bird", formatCurrency(report.break_even_selling_price_per_remaining_bird)],
-              ["Revenue needed", formatCurrency(report.additional_revenue_required_to_break_even)],
+              ["Contribution break-even per remaining bird", formatCurrency(report.break_even_selling_price_per_remaining_bird)],
+              ["Revenue needed for contribution break-even", formatCurrency(report.additional_revenue_required_to_break_even)],
             ]}
           />
         </Panel>

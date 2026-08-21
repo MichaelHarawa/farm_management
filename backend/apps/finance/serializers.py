@@ -8,10 +8,12 @@ from rest_framework import serializers
 
 from apps.accounts.models import Role, RoleChoices
 from apps.accounts.serializers import RoleSummarySerializer
+from apps.poultry.models import BatchStatus
 
 from .models import (
     AccountingPeriod,
     AdHocLabourPayment,
+    AllocationMethod,
     Asset,
     AssetCapitalizedCost,
     AssetCategory,
@@ -23,6 +25,8 @@ from .models import (
     BatchProfitabilitySnapshot,
     BirdDaySnapshot,
     ConsumableUsage,
+    ConsumableUsageScope,
+    CostScope,
     CostAllocation,
     EmployeeBatchWorkLog,
     EmployeeProfile,
@@ -31,6 +35,7 @@ from .models import (
     PeriodStatus,
     ReplacementReserveTransaction,
     SharedExpense,
+    SharedExpenseScope,
     SharedConsumableLot,
 )
 
@@ -253,6 +258,23 @@ class AdHocLabourPaymentSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         period = attrs.get("accounting_period", getattr(self.instance, "accounting_period", None))
         ensure_period_open(period)
+        cost_scope = attrs.get(
+            "cost_scope",
+            getattr(self.instance, "cost_scope", None),
+        )
+        batch = attrs.get("batch", getattr(self.instance, "batch", None))
+        ensure_batch_not_finalized(batch, "batch", period)
+        if cost_scope == CostScope.BATCH_DIRECT and batch is None:
+            raise serializers.ValidationError(
+                {"batch": "Batch is required for batch-direct labour."}
+            )
+        if cost_scope in {
+            CostScope.SHARED_PRODUCTION,
+            CostScope.FARM_ADMINISTRATION,
+        } and batch is not None:
+            raise serializers.ValidationError(
+                {"batch": "This labour scope cannot be assigned to one batch."}
+            )
         return attrs
 
 
@@ -267,6 +289,29 @@ class SharedExpenseSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         period = attrs.get("accounting_period", getattr(self.instance, "accounting_period", None))
         ensure_period_open(period)
+        scope = attrs.get("scope", getattr(self.instance, "scope", None))
+        assigned_batch = attrs.get(
+            "directly_assigned_batch",
+            getattr(self.instance, "directly_assigned_batch", None),
+        )
+        ensure_batch_not_finalized(
+            assigned_batch,
+            "directly_assigned_batch",
+            period,
+        )
+        if assigned_batch is not None and scope not in {
+            SharedExpenseScope.SHARED_PRODUCTION,
+            SharedExpenseScope.SELLING_EXPENSE,
+        }:
+            raise serializers.ValidationError(
+                {
+                    "directly_assigned_batch": (
+                        "Only production or selling expenses can be assigned to a batch."
+                    )
+                }
+            )
+        if assigned_batch is not None:
+            attrs["allocation_method"] = AllocationMethod.DIRECT
         return attrs
 
 
@@ -300,6 +345,39 @@ class ConsumableUsageSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         period = attrs.get("accounting_period", getattr(self.instance, "accounting_period", None))
         ensure_period_open(period)
+        usage_scope = attrs.get(
+            "usage_scope",
+            getattr(self.instance, "usage_scope", None),
+        )
+        batch = attrs.get("batch", getattr(self.instance, "batch", None))
+        ensure_batch_not_finalized(batch, "batch", period)
+        allocation_driver = attrs.get(
+            "allocation_driver",
+            getattr(self.instance, "allocation_driver", AllocationMethod.NONE),
+        )
+        if usage_scope == ConsumableUsageScope.BATCH_DIRECT and batch is None:
+            raise serializers.ValidationError(
+                {"batch": "Batch is required for direct consumable usage."}
+            )
+        if usage_scope in {
+            ConsumableUsageScope.SHARED_PRODUCTION,
+            ConsumableUsageScope.ADMINISTRATION,
+        } and batch is not None:
+            raise serializers.ValidationError(
+                {"batch": "This usage scope cannot be assigned to one batch."}
+            )
+        if (
+            batch is not None
+            and usage_scope
+            in {
+                ConsumableUsageScope.BATCH_DIRECT,
+                ConsumableUsageScope.SELLING_AND_DISTRIBUTION,
+            }
+            and allocation_driver != AllocationMethod.DIRECT
+        ):
+            raise serializers.ValidationError(
+                {"allocation_driver": "Batch-assigned usage must use direct allocation."}
+            )
         return attrs
 
 
@@ -449,4 +527,24 @@ def ensure_period_open(period):
     if period and period.status == PeriodStatus.CLOSED:
         raise serializers.ValidationError(
             {"accounting_period": "Closed accounting periods cannot be changed."}
+        )
+
+
+def ensure_batch_not_finalized(batch, field_name, period=None):
+    if batch and batch.status == BatchStatus.CLOSED:
+        correction_window_is_open = (
+            period is not None
+            and period.status == PeriodStatus.OPEN
+            and batch.profitability_finalized_at is None
+            and not batch.profitability_snapshots.filter(final=True).exists()
+        )
+        if correction_window_is_open:
+            return
+        raise serializers.ValidationError(
+            {
+                field_name: (
+                    "This closed batch is finalized. Reopen its accounting period "
+                    "before posting a controlled cost correction."
+                )
+            }
         )

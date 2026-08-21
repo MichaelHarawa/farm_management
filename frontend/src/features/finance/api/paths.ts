@@ -31,5 +31,10 @@ export const financeApiPaths = {
       : `${FINANCE_ROOT}/reports/monthly`,
   batchProfitability: (batchId: number) =>
     `${FINANCE_ROOT}/reports/batches/${batchId}`,
+  batchPortfolio: (batchIds: number[]) => {
+    const searchParams = new URLSearchParams();
+    batchIds.forEach((batchId) => searchParams.append("batch", String(batchId)));
+    return `${FINANCE_ROOT}/reports/batches?${searchParams.toString()}`;
+  },
   receivables: `${FINANCE_ROOT}/receivables`,
 } as const;

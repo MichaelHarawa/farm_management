@@ -10,6 +10,7 @@ import type {
   Asset,
   AssetCategory,
   AssetDepreciationEntry,
+  BatchPortfolioReport,
   BatchProfitabilityReport,
   ConsumableUsage,
   EmployeeProfile,
@@ -125,7 +126,7 @@ export async function getAssetCategories(returnTo: string): Promise<AssetCategor
 export async function getAssets(returnTo: string): Promise<Asset[]> {
   const data = await authenticatedBackendFetch<
     Asset[] | PaginatedResponse<Asset>
-  >(financeApiPaths.assetDepreciation, {
+  >(financeApiPaths.assets, {
     returnTo,
     cache: "no-store",
   });
@@ -136,7 +137,7 @@ export async function getAssets(returnTo: string): Promise<Asset[]> {
 export async function getAssetDepreciation(returnTo: string): Promise<AssetDepreciationEntry[]> {
   const data = await authenticatedBackendFetch<
     AssetDepreciationEntry[] | PaginatedResponse<AssetDepreciationEntry>
-  >(financeApiPaths.assets, {
+  >(financeApiPaths.assetDepreciation, {
     returnTo,
     cache: "no-store",
   });
@@ -160,6 +161,19 @@ export async function getBatchProfitability(
 ): Promise<BatchProfitabilityReport> {
   return authenticatedBackendFetch<BatchProfitabilityReport>(
     financeApiPaths.batchProfitability(batchId),
+    {
+      returnTo,
+      cache: "no-store",
+    }
+  );
+}
+
+export async function getBatchPortfolioReport(
+  batchIds: number[],
+  returnTo: string
+): Promise<BatchPortfolioReport> {
+  return authenticatedBackendFetch<BatchPortfolioReport>(
+    financeApiPaths.batchPortfolio(batchIds),
     {
       returnTo,
       cache: "no-store",

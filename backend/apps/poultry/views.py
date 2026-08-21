@@ -9,12 +9,13 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.utils import timezone
 
+from apps.finance.models import AccountingPeriod, PeriodStatus
 from apps.poultry.services.batch_lifecycle import (
+    assert_batch_in_production,
     create_mortality_with_lifecycle,
     create_sale_with_lifecycle,
     recalculate_batch_status,
 )
-from apps.finance.services.profitability import create_final_snapshot
 
 from .models import(
     Batch,
@@ -162,6 +163,20 @@ class BatchViewset(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retrie
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
+        purchase_date = serializer.validated_data["purchase_date"].date()
+        correction_period_is_open = AccountingPeriod.objects.filter(
+            period_start__lte=purchase_date,
+            period_end__gte=purchase_date,
+            status=PeriodStatus.OPEN,
+        ).exists()
+        try:
+            assert_batch_in_production(
+                poultry_batch,
+                allow_closed_cost_correction=correction_period_is_open,
+            )
+        except ValueError as error:
+            raise ValidationError({"batch": str(error)}) from error
+
         input_cost = self.save_with_current_user(
             serializer,
             batch=poultry_batch,
@@ -206,9 +221,6 @@ class BatchViewset(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retrie
             )
         except ValueError as error:
             raise ValidationError({"quantity_sold": str(error)}) from error
-        if sale.batch.status == BatchStatus.CLOSED:
-            create_final_snapshot(sale.batch, generated_by=request.user)
-
         return Response(
             self.get_serializer(sale).data,
             status=status.HTTP_201_CREATED,
@@ -234,9 +246,6 @@ class BatchViewset(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retrie
             )
         except ValueError as error:
             raise ValidationError({"quantity_dead": str(error)}) from error
-        if mortality.batch.status == BatchStatus.CLOSED:
-            create_final_snapshot(mortality.batch, generated_by=request.user)
-
         return Response(
             self.get_serializer(mortality).data,
             status=status.HTTP_201_CREATED,
@@ -250,6 +259,11 @@ class BatchViewset(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retrie
             feed_usages = poultry_batch.feed_usage_row.all().order_by("-created_at")
             serializer = self.get_serializer(feed_usages, many=True)
             return Response(serializer.data, status=status.HTTP_200_OK)
+
+        try:
+            assert_batch_in_production(poultry_batch)
+        except ValueError as error:
+            raise ValidationError({"batch": str(error)}) from error
 
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -275,6 +289,11 @@ class BatchViewset(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retrie
             )
             serializer = self.get_serializer(vaccinations, many=True)
             return Response(serializer.data, status=status.HTTP_200_OK)
+
+        try:
+            assert_batch_in_production(poultry_batch)
+        except ValueError as error:
+            raise ValidationError({"batch": str(error)}) from error
 
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)

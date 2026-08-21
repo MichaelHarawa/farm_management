@@ -1,6 +1,7 @@
 "use client";
 
 import { Dialog } from "@/components/ui";
+import type { PoultryBatch } from "@/features/poultry/types";
 import { useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
 
@@ -55,9 +56,23 @@ async function postJson(path: string, payload: unknown) {
   });
 
   if (!response.ok) {
-    const details = await response.json().catch(() => null);
-    throw new Error(details?.detail ?? details?.message ?? "Request failed.");
+    const details: unknown = await response.json().catch(() => null);
+    throw new Error(financeRequestError(details));
   }
+}
+
+function financeRequestError(details: unknown): string {
+  if (!details || typeof details !== "object") return "Request failed.";
+  const fields = details as Record<string, unknown>;
+  for (const preferredField of ["detail", "message"]) {
+    const value = fields[preferredField];
+    if (typeof value === "string") return value;
+  }
+  const firstError = Object.entries(fields)[0];
+  if (!firstError) return "Request failed.";
+  const [field, rawValue] = firstError;
+  const value = Array.isArray(rawValue) ? rawValue[0] : rawValue;
+  return `${field.replace(/_/g, " ")}: ${String(value)}`;
 }
 
 function FinanceFormDialog({
@@ -384,16 +399,20 @@ export function AccountingPeriodCreateForm({ onSuccess }: FormSuccessProps = {})
 
 export function LabourPaymentForm({
   periods,
+  batches,
   onSuccess,
 }: {
   periods: AccountingPeriod[];
+  batches: PoultryBatch[];
   onSuccess?: () => void;
 }) {
   const router = useRouter();
   const [state, setState] = useState(initialState);
+  const [costScope, setCostScope] = useState("shared_production");
 
   async function onSubmit(formData: FormData) {
     setState({ status: "loading", message: "" });
+    const batchValue = formData.get("batch");
     try {
       await postJson("/api/finance/ad-hoc-labour", {
         worker_name: formData.get("worker_name"),
@@ -401,7 +420,8 @@ export function LabourPaymentForm({
         work_date: formData.get("work_date"),
         hours_worked: formData.get("hours_worked") || "0.00",
         payment_amount: formData.get("payment_amount"),
-        cost_scope: formData.get("cost_scope"),
+        cost_scope: costScope,
+        batch: batchValue ? Number(batchValue) : null,
         accounting_period: Number(formData.get("accounting_period")),
         payment_status: formData.get("payment_status"),
       });
@@ -426,6 +446,8 @@ export function LabourPaymentForm({
       <SelectInput
         label="Cost scope"
         name="cost_scope"
+        value={costScope}
+        onValueChange={setCostScope}
         options={[
           ["shared_production", "Shared Production"],
           ["batch_direct", "Batch Direct"],
@@ -433,6 +455,11 @@ export function LabourPaymentForm({
           ["selling_and_distribution", "Selling And Distribution"],
         ]}
       />
+      {costScope === "batch_direct" ? (
+        <BatchSelect batches={batches} required />
+      ) : costScope === "selling_and_distribution" ? (
+        <BatchSelect batches={batches} allowShared />
+      ) : null}
       <PeriodSelect periods={periods} />
       <SelectInput
         label="Payment status"
@@ -451,16 +478,20 @@ export function LabourPaymentForm({
 
 export function ExpenseForm({
   periods,
+  batches,
   onSuccess,
 }: {
   periods: AccountingPeriod[];
+  batches: PoultryBatch[];
   onSuccess?: () => void;
 }) {
   const router = useRouter();
   const [state, setState] = useState(initialState);
+  const [scope, setScope] = useState("shared_production");
 
   async function onSubmit(formData: FormData) {
     setState({ status: "loading", message: "" });
+    const batchValue = formData.get("batch");
     try {
       await postJson("/api/finance/expenses", {
         description: formData.get("description"),
@@ -468,9 +499,10 @@ export function ExpenseForm({
         expense_date: formData.get("expense_date"),
         accounting_period: Number(formData.get("accounting_period")),
         amount: formData.get("amount"),
-        scope: formData.get("scope"),
+        scope,
+        directly_assigned_batch: batchValue ? Number(batchValue) : null,
         payment_status: formData.get("payment_status"),
-        allocation_method: "none",
+        allocation_method: batchValue ? "direct" : "none",
       });
       setState(initialState);
       router.refresh();
@@ -492,6 +524,8 @@ export function ExpenseForm({
       <SelectInput
         label="Scope"
         name="scope"
+        value={scope}
+        onValueChange={setScope}
         options={[
           ["shared_production", "Shared Production"],
           ["admin_overhead", "Admin Overhead"],
@@ -502,6 +536,9 @@ export function ExpenseForm({
           ["other", "Other"],
         ]}
       />
+      {scope === "shared_production" || scope === "selling_expense" ? (
+        <BatchSelect batches={batches} allowShared />
+      ) : null}
       <PeriodSelect periods={periods} />
       <SelectInput
         label="Payment status"
@@ -585,25 +622,37 @@ export function ConsumableLotForm({ onSuccess }: FormSuccessProps = {}) {
 export function ConsumableUsageForm({
   periods,
   lots,
+  batches,
   onSuccess,
 }: {
   periods: AccountingPeriod[];
   lots: SharedConsumableLot[];
+  batches: PoultryBatch[];
   onSuccess?: () => void;
 }) {
   const router = useRouter();
   const [state, setState] = useState(initialState);
+  const [usageScope, setUsageScope] = useState("batch_direct");
 
   async function onSubmit(formData: FormData) {
     setState({ status: "loading", message: "" });
+    const batchValue = formData.get("batch");
     try {
       await postJson("/api/finance/consumable-usages", {
         consumable_lot: Number(formData.get("consumable_lot")),
         usage_date: formData.get("usage_date"),
         accounting_period: Number(formData.get("accounting_period")),
         quantity_used: formData.get("quantity_used"),
-        usage_scope: formData.get("usage_scope"),
-        allocation_driver: formData.get("allocation_driver"),
+        usage_scope: usageScope,
+        batch: batchValue ? Number(batchValue) : null,
+        allocation_driver:
+          usageScope === "batch_direct"
+            ? "direct"
+            : usageScope === "selling_and_distribution" && batchValue
+              ? "direct"
+            : usageScope === "shared_production"
+              ? formData.get("allocation_driver")
+              : "none",
         task_or_purpose: formData.get("task_or_purpose"),
         poultry_house: formData.get("poultry_house") || "",
         notes: formData.get("notes") || "",
@@ -637,6 +686,8 @@ export function ConsumableUsageForm({
       <SelectInput
         label="Usage scope"
         name="usage_scope"
+        value={usageScope}
+        onValueChange={setUsageScope}
         options={[
           ["batch_direct", "Batch Direct"],
           ["shared_production", "Shared Production"],
@@ -644,17 +695,23 @@ export function ConsumableUsageForm({
           ["selling_and_distribution", "Selling And Distribution"],
         ]}
       />
-      <SelectInput
-        label="Allocation driver"
-        name="allocation_driver"
-        options={[
-          ["bird_days", "Bird-Days"],
-          ["equal_share", "Equal Share"],
-          ["house_occupancy_days", "House Occupancy Days"],
-          ["manual_with_reason", "Manual With Reason"],
-          ["none", "None"],
-        ]}
-      />
+      {usageScope === "batch_direct" ? (
+        <BatchSelect batches={batches} required />
+      ) : usageScope === "selling_and_distribution" ? (
+        <BatchSelect batches={batches} allowShared />
+      ) : null}
+      {usageScope === "shared_production" ? (
+        <SelectInput
+          label="Allocation driver"
+          name="allocation_driver"
+          options={[
+            ["bird_days", "Bird-Days"],
+            ["equal_share", "Equal Share"],
+            ["house_occupancy_days", "House Occupancy Days"],
+            ["manual_with_reason", "Manual With Reason"],
+          ]}
+        />
+      ) : null}
       <TextInput label="Task or purpose" name="task_or_purpose" required />
       <TextInput label="House or location" name="poultry_house" />
       <TextInput label="Notes" name="notes" />
@@ -897,8 +954,10 @@ export function AccountingPeriodCreateDialog() {
 
 export function LabourPaymentDialog({
   periods,
+  batches,
 }: {
   periods: AccountingPeriod[];
+  batches: PoultryBatch[];
 }) {
   return (
     <FinanceFormDialog
@@ -907,12 +966,20 @@ export function LabourPaymentDialog({
       title="Record ad-hoc labour"
       size="lg"
     >
-      {(close) => <LabourPaymentForm periods={periods} onSuccess={close} />}
+      {(close) => (
+        <LabourPaymentForm periods={periods} batches={batches} onSuccess={close} />
+      )}
     </FinanceFormDialog>
   );
 }
 
-export function ExpenseDialog({ periods }: { periods: AccountingPeriod[] }) {
+export function ExpenseDialog({
+  periods,
+  batches,
+}: {
+  periods: AccountingPeriod[];
+  batches: PoultryBatch[];
+}) {
   return (
     <FinanceFormDialog
       triggerLabel="Record Expense"
@@ -920,7 +987,9 @@ export function ExpenseDialog({ periods }: { periods: AccountingPeriod[] }) {
       title="Record shared expense"
       size="lg"
     >
-      {(close) => <ExpenseForm periods={periods} onSuccess={close} />}
+      {(close) => (
+        <ExpenseForm periods={periods} batches={batches} onSuccess={close} />
+      )}
     </FinanceFormDialog>
   );
 }
@@ -940,9 +1009,11 @@ export function ConsumableLotDialog() {
 export function ConsumableUsageDialog({
   periods,
   lots,
+  batches,
 }: {
   periods: AccountingPeriod[];
   lots: SharedConsumableLot[];
+  batches: PoultryBatch[];
 }) {
   return (
     <FinanceFormDialog
@@ -955,6 +1026,7 @@ export function ConsumableUsageDialog({
         <ConsumableUsageForm
           periods={periods}
           lots={lots}
+          batches={batches}
           onSuccess={close}
         />
       )}
@@ -1037,6 +1109,31 @@ function PeriodSelect({ periods }: { periods: AccountingPeriod[] }) {
   );
 }
 
+function BatchSelect({
+  batches,
+  required = false,
+  allowShared = false,
+}: {
+  batches: PoultryBatch[];
+  required?: boolean;
+  allowShared?: boolean;
+}) {
+  return (
+    <label className="grid gap-2 text-sm font-bold text-[var(--navy)]">
+      Poultry batch
+      <select name="batch" className="form-input" required={required}>
+        {allowShared ? <option value="">Shared across eligible batches</option> : null}
+        {!allowShared ? <option value="">Select a batch</option> : null}
+        {batches.map((batch) => (
+          <option key={batch.id} value={batch.id}>
+            {batch.batch_id} · {batch.bird_type.replace(/_/g, " ")} · {batch.status}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 function TextInput({
   label,
   name,
@@ -1081,15 +1178,29 @@ function SelectInput({
   label,
   name,
   options,
+  value,
+  onValueChange,
+  required = false,
 }: {
   label: string;
   name: string;
   options: Array<[string, string]>;
+  value?: string;
+  onValueChange?: (value: string) => void;
+  required?: boolean;
 }) {
   return (
     <label className="grid gap-2 text-sm font-bold text-[var(--navy)]">
       {label}
-      <select name={name} className="form-input">
+      <select
+        name={name}
+        className="form-input"
+        value={value}
+        onChange={
+          onValueChange ? (event) => onValueChange(event.target.value) : undefined
+        }
+        required={required}
+      >
         {options.map(([value, optionLabel]) => (
           <option key={value} value={value}>
             {optionLabel}

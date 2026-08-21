@@ -18,6 +18,7 @@ from apps.finance.models import (
     AssetProductionScope,
     AssetStatus,
     AssetUsageRecord,
+    BatchProfitabilitySnapshot,
     ConsumableUsageScope,
     CostAllocation,
     CostScope,
@@ -43,7 +44,11 @@ from apps.finance.services.bird_days import recalculate_bird_day_snapshots
 from apps.finance.services.consumables import record_consumable_usage
 from apps.finance.services.depreciation import generate_depreciation_for_period
 from apps.finance.services.payroll import generate_payroll_for_period
-from apps.finance.services.profitability import batch_profitability
+from apps.finance.services.profitability import (
+    batch_portfolio_report,
+    batch_profitability,
+    create_final_snapshot,
+)
 from apps.finance.services.reporting import dashboard_indicators, monthly_profitability_report
 from apps.poultry.models import (
     Batch,
@@ -296,6 +301,7 @@ class FinanceServiceTests(TestCase):
         report = monthly_profitability_report(period)
         dashboard = dashboard_indicators()
         booked_profitability = batch_profitability(booked_batch)
+        portfolio = batch_portfolio_report([active_batch, booked_batch])
 
         self.assertEqual(
             report["production"]["direct_batch_costs"],
@@ -312,6 +318,14 @@ class FinanceServiceTests(TestCase):
             booked_profitability["active_batch_cost_exposure"],
             Decimal("0.00"),
         )
+        self.assertFalse(booked_profitability["included_in_portfolio_summary"])
+        self.assertEqual(portfolio["selected_batch_count"], 2)
+        self.assertEqual(portfolio["included_batch_count"], 1)
+        self.assertEqual(
+            portfolio["summary"]["total_production_cost"],
+            Decimal("100.00"),
+        )
+        self.assertEqual(portfolio["summary"]["birds_placed"], 100)
 
     def test_overselling_is_rejected_transactionally(self):
         batch = self.batch(quantity=10)
@@ -506,6 +520,558 @@ class FinanceServiceTests(TestCase):
         self.assertEqual(data["profitability_status"], "provisional")
         self.assertEqual(data["provisional_saleable_birds"], 100)
         self.assertEqual(data["provisional_cost_per_saleable_bird"], Decimal("10.00"))
+
+    def test_batch_portfolio_recomputes_weighted_poultry_metrics(self):
+        batch_a = self.batch(quantity=100)
+        batch_b = self.batch(quantity=50)
+
+        for batch, cost in (
+            (batch_a, Decimal("1000.00")),
+            (batch_b, Decimal("500.00")),
+        ):
+            InputCosts.objects.create(
+                batch=batch,
+                item="Feed",
+                category="Feed",
+                quantity=1,
+                unit=1,
+                unit_measurement="kg",
+                unit_cost=cost,
+                purchase_date=aware(date(2026, 1, 2)),
+                notes="",
+                created_by=self.user,
+            )
+
+        create_sale_with_lifecycle(
+            batch_id=batch_a.id,
+            created_by=self.user,
+            **self.sale_payload(
+                quantity_sold=10,
+                unit_price=Decimal("100.00"),
+                amount_paid=Decimal("500.00"),
+                payment_status=PaymentStatus.PARTIAL,
+            ),
+        )
+        create_sale_with_lifecycle(
+            batch_id=batch_b.id,
+            created_by=self.user,
+            **self.sale_payload(
+                quantity_sold=5,
+                unit_price=Decimal("200.00"),
+                amount_paid=Decimal("1000.00"),
+            ),
+        )
+        create_mortality_with_lifecycle(
+            batch_id=batch_a.id,
+            created_by=self.user,
+            mortality_date=aware(date(2026, 1, 10)),
+            quantity_dead=10,
+            age_in_days=10,
+            suspected_cause="Heat",
+            description="Recorded for portfolio test.",
+            action_taken="Reviewed ventilation.",
+            reported_by_name="Supervisor",
+        )
+        create_mortality_with_lifecycle(
+            batch_id=batch_b.id,
+            created_by=self.user,
+            mortality_date=aware(date(2026, 1, 10)),
+            quantity_dead=5,
+            age_in_days=10,
+            suspected_cause="Heat",
+            description="Recorded for portfolio test.",
+            action_taken="Reviewed ventilation.",
+            reported_by_name="Supervisor",
+        )
+
+        with self.assertNumQueries(11):
+            report = batch_portfolio_report([batch_a, batch_b])
+        summary = report["summary"]
+
+        self.assertEqual(report["selected_batch_ids"], [batch_a.id, batch_b.id])
+        self.assertEqual(summary["revenue"], Decimal("2000.00"))
+        self.assertEqual(summary["cash_collected"], Decimal("1500.00"))
+        self.assertEqual(summary["accounts_receivable"], Decimal("500.00"))
+        self.assertEqual(summary["total_production_cost"], Decimal("1500.00"))
+        self.assertEqual(summary["batch_gross_profit"], Decimal("500.00"))
+        self.assertEqual(summary["batch_gross_margin_percent"], Decimal("25.00"))
+        self.assertEqual(summary["collection_rate_percent"], Decimal("75.00"))
+        self.assertEqual(summary["mortality_rate_percent"], Decimal("10.00"))
+        self.assertEqual(
+            summary["production_cost_per_saleable_bird"],
+            Decimal("11.11"),
+        )
+
+    def test_batch_portfolio_endpoint_validates_and_deduplicates_selection(self):
+        manager_role, _ = Role.objects.get_or_create(
+            slug=RoleChoices.FARM_MANAGER,
+            defaults={"name": RoleChoices.FARM_MANAGER.label},
+        )
+        self.user.roles.add(manager_role)
+        batch_a = self.batch(quantity=100)
+        batch_b = self.batch(quantity=80)
+        client = APIClient()
+        client.force_authenticate(self.user)
+
+        response = client.get(
+            "/api/v1/finance/reports/batches",
+            {"batch": [str(batch_b.id), str(batch_a.id), str(batch_b.id)]},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.data["selected_batch_ids"],
+            [batch_b.id, batch_a.id],
+        )
+        self.assertEqual(response.data["selected_batch_count"], 2)
+
+        self.assertEqual(
+            client.get("/api/v1/finance/reports/batches").status_code,
+            400,
+        )
+        self.assertEqual(
+            client.get(
+                "/api/v1/finance/reports/batches",
+                {"batch_ids": "1,not-a-number"},
+            ).status_code,
+            400,
+        )
+        self.assertEqual(
+            client.get(
+                "/api/v1/finance/reports/batches",
+                {"batch": "999999"},
+            ).status_code,
+            400,
+        )
+        self.assertEqual(
+            client.get(
+                "/api/v1/finance/reports/batches",
+                {"batch": [str(batch_id) for batch_id in range(1, 52)]},
+            ).status_code,
+            400,
+        )
+
+    def test_finance_entry_api_enforces_poultry_batch_attribution(self):
+        manager_role, _ = Role.objects.get_or_create(
+            slug=RoleChoices.FARM_MANAGER,
+            defaults={"name": RoleChoices.FARM_MANAGER.label},
+        )
+        self.user.roles.add(manager_role)
+        period = AccountingPeriod.objects.create(
+            period_start=date(2026, 1, 1),
+            period_end=date(2026, 1, 31),
+        )
+        batch = self.batch(quantity=100)
+        client = APIClient()
+        client.force_authenticate(self.user)
+        labour_payload = {
+            "worker_name": "Catcher",
+            "task_description": "Catch birds",
+            "work_date": "2026-01-20",
+            "hours_worked": "4.00",
+            "payment_amount": "1000.00",
+            "cost_scope": CostScope.BATCH_DIRECT,
+            "accounting_period": period.id,
+            "payment_status": "unpaid",
+        }
+
+        missing_batch = client.post(
+            "/api/v1/finance/ad-hoc-labour",
+            labour_payload,
+            format="json",
+        )
+        self.assertEqual(missing_batch.status_code, 400)
+        self.assertIn("batch", missing_batch.data)
+
+        direct_labour = client.post(
+            "/api/v1/finance/ad-hoc-labour",
+            {**labour_payload, "batch": batch.id},
+            format="json",
+        )
+        self.assertEqual(direct_labour.status_code, 201)
+        self.assertEqual(direct_labour.data["batch"], batch.id)
+
+        invalid_admin_assignment = client.post(
+            "/api/v1/finance/expenses",
+            {
+                "description": "Office stationery",
+                "category": "Administration",
+                "expense_date": "2026-01-20",
+                "accounting_period": period.id,
+                "amount": "500.00",
+                "scope": SharedExpenseScope.ADMIN_OVERHEAD,
+                "directly_assigned_batch": batch.id,
+                "allocation_method": "direct",
+                "payment_status": "unpaid",
+            },
+            format="json",
+        )
+        self.assertEqual(invalid_admin_assignment.status_code, 400)
+        self.assertIn("directly_assigned_batch", invalid_admin_assignment.data)
+
+        invalid_admin_labour = client.post(
+            "/api/v1/finance/ad-hoc-labour",
+            {
+                **labour_payload,
+                "cost_scope": CostScope.FARM_ADMINISTRATION,
+                "batch": batch.id,
+            },
+            format="json",
+        )
+        self.assertEqual(invalid_admin_labour.status_code, 400)
+        self.assertIn("batch", invalid_admin_labour.data)
+
+        batch.status = BatchStatus.CLOSED
+        batch.closed_at = timezone.now()
+        batch.save(update_fields=["status", "closed_at", "updated_at"])
+        create_final_snapshot(
+            batch,
+            accounting_period=period,
+            generated_by=self.user,
+        )
+        closed_batch_labour = client.post(
+            "/api/v1/finance/ad-hoc-labour",
+            {**labour_payload, "batch": batch.id},
+            format="json",
+        )
+        self.assertEqual(closed_batch_labour.status_code, 400)
+        self.assertIn("batch", closed_batch_labour.data)
+
+    def test_direct_selling_cost_is_immediate_and_not_doubled_after_allocation(self):
+        period = AccountingPeriod.objects.create(
+            period_start=date(2026, 1, 1),
+            period_end=date(2026, 1, 31),
+        )
+        batch = self.batch(quantity=100)
+        AdHocLabourPayment.objects.create(
+            worker_name="Sales helper",
+            task_description="Load sold birds",
+            work_date=date(2026, 1, 25),
+            payment_amount=Decimal("100.00"),
+            cost_scope=CostScope.SELLING_AND_DISTRIBUTION,
+            batch=batch,
+            accounting_period=period,
+            created_by=self.user,
+        )
+        SharedExpense.objects.create(
+            description="Buyer delivery",
+            category="Transport",
+            expense_date=date(2026, 1, 25),
+            accounting_period=period,
+            amount=Decimal("50.00"),
+            scope=SharedExpenseScope.SELLING_EXPENSE,
+            directly_assigned_batch=batch,
+            created_by=self.user,
+        )
+
+        before_allocation = batch_profitability(batch)
+        self.assertEqual(before_allocation["selling_cost"], Decimal("150.00"))
+
+        regenerate_allocations_for_period(period, generated_by=self.user)
+        after_allocation = batch_profitability(batch)
+        portfolio = batch_portfolio_report([batch])
+
+        self.assertEqual(after_allocation["selling_cost"], Decimal("150.00"))
+        self.assertEqual(portfolio["summary"]["selling_cost"], Decimal("150.00"))
+
+    def test_administration_and_selling_scopes_are_included_in_profit(self):
+        period = AccountingPeriod.objects.create(
+            period_start=date(2026, 1, 1),
+            period_end=date(2026, 1, 31),
+        )
+        batch = self.batch(quantity=100)
+        AdHocLabourPayment.objects.create(
+            worker_name="Office helper",
+            task_description="File supplier records",
+            work_date=date(2026, 1, 20),
+            payment_amount=Decimal("40.00"),
+            cost_scope=CostScope.FARM_ADMINISTRATION,
+            accounting_period=period,
+            created_by=self.user,
+        )
+        AdHocLabourPayment.objects.create(
+            worker_name="Sales helper",
+            task_description="Pack sold birds",
+            work_date=date(2026, 1, 21),
+            payment_amount=Decimal("50.00"),
+            cost_scope=CostScope.SELLING_AND_DISTRIBUTION,
+            batch=batch,
+            accounting_period=period,
+            created_by=self.user,
+        )
+        admin_lot = SharedConsumableLot.objects.create(
+            item="Office stationery",
+            category="Administration",
+            purchase_date=date(2026, 1, 1),
+            quantity_purchased=Decimal("1.0000"),
+            unit_of_measurement="pack",
+            total_purchase_cost=Decimal("30.00"),
+            created_by=self.user,
+        )
+        selling_lot = SharedConsumableLot.objects.create(
+            item="Delivery packaging",
+            category="Selling",
+            purchase_date=date(2026, 1, 1),
+            quantity_purchased=Decimal("1.0000"),
+            unit_of_measurement="pack",
+            total_purchase_cost=Decimal("20.00"),
+            created_by=self.user,
+        )
+        record_consumable_usage(
+            recorded_by=self.user,
+            consumable_lot=admin_lot,
+            usage_date=date(2026, 1, 22),
+            accounting_period=period,
+            quantity_used=Decimal("1.0000"),
+            usage_scope=ConsumableUsageScope.ADMINISTRATION,
+            allocation_driver="none",
+            task_or_purpose="Office records",
+        )
+        record_consumable_usage(
+            recorded_by=self.user,
+            consumable_lot=selling_lot,
+            usage_date=date(2026, 1, 23),
+            accounting_period=period,
+            quantity_used=Decimal("1.0000"),
+            usage_scope=ConsumableUsageScope.SELLING_AND_DISTRIBUTION,
+            allocation_driver="direct",
+            batch=batch,
+            task_or_purpose="Pack sold birds",
+        )
+
+        monthly = monthly_profitability_report(period)
+        batch_report = batch_profitability(batch)
+
+        self.assertEqual(
+            monthly["operating_costs"]["administration_ad_hoc_labour"],
+            Decimal("40.00"),
+        )
+        self.assertEqual(
+            monthly["operating_costs"]["administration_consumables"],
+            Decimal("30.00"),
+        )
+        self.assertEqual(
+            monthly["operating_costs"]["general_operating_expenses"],
+            Decimal("0.00"),
+        )
+        self.assertEqual(
+            monthly["operating_costs"]["selling_ad_hoc_labour"],
+            Decimal("50.00"),
+        )
+        self.assertEqual(
+            monthly["operating_costs"]["selling_consumables"],
+            Decimal("20.00"),
+        )
+        self.assertEqual(
+            monthly["operating_costs"]["selling_distribution_costs"],
+            Decimal("70.00"),
+        )
+        self.assertEqual(batch_report["selling_cost"], Decimal("70.00"))
+
+    def test_closed_batch_uses_authoritative_final_snapshot(self):
+        period = AccountingPeriod.objects.create(
+            period_start=date(2026, 1, 1),
+            period_end=date(2026, 1, 31),
+        )
+        batch = self.batch(quantity=100)
+        batch.status = BatchStatus.CLOSED
+        batch.closed_at = timezone.now()
+        batch.save(update_fields=["status", "closed_at", "updated_at"])
+        snapshot = create_final_snapshot(
+            batch,
+            accounting_period=period,
+            generated_by=self.user,
+        )
+        SharedExpense.objects.create(
+            description="Late unposted transport",
+            category="Transport",
+            expense_date=date(2026, 1, 31),
+            accounting_period=period,
+            amount=Decimal("500.00"),
+            scope=SharedExpenseScope.SHARED_PRODUCTION,
+            directly_assigned_batch=batch,
+            created_by=self.user,
+        )
+
+        single = batch_profitability(batch)
+        portfolio = batch_portfolio_report([batch])
+
+        self.assertEqual(single["calculation_basis"], "final_snapshot")
+        self.assertEqual(single["direct_batch_cost"], snapshot.direct_batch_cost)
+        self.assertEqual(
+            portfolio["summary"]["direct_batch_cost"],
+            snapshot.direct_batch_cost,
+        )
+
+    def test_period_close_reconciles_allocations_then_versions_final_snapshot(self):
+        period = AccountingPeriod.objects.create(
+            period_start=date(2026, 1, 1),
+            period_end=date(2026, 1, 31),
+        )
+        batch = self.batch(quantity=100)
+        batch.status = BatchStatus.CLOSED
+        batch.closed_at = aware(date(2026, 1, 20))
+        batch.save(update_fields=["status", "closed_at", "updated_at"])
+        SharedExpense.objects.create(
+            description="Shared poultry-house power",
+            category="Utilities",
+            expense_date=date(2026, 1, 15),
+            accounting_period=period,
+            amount=Decimal("120.00"),
+            scope=SharedExpenseScope.SHARED_PRODUCTION,
+            created_by=self.user,
+        )
+        legacy_snapshot = create_final_snapshot(
+            batch,
+            accounting_period=period,
+            generated_by=self.user,
+        )
+        BatchProfitabilitySnapshot.objects.filter(pk=legacy_snapshot.pk).update(
+            accounting_period=None
+        )
+        legacy_snapshot.accounting_period = None
+        self.assertEqual(
+            batch_profitability(batch)["profitability_status"],
+            "pending_finalization",
+        )
+        self.assertEqual(
+            dashboard_indicators()["closed_batch_profit"],
+            Decimal("0.00"),
+        )
+        self.assertEqual(
+            legacy_snapshot.allocated_production_cost,
+            Decimal("0.00"),
+        )
+        manager_role, _ = Role.objects.get_or_create(
+            slug=RoleChoices.FARM_MANAGER,
+            defaults={"name": RoleChoices.FARM_MANAGER.label},
+        )
+        self.user.roles.add(manager_role)
+        client = APIClient()
+        client.force_authenticate(self.user)
+
+        closed = client.post(
+            f"/api/v1/finance/accounting-periods/{period.id}/close"
+        )
+
+        self.assertEqual(closed.status_code, 200)
+        snapshot = BatchProfitabilitySnapshot.objects.get(batch=batch, final=True)
+        legacy_snapshot.refresh_from_db()
+        self.assertFalse(legacy_snapshot.final)
+        self.assertEqual(snapshot.accounting_period, period)
+        self.assertEqual(snapshot.allocated_production_cost, Decimal("120.00"))
+        allocation = CostAllocation.objects.get(
+            accounting_period=period,
+            batch=batch,
+            source_type=AllocationSourceType.SHARED_EXPENSE,
+        )
+        self.assertTrue(allocation.locked)
+
+        reopened = client.post(
+            f"/api/v1/finance/accounting-periods/{period.id}/reopen",
+            {"reason": "Correct the shared utility amount."},
+            format="json",
+        )
+
+        self.assertEqual(reopened.status_code, 200)
+        snapshot.refresh_from_db()
+        allocation.refresh_from_db()
+        batch.refresh_from_db()
+        self.assertFalse(snapshot.final)
+        self.assertFalse(allocation.locked)
+        self.assertIsNone(batch.profitability_finalized_at)
+
+        correction = client.post(
+            "/api/v1/finance/expenses",
+            {
+                "description": "Corrected catching cost",
+                "category": "Catching",
+                "expense_date": "2026-01-20",
+                "accounting_period": period.id,
+                "amount": "10.00",
+                "scope": SharedExpenseScope.SHARED_PRODUCTION,
+                "directly_assigned_batch": batch.id,
+                "allocation_method": "direct",
+                "payment_status": "unpaid",
+            },
+            format="json",
+        )
+        self.assertEqual(correction.status_code, 201)
+
+        poultry_input_correction = client.post(
+            f"/api/v1/poultry-management/{batch.id}/input_costs",
+            {
+                "item": "Corrected feed invoice",
+                "category": "Feed",
+                "quantity": 1,
+                "unit_measurement": "bag",
+                "unit": 1,
+                "unit_cost": "5.00",
+                "purchase_date": "2026-01-20T10:00:00+02:00",
+                "notes": "Added while the accounting period is reopened.",
+            },
+            format="json",
+        )
+        self.assertEqual(poultry_input_correction.status_code, 201)
+
+        reclosed = client.post(
+            f"/api/v1/finance/accounting-periods/{period.id}/close"
+        )
+
+        self.assertEqual(reclosed.status_code, 200)
+        self.assertEqual(
+            BatchProfitabilitySnapshot.objects.filter(batch=batch, final=True).count(),
+            1,
+        )
+        self.assertEqual(
+            BatchProfitabilitySnapshot.objects.filter(batch=batch).count(),
+            3,
+        )
+        corrected_snapshot = BatchProfitabilitySnapshot.objects.get(
+            batch=batch,
+            final=True,
+        )
+        self.assertEqual(corrected_snapshot.direct_batch_cost, Decimal("15.00"))
+
+    def test_closed_batch_rejects_new_poultry_costs_and_sales(self):
+        period = AccountingPeriod.objects.create(
+            period_start=date(2026, 1, 1),
+            period_end=date(2026, 1, 31),
+        )
+        batch = self.batch(quantity=100)
+        batch.status = BatchStatus.CLOSED
+        batch.closed_at = timezone.now()
+        batch.save(update_fields=["status", "closed_at", "updated_at"])
+        create_final_snapshot(
+            batch,
+            accounting_period=period,
+            generated_by=self.user,
+        )
+        client = APIClient()
+        client.force_authenticate(self.user)
+
+        input_cost = client.post(
+            f"/api/v1/poultry-management/{batch.id}/input_costs",
+            {
+                "item": "Late feed invoice",
+                "category": "Feed",
+                "quantity": 1,
+                "unit_measurement": "bag",
+                "unit": 1,
+                "unit_cost": "500.00",
+                "purchase_date": "2026-01-20T10:00:00+02:00",
+                "notes": "Should use the correction workflow.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(input_cost.status_code, 400)
+        self.assertIn("batch", input_cost.data)
+        with self.assertRaises(ValueError):
+            create_sale_with_lifecycle(
+                batch_id=batch.id,
+                created_by=self.user,
+            )
 
     def test_closed_period_cannot_be_recalculated(self):
         period = AccountingPeriod.objects.create(

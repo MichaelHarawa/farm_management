@@ -210,6 +210,18 @@ def monthly_profitability_report(period: AccountingPeriod) -> dict:
             )
         )["total"]
     )
+    administration_ad_hoc_labour = money(
+        AdHocLabourPayment.objects.filter(
+            accounting_period=period,
+            cost_scope=CostScope.FARM_ADMINISTRATION,
+        ).aggregate(total=Sum("payment_amount"))["total"]
+    )
+    administration_consumables = money(
+        ConsumableUsage.objects.filter(
+            accounting_period=period,
+            usage_scope=ConsumableUsageScope.ADMINISTRATION,
+        ).aggregate(total=Sum("recognized_cost"))["total"]
+    )
     general_operating_expenses = money(
         SharedExpense.objects.filter(
             accounting_period=period,
@@ -255,6 +267,18 @@ def monthly_profitability_report(period: AccountingPeriod) -> dict:
             total=Sum("period_depreciation")
         )["total"]
     )
+    selling_ad_hoc_labour = money(
+        AdHocLabourPayment.objects.filter(
+            accounting_period=period,
+            cost_scope=CostScope.SELLING_AND_DISTRIBUTION,
+        ).aggregate(total=Sum("payment_amount"))["total"]
+    )
+    selling_consumables = money(
+        ConsumableUsage.objects.filter(
+            accounting_period=period,
+            usage_scope=ConsumableUsageScope.SELLING_AND_DISTRIBUTION,
+        ).aggregate(total=Sum("recognized_cost"))["total"]
+    )
     selling_distribution_costs = money(
         PayrollEntry.objects.filter(accounting_period=period).aggregate(
             total=Sum(
@@ -271,10 +295,12 @@ def monthly_profitability_report(period: AccountingPeriod) -> dict:
             accounting_period=period,
             scope=SharedExpenseScope.SELLING_EXPENSE,
         ).aggregate(total=Sum("amount"))["total"]
-    ) + selling_asset_depreciation
+    ) + selling_asset_depreciation + selling_ad_hoc_labour + selling_consumables
     operating_profit = (
         gross_profit
         - administration_payroll
+        - administration_ad_hoc_labour
+        - administration_consumables
         - general_operating_expenses
         - administration_depreciation
         - selling_distribution_costs
@@ -468,8 +494,12 @@ def monthly_profitability_report(period: AccountingPeriod) -> dict:
         },
         "operating_costs": {
             "administration_payroll": administration_payroll,
+            "administration_ad_hoc_labour": administration_ad_hoc_labour,
+            "administration_consumables": administration_consumables,
             "general_operating_expenses": general_operating_expenses,
             "administration_depreciation": administration_depreciation,
+            "selling_ad_hoc_labour": selling_ad_hoc_labour,
+            "selling_consumables": selling_consumables,
             "selling_distribution_costs": selling_distribution_costs,
             "selling_asset_depreciation": selling_asset_depreciation,
             "idle_capacity_depreciation": idle_capacity_depreciation,
@@ -635,6 +665,7 @@ def dashboard_warnings(period: AccountingPeriod | None = None) -> list[dict[str,
         unallocated_expenses = SharedExpense.objects.filter(
             accounting_period=period,
             scope=SharedExpenseScope.SHARED_PRODUCTION,
+            directly_assigned_batch__isnull=True,
             cost_allocations__isnull=True,
         )
         if unallocated_expenses.exists():
@@ -651,6 +682,7 @@ def dashboard_warnings(period: AccountingPeriod | None = None) -> list[dict[str,
 
         unallocated_payroll = PayrollEntry.objects.filter(
             accounting_period=period,
+            production_percentage__gt=0,
             cost_allocations__isnull=True,
         )
         if unallocated_payroll.exists():
@@ -661,6 +693,94 @@ def dashboard_warnings(period: AccountingPeriod | None = None) -> list[dict[str,
                     "message": (
                         f"{unallocated_payroll.count()} payroll entrie(s) "
                         "are not allocated."
+                    ),
+                }
+            )
+
+        unallocated_shared_labour = AdHocLabourPayment.objects.filter(
+            accounting_period=period,
+            cost_scope=CostScope.SHARED_PRODUCTION,
+            cost_allocations__isnull=True,
+        )
+        if unallocated_shared_labour.exists():
+            warnings.append(
+                {
+                    "code": "unallocated_shared_labour",
+                    "severity": "warning",
+                    "message": (
+                        f"{unallocated_shared_labour.count()} shared production "
+                        "labour payment(s) are not allocated."
+                    ),
+                }
+            )
+
+        unallocated_production_consumables = ConsumableUsage.objects.filter(
+            accounting_period=period,
+            usage_scope=ConsumableUsageScope.SHARED_PRODUCTION,
+            cost_allocations__isnull=True,
+        )
+        if unallocated_production_consumables.exists():
+            warnings.append(
+                {
+                    "code": "unallocated_production_consumables",
+                    "severity": "warning",
+                    "message": (
+                        f"{unallocated_production_consumables.count()} shared "
+                        "production consumable usage(s) are not allocated."
+                    ),
+                }
+            )
+
+        unallocated_selling_labour = AdHocLabourPayment.objects.filter(
+            accounting_period=period,
+            cost_scope=CostScope.SELLING_AND_DISTRIBUTION,
+            batch__isnull=True,
+            cost_allocations__isnull=True,
+        )
+        if unallocated_selling_labour.exists():
+            warnings.append(
+                {
+                    "code": "unallocated_selling_labour",
+                    "severity": "warning",
+                    "message": (
+                        f"{unallocated_selling_labour.count()} shared selling "
+                        "labour payment(s) are not allocated."
+                    ),
+                }
+            )
+
+        unallocated_selling_expenses = SharedExpense.objects.filter(
+            accounting_period=period,
+            scope=SharedExpenseScope.SELLING_EXPENSE,
+            directly_assigned_batch__isnull=True,
+            cost_allocations__isnull=True,
+        )
+        if unallocated_selling_expenses.exists():
+            warnings.append(
+                {
+                    "code": "unallocated_selling_expenses",
+                    "severity": "warning",
+                    "message": (
+                        f"{unallocated_selling_expenses.count()} shared selling "
+                        "expense(s) are not allocated."
+                    ),
+                }
+            )
+
+        unallocated_selling_consumables = ConsumableUsage.objects.filter(
+            accounting_period=period,
+            usage_scope=ConsumableUsageScope.SELLING_AND_DISTRIBUTION,
+            batch__isnull=True,
+            cost_allocations__isnull=True,
+        )
+        if unallocated_selling_consumables.exists():
+            warnings.append(
+                {
+                    "code": "unallocated_selling_consumables",
+                    "severity": "warning",
+                    "message": (
+                        f"{unallocated_selling_consumables.count()} shared "
+                        "selling consumable usage(s) are not allocated."
                     ),
                 }
             )
@@ -711,6 +831,23 @@ def dashboard_warnings(period: AccountingPeriod | None = None) -> list[dict[str,
                 }
             )
 
+    legacy_final_snapshots = BatchProfitabilitySnapshot.objects.filter(
+        final=True,
+        accounting_period__isnull=True,
+    )
+    if legacy_final_snapshots.exists():
+        warnings.append(
+            {
+                "code": "legacy_final_snapshots_require_reconciliation",
+                "severity": "warning",
+                "message": (
+                    f"{legacy_final_snapshots.count()} legacy batch snapshot(s) "
+                    "must be reconciled by reopening and reclosing their "
+                    "accounting period. They are excluded from final profit."
+                ),
+            }
+        )
+
     expired_lots = SharedConsumableLot.objects.filter(
         expiry_date__lt=today,
         quantity_available__gt=0,
@@ -755,7 +892,10 @@ def dashboard_indicators() -> dict:
     active_batches = _active_production_batches()
     active_cost_exposure = Decimal("0.00")
     closed_batch_profit = money(
-        BatchProfitabilitySnapshot.objects.filter(final=True).aggregate(
+        BatchProfitabilitySnapshot.objects.filter(
+            final=True,
+            accounting_period__isnull=False,
+        ).aggregate(
             total=Sum("batch_gross_profit")
         )["total"]
     )

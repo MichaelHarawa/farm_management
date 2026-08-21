@@ -157,6 +157,40 @@ export default async function FinanceMonthlyPage() {
                 ]}
               />
             </Panel>
+            <Panel title="Operating Cost Breakdown">
+              <ReportRows
+                rows={[
+                  [
+                    "Administration payroll",
+                    formatCurrency(report.operating_costs.administration_payroll),
+                  ],
+                  [
+                    "Administration temporary labour",
+                    formatCurrency(
+                      report.operating_costs.administration_ad_hoc_labour
+                    ),
+                  ],
+                  [
+                    "Administration consumables",
+                    formatCurrency(
+                      report.operating_costs.administration_consumables
+                    ),
+                  ],
+                  [
+                    "Other administration expenses",
+                    formatCurrency(
+                      report.operating_costs.general_operating_expenses
+                    ),
+                  ],
+                  [
+                    "Selling and distribution",
+                    formatCurrency(
+                      report.operating_costs.selling_distribution_costs
+                    ),
+                  ],
+                ]}
+              />
+            </Panel>
             <Panel title="Operations">
               <ReportRows
                 rows={[

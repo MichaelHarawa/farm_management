@@ -29,6 +29,7 @@ export type PoultryBatch = {
     | "closed";
   target_selling_price: number | null;
   closure_notes: string;
+  profitability_finalized_at: string | null;
   created_at: string;
   updated_at: string;
   created_by: string | null;

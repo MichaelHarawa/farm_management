@@ -534,12 +534,11 @@ class AdHocLabourPayment(DollarReferenceMixin, TimestampedModel):
         if self.cost_scope == CostScope.BATCH_DIRECT and self.batch_id is None:
             errors["batch"] = "Batch is required for batch-direct labour."
         if (
-            self.cost_scope == CostScope.SHARED_PRODUCTION
+            self.cost_scope
+            in {CostScope.SHARED_PRODUCTION, CostScope.FARM_ADMINISTRATION}
             and self.batch_id is not None
         ):
-            errors["batch"] = (
-                "Shared production labour should normally not be tied to one batch."
-            )
+            errors["batch"] = "This labour scope cannot be assigned to one batch."
         if self.start_date and self.end_date and self.end_date < self.start_date:
             errors["end_date"] = "End date cannot be before start date."
         if errors:
@@ -923,11 +922,26 @@ class ConsumableUsage(TimestampedModel):
         if self.usage_scope == ConsumableUsageScope.BATCH_DIRECT and not self.batch_id:
             errors["batch"] = "Batch is required for direct consumable usage."
         if (
-            self.usage_scope == ConsumableUsageScope.SHARED_PRODUCTION
+            self.usage_scope
+            in {
+                ConsumableUsageScope.SHARED_PRODUCTION,
+                ConsumableUsageScope.ADMINISTRATION,
+            }
             and self.batch_id
+        ):
+            errors["batch"] = "This usage scope cannot be assigned to one batch."
+        if (
+            self.batch_id
+            and self.usage_scope
+            in {
+                ConsumableUsageScope.BATCH_DIRECT,
+                ConsumableUsageScope.SELLING_AND_DISTRIBUTION,
+            }
             and self.allocation_driver != AllocationMethod.DIRECT
         ):
-            errors["batch"] = "Shared production usage should be allocated, not pinned to one batch."
+            errors["allocation_driver"] = (
+                "Batch-assigned usage must use direct allocation."
+            )
         if self.quantity_used > self.consumable_lot.quantity_available and self._state.adding:
             errors["quantity_used"] = "Usage cannot exceed available stock."
         if errors:
@@ -1208,7 +1222,6 @@ class AssetCategory(TimestampedModel):
     code = models.CharField(
         max_length=40,
         choices=AssetCategoryCode.choices,
-        unique=True,
     )
     default_useful_life_months = models.PositiveIntegerField()
     default_residual_value_percentage = models.DecimalField(

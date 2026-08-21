@@ -457,6 +457,33 @@ def regenerate_allocations_for_period(
                     generated_by=generated_by,
                 )
             )
+        elif (
+            usage.usage_scope == ConsumableUsageScope.SELLING_AND_DISTRIBUTION
+            and usage.batch_id
+        ):
+            allocations.append(
+                _create_allocation(
+                    period=period,
+                    batch_id=usage.batch_id,
+                    source_type=AllocationSourceType.CONSUMABLE_USAGE,
+                    consumable_usage=usage,
+                    allocation_method=AllocationMethod.DIRECT,
+                    driver_quantity=Decimal("1.0000"),
+                    total_driver_quantity=Decimal("1.0000"),
+                    allocated_amount=usage.recognized_cost,
+                    generated_by=generated_by,
+                )
+            )
+        elif usage.usage_scope == ConsumableUsageScope.SELLING_AND_DISTRIBUTION:
+            allocations.extend(
+                _allocate_by_revenue_share(
+                    period=period,
+                    amount=usage.recognized_cost,
+                    source_type=AllocationSourceType.CONSUMABLE_USAGE,
+                    consumable_usage=usage,
+                    generated_by=generated_by,
+                )
+            )
 
     for depreciation in AssetDepreciationEntry.objects.filter(accounting_period=period):
         if _source_locked({"depreciation_entry": depreciation}):

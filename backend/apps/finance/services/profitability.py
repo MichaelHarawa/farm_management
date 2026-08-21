@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import Iterable
 
-from django.db.models import DecimalField, ExpressionWrapper, F, Sum
+from django.db.models import DecimalField, ExpressionWrapper, F, Q, Sum
 from django.utils import timezone
 
 from apps.poultry.models import (
     Batch,
     BatchStatus,
     InputCosts,
+    Mortality,
     PaymentStatus,
     ProductType,
     Sales,
@@ -26,7 +28,7 @@ from ..models import (
     SharedExpense,
     SharedExpenseScope,
 )
-from apps.poultry.services.batch_lifecycle import calculate_bird_balance
+from apps.poultry.services.batch_lifecycle import BirdBalance, calculate_bird_balance
 
 
 ZERO = Decimal("0.00")
@@ -144,37 +146,62 @@ def allocated_production_total(batch: Batch) -> Decimal:
 
 
 def selling_cost_total(batch: Batch) -> Decimal:
-    labour = CostAllocation.objects.filter(
+    direct_labour = AdHocLabourPayment.objects.filter(
+        batch=batch,
+        cost_scope=CostScope.SELLING_AND_DISTRIBUTION,
+    )
+    shared_labour = CostAllocation.objects.filter(
         batch=batch,
         source_type=AllocationSourceType.AD_HOC_LABOUR,
         ad_hoc_labour_payment__cost_scope=CostScope.SELLING_AND_DISTRIBUTION,
+        ad_hoc_labour_payment__batch__isnull=True,
     )
-    expenses = CostAllocation.objects.filter(
+    direct_expenses = SharedExpense.objects.filter(
+        directly_assigned_batch=batch,
+        scope=SharedExpenseScope.SELLING_EXPENSE,
+    )
+    shared_expenses = CostAllocation.objects.filter(
         batch=batch,
         source_type=AllocationSourceType.SHARED_EXPENSE,
         shared_expense__scope=SharedExpenseScope.SELLING_EXPENSE,
+        shared_expense__directly_assigned_batch__isnull=True,
     )
-    return money(labour.aggregate(total=Sum("allocated_amount"))["total"]) + money(
-        expenses.aggregate(total=Sum("allocated_amount"))["total"]
+    direct_consumables = ConsumableUsage.objects.filter(
+        batch=batch,
+        usage_scope=ConsumableUsageScope.SELLING_AND_DISTRIBUTION,
+    )
+    shared_consumables = CostAllocation.objects.filter(
+        batch=batch,
+        source_type=AllocationSourceType.CONSUMABLE_USAGE,
+        consumable_usage__usage_scope=(
+            ConsumableUsageScope.SELLING_AND_DISTRIBUTION
+        ),
+        consumable_usage__batch__isnull=True,
+    )
+    return (
+        money(direct_labour.aggregate(total=Sum("payment_amount"))["total"])
+        + money(shared_labour.aggregate(total=Sum("allocated_amount"))["total"])
+        + money(direct_expenses.aggregate(total=Sum("amount"))["total"])
+        + money(shared_expenses.aggregate(total=Sum("allocated_amount"))["total"])
+        + money(direct_consumables.aggregate(total=Sum("recognized_cost"))["total"])
+        + money(shared_consumables.aggregate(total=Sum("allocated_amount"))["total"])
     )
 
 
-def batch_profitability(batch: Batch) -> dict:
+def _build_batch_profitability(
+    batch: Batch,
+    *,
+    balance: BirdBalance,
+    revenue: Decimal,
+    collected: Decimal,
+    outstanding: Decimal,
+    direct_cost: Decimal,
+    allocated_cost: Decimal,
+    selling_cost: Decimal,
+) -> dict:
     is_pre_production = batch.status in PRE_PRODUCTION_STATUSES
-    balance = calculate_bird_balance(batch)
-    revenue = sales_revenue(batch)
-    collected = cash_collected(batch)
-    outstanding = receivables(batch)
-    direct_cost = (
-        input_cost_total(batch)
-        + direct_labour_total(batch)
-        + direct_production_expense_total(batch)
-        + direct_consumable_usage_total(batch)
-    )
-    allocated_cost = allocated_production_total(batch)
     total_production_cost = direct_cost + allocated_cost
     gross_profit = revenue - total_production_cost
-    selling_cost = selling_cost_total(batch)
     fully_loaded_profit = gross_profit - selling_cost
     bird_units_sold = balance.valid_bird_units_sold
     remaining = max(balance.remaining_live_birds, 0)
@@ -193,9 +220,13 @@ def batch_profitability(batch: Batch) -> dict:
             total_production_cost / Decimal(bird_units_sold)
         )
 
+    additional_revenue_required = max(
+        total_production_cost + selling_cost - revenue,
+        ZERO,
+    )
     break_even_price = None
     if remaining:
-        break_even_price = money(max(total_production_cost - revenue, ZERO) / remaining)
+        break_even_price = money(additional_revenue_required / remaining)
 
     return {
         "batch": batch.pk,
@@ -206,6 +237,7 @@ def batch_profitability(batch: Batch) -> dict:
             if is_pre_production
             else "final" if is_final else "provisional"
         ),
+        "included_in_portfolio_summary": not is_pre_production,
         "revenue": revenue,
         "cash_collected": collected,
         "accounts_receivable": outstanding,
@@ -218,6 +250,7 @@ def batch_profitability(batch: Batch) -> dict:
         "allocated_administration_cost": ZERO,
         "fully_loaded_batch_profit": fully_loaded_profit,
         "fully_loaded_margin_percent": percent(fully_loaded_profit, revenue),
+        "birds_placed": balance.initial_birds,
         "valid_bird_units_sold": bird_units_sold,
         "remaining_live_birds": remaining,
         "profit_per_bird_sold": (
@@ -235,10 +268,7 @@ def batch_profitability(batch: Batch) -> dict:
         "provisional_cost_per_saleable_bird": provisional_cost_per_saleable_bird,
         "final_cost_per_bird_sold": final_cost_per_bird_sold,
         "break_even_selling_price_per_remaining_bird": break_even_price,
-        "additional_revenue_required_to_break_even": max(
-            total_production_cost - revenue,
-            ZERO,
-        ),
+        "additional_revenue_required_to_break_even": additional_revenue_required,
         "active_batch_cost_exposure": (
             total_production_cost
             if not is_final and not is_pre_production
@@ -247,12 +277,478 @@ def batch_profitability(batch: Batch) -> dict:
     }
 
 
-def create_final_snapshot(batch: Batch, *, generated_by=None) -> BatchProfitabilitySnapshot:
+def _apply_final_snapshot(
+    row: dict,
+    snapshot: BatchProfitabilitySnapshot | None,
+) -> dict:
+    """Use the immutable close snapshot as the authoritative final result."""
+
+    if snapshot is None:
+        if row["status"] == BatchStatus.CLOSED:
+            row["profitability_status"] = "pending_finalization"
+            row["calculation_basis"] = "current_unfinalized"
+        return row
+
+    revenue = money(snapshot.revenue)
+    collected = money(snapshot.cash_collected)
+    receivable = money(snapshot.accounts_receivable)
+    direct_cost = money(snapshot.direct_batch_cost)
+    allocated_cost = money(snapshot.allocated_production_cost)
+    production_cost = money(snapshot.total_production_cost)
+    gross_profit = money(snapshot.batch_gross_profit)
+    fully_loaded_profit = money(snapshot.fully_loaded_batch_profit)
+    selling_cost = money(gross_profit - fully_loaded_profit)
+    birds_sold = snapshot.valid_bird_units_sold
+    remaining = snapshot.remaining_live_birds
+    saleable_birds = birds_sold + remaining
+    additional_revenue_required = max(
+        production_cost + selling_cost - revenue,
+        ZERO,
+    )
+
+    row.update(
+        {
+            "status": snapshot.status,
+            "profitability_status": "final",
+            "calculation_basis": "final_snapshot",
+            "revenue": revenue,
+            "cash_collected": collected,
+            "accounts_receivable": receivable,
+            "direct_batch_cost": direct_cost,
+            "allocated_production_cost": allocated_cost,
+            "total_production_cost": production_cost,
+            "batch_gross_profit": gross_profit,
+            "batch_gross_margin_percent": percent(gross_profit, revenue),
+            "selling_cost": selling_cost,
+            "fully_loaded_batch_profit": fully_loaded_profit,
+            "fully_loaded_margin_percent": percent(fully_loaded_profit, revenue),
+            "valid_bird_units_sold": birds_sold,
+            "remaining_live_birds": remaining,
+            "profit_per_bird_sold": (
+                money(gross_profit / Decimal(birds_sold)) if birds_sold else None
+            ),
+            "provisional_saleable_birds": saleable_birds,
+            "provisional_cost_per_saleable_bird": (
+                money(production_cost / Decimal(saleable_birds))
+                if saleable_birds
+                else None
+            ),
+            "final_cost_per_bird_sold": (
+                money(production_cost / Decimal(birds_sold)) if birds_sold else None
+            ),
+            "break_even_selling_price_per_remaining_bird": (
+                money(additional_revenue_required / Decimal(remaining))
+                if remaining
+                else None
+            ),
+            "additional_revenue_required_to_break_even": additional_revenue_required,
+            "active_batch_cost_exposure": ZERO,
+        }
+    )
+    return row
+
+
+def batch_profitability(batch: Batch) -> dict:
+    direct_cost = (
+        input_cost_total(batch)
+        + direct_labour_total(batch)
+        + direct_production_expense_total(batch)
+        + direct_consumable_usage_total(batch)
+    )
+    row = _build_batch_profitability(
+        batch,
+        balance=calculate_bird_balance(batch),
+        revenue=sales_revenue(batch),
+        collected=cash_collected(batch),
+        outstanding=receivables(batch),
+        direct_cost=direct_cost,
+        allocated_cost=allocated_production_total(batch),
+        selling_cost=selling_cost_total(batch),
+    )
+    snapshot = None
+    if batch.status == BatchStatus.CLOSED:
+        snapshot = BatchProfitabilitySnapshot.objects.filter(
+            batch=batch,
+            final=True,
+            accounting_period__isnull=False,
+        ).first()
+    return _apply_final_snapshot(row, snapshot)
+
+
+def _money_by_group(queryset, group_field: str, expression) -> dict[int, Decimal]:
+    return {
+        row[group_field]: money(row["total"])
+        for row in queryset.values(group_field).annotate(total=Sum(expression))
+    }
+
+
+def _portfolio_profitability_rows(batches: list[Batch]) -> list[dict]:
+    """Build per-batch rows with a fixed number of grouped database queries."""
+
+    if not batches:
+        return []
+
+    batch_ids = [batch.pk for batch in batches]
+    final_snapshots = {
+        snapshot.batch_id: snapshot
+        for snapshot in BatchProfitabilitySnapshot.objects.filter(
+            batch_id__in=batch_ids,
+            final=True,
+            accounting_period__isnull=False,
+        )
+    }
+    sales_expression = ExpressionWrapper(
+        F("quantity_sold") * F("unit_price"),
+        output_field=DecimalField(max_digits=14, decimal_places=2),
+    )
+    sales_rows = (
+        Sales.objects.filter(batch_id__in=batch_ids)
+        .exclude(payment_status=PaymentStatus.CANCELLED)
+        .values("batch_id")
+        .annotate(
+            revenue=Sum(sales_expression),
+            collected=Sum("amount_paid"),
+            outstanding=Sum("balance"),
+            birds_sold=Sum(
+                "quantity_sold",
+                filter=Q(
+                    product_type__in=[
+                        ProductType.LIVE_CHICKEN,
+                        ProductType.DRESSED_CHICKEN,
+                    ]
+                ),
+            ),
+        )
+    )
+    sales_by_batch = {
+        row["batch_id"]: {
+            "revenue": money(row["revenue"]),
+            "collected": money(row["collected"]),
+            "outstanding": money(row["outstanding"]),
+            "birds_sold": int(row["birds_sold"] or 0),
+        }
+        for row in sales_rows
+    }
+    mortality_by_batch = {
+        row["batch_id"]: int(row["total"] or 0)
+        for row in Mortality.objects.filter(batch_id__in=batch_ids)
+        .values("batch_id")
+        .annotate(total=Sum("quantity_dead"))
+    }
+
+    input_expression = ExpressionWrapper(
+        F("quantity") * F("unit") * F("unit_cost"),
+        output_field=DecimalField(max_digits=14, decimal_places=2),
+    )
+    input_costs = _money_by_group(
+        InputCosts.objects.filter(batch_id__in=batch_ids),
+        "batch_id",
+        input_expression,
+    )
+    direct_labour = _money_by_group(
+        AdHocLabourPayment.objects.filter(
+            batch_id__in=batch_ids,
+            cost_scope=CostScope.BATCH_DIRECT,
+        ),
+        "batch_id",
+        "payment_amount",
+    )
+    direct_expenses = _money_by_group(
+        SharedExpense.objects.filter(
+            directly_assigned_batch_id__in=batch_ids,
+            scope=SharedExpenseScope.SHARED_PRODUCTION,
+        ),
+        "directly_assigned_batch_id",
+        "amount",
+    )
+    consumable_rows = ConsumableUsage.objects.filter(
+        batch_id__in=batch_ids,
+        usage_scope__in=[
+            ConsumableUsageScope.BATCH_DIRECT,
+            ConsumableUsageScope.SELLING_AND_DISTRIBUTION,
+        ],
+    ).values("batch_id").annotate(
+        direct_total=Sum(
+            "recognized_cost",
+            filter=Q(usage_scope=ConsumableUsageScope.BATCH_DIRECT),
+        ),
+        selling_total=Sum(
+            "recognized_cost",
+            filter=Q(
+                usage_scope=ConsumableUsageScope.SELLING_AND_DISTRIBUTION
+            ),
+        ),
+    )
+    direct_consumables = {
+        row["batch_id"]: money(row["direct_total"])
+        for row in consumable_rows
+    }
+    direct_selling_consumables = {
+        row["batch_id"]: money(row["selling_total"])
+        for row in consumable_rows
+    }
+
+    production_allocation_scope = (
+        Q(source_type=AllocationSourceType.PAYROLL)
+        | Q(
+            source_type=AllocationSourceType.AD_HOC_LABOUR,
+            ad_hoc_labour_payment__cost_scope=CostScope.SHARED_PRODUCTION,
+        )
+        | Q(
+            source_type=AllocationSourceType.SHARED_EXPENSE,
+            shared_expense__scope=SharedExpenseScope.SHARED_PRODUCTION,
+            shared_expense__directly_assigned_batch__isnull=True,
+        )
+        | Q(
+            source_type=AllocationSourceType.CONSUMABLE_USAGE,
+            consumable_usage__usage_scope=ConsumableUsageScope.SHARED_PRODUCTION,
+        )
+        | Q(source_type=AllocationSourceType.DEPRECIATION)
+    )
+    allocated_production = _money_by_group(
+        CostAllocation.objects.filter(batch_id__in=batch_ids).filter(
+            production_allocation_scope
+        ),
+        "batch_id",
+        "allocated_amount",
+    )
+
+    direct_selling_labour = _money_by_group(
+        AdHocLabourPayment.objects.filter(
+            batch_id__in=batch_ids,
+            cost_scope=CostScope.SELLING_AND_DISTRIBUTION,
+        ),
+        "batch_id",
+        "payment_amount",
+    )
+    direct_selling_expenses = _money_by_group(
+        SharedExpense.objects.filter(
+            directly_assigned_batch_id__in=batch_ids,
+            scope=SharedExpenseScope.SELLING_EXPENSE,
+        ),
+        "directly_assigned_batch_id",
+        "amount",
+    )
+    shared_selling_scope = Q(
+        source_type=AllocationSourceType.AD_HOC_LABOUR,
+        ad_hoc_labour_payment__cost_scope=CostScope.SELLING_AND_DISTRIBUTION,
+        ad_hoc_labour_payment__batch__isnull=True,
+    ) | Q(
+        source_type=AllocationSourceType.SHARED_EXPENSE,
+        shared_expense__scope=SharedExpenseScope.SELLING_EXPENSE,
+        shared_expense__directly_assigned_batch__isnull=True,
+    ) | Q(
+        source_type=AllocationSourceType.CONSUMABLE_USAGE,
+        consumable_usage__usage_scope=(
+            ConsumableUsageScope.SELLING_AND_DISTRIBUTION
+        ),
+        consumable_usage__batch__isnull=True,
+    )
+    allocated_selling = _money_by_group(
+        CostAllocation.objects.filter(batch_id__in=batch_ids).filter(
+            shared_selling_scope
+        ),
+        "batch_id",
+        "allocated_amount",
+    )
+
+    rows = []
+    for batch in batches:
+        batch_sales = sales_by_batch.get(batch.pk, {})
+        birds_sold = int(batch_sales.get("birds_sold", 0))
+        mortality = mortality_by_batch.get(batch.pk, 0)
+        balance = BirdBalance(
+            initial_birds=batch.quantity,
+            valid_bird_units_sold=birds_sold,
+            mortality=mortality,
+            remaining_live_birds=batch.quantity - birds_sold - mortality,
+        )
+        direct_cost = (
+            input_costs.get(batch.pk, ZERO)
+            + direct_labour.get(batch.pk, ZERO)
+            + direct_expenses.get(batch.pk, ZERO)
+            + direct_consumables.get(batch.pk, ZERO)
+        )
+        selling_cost = (
+            direct_selling_labour.get(batch.pk, ZERO)
+            + direct_selling_expenses.get(batch.pk, ZERO)
+            + direct_selling_consumables.get(batch.pk, ZERO)
+            + allocated_selling.get(batch.pk, ZERO)
+        )
+        rows.append(
+            _apply_final_snapshot(
+                _build_batch_profitability(
+                    batch,
+                    balance=balance,
+                    revenue=batch_sales.get("revenue", ZERO),
+                    collected=batch_sales.get("collected", ZERO),
+                    outstanding=batch_sales.get("outstanding", ZERO),
+                    direct_cost=money(direct_cost),
+                    allocated_cost=allocated_production.get(batch.pk, ZERO),
+                    selling_cost=money(selling_cost),
+                ),
+                (
+                    final_snapshots.get(batch.pk)
+                    if batch.status == BatchStatus.CLOSED
+                    else None
+                ),
+            )
+        )
+
+    return rows
+
+
+def batch_portfolio_report(batches: Iterable[Batch]) -> dict:
+    """Aggregate lifecycle management profitability for selected poultry batches.
+
+    Monetary amounts are summed from each batch's existing direct costs and stored
+    allocations. Ratios are then recalculated from the portfolio totals so that a
+    small flock does not carry the same weight as a large flock.
+    """
+
+    rows = _portfolio_profitability_rows(list(batches))
+    included_rows = [row for row in rows if row["included_in_portfolio_summary"]]
+
+    def total(field: str) -> Decimal:
+        return money(sum((row[field] for row in included_rows), ZERO))
+
+    revenue = total("revenue")
+    collected = total("cash_collected")
+    direct_cost = total("direct_batch_cost")
+    allocated_cost = total("allocated_production_cost")
+    production_cost = total("total_production_cost")
+    gross_profit = total("batch_gross_profit")
+    selling_cost = total("selling_cost")
+    administration_cost = total("allocated_administration_cost")
+    contribution_after_selling = total("fully_loaded_batch_profit")
+    receivable = total("accounts_receivable")
+    active_exposure = total("active_batch_cost_exposure")
+
+    birds_placed = sum(row["birds_placed"] for row in included_rows)
+    birds_sold = sum(row["valid_bird_units_sold"] for row in included_rows)
+    remaining_birds = sum(row["remaining_live_birds"] for row in included_rows)
+    mortality = sum(row["mortality"] for row in included_rows)
+    saleable_birds = birds_sold + remaining_birds
+    additional_revenue_required = max(
+        production_cost + selling_cost - revenue,
+        ZERO,
+    )
+
+    statuses = {row["profitability_status"] for row in rows}
+    if not statuses:
+        portfolio_status = "empty"
+    elif len(statuses) == 1:
+        portfolio_status = statuses.pop()
+    else:
+        portfolio_status = "mixed"
+
+    warnings = [
+        (
+            "Lifecycle management-cost view: active batches remain provisional; "
+            "closed batches become final when their accounting period is closed."
+        ),
+        (
+            "Central administration, finance costs and tax are not allocated to "
+            "batches, so contribution after selling costs is not whole-farm net profit."
+        ),
+        (
+            "Employee payroll selling percentages remain in the monthly whole-farm "
+            "report and are not yet allocated to individual batches."
+        ),
+        (
+            "Living-bird fair value is not recorded; this report is not an IAS 41 "
+            "biological-asset valuation."
+        ),
+        (
+            "Poultry InputCosts are recognized as batch costs when entered; unused "
+            "feed or medicine is deferred only when purchased and issued through "
+            "finance consumable lots."
+        ),
+        (
+            "Cash collected reflects the amount currently stored on each sale, not "
+            "a dated receipt ledger."
+        ),
+        (
+            "Closed batches use their stored final snapshot. Corrections require a "
+            "controlled reopen or reversal workflow so finalized profit does not drift."
+        ),
+    ]
+    if any(row["profitability_status"] == "booked" for row in rows):
+        warnings.append(
+            "Booked or delivered flocks are excluded from the combined performance "
+            "summary until delivery is confirmed."
+        )
+    if any(row["profitability_status"] == "pending_finalization" for row in rows):
+        warnings.append(
+            "A closed flock is awaiting accounting-period close and allocation "
+            "reconciliation before its immutable final snapshot is created."
+        )
+
+    return {
+        "analysis_basis": "lifecycle_management_cost",
+        "calculation_version": "batch-portfolio-v1",
+        "selected_batch_ids": [row["batch"] for row in rows],
+        "selected_batch_count": len(rows),
+        "included_batch_count": len(included_rows),
+        "profitability_status": portfolio_status,
+        "summary": {
+            "revenue": revenue,
+            "cash_collected": collected,
+            "accounts_receivable": receivable,
+            "direct_batch_cost": direct_cost,
+            "allocated_production_cost": allocated_cost,
+            "total_production_cost": production_cost,
+            "batch_gross_profit": gross_profit,
+            "batch_gross_margin_percent": percent(gross_profit, revenue),
+            "selling_cost": selling_cost,
+            "allocated_administration_cost": administration_cost,
+            "fully_loaded_batch_profit": contribution_after_selling,
+            "fully_loaded_margin_percent": percent(
+                contribution_after_selling,
+                revenue,
+            ),
+            "birds_placed": birds_placed,
+            "valid_bird_units_sold": birds_sold,
+            "remaining_live_birds": remaining_birds,
+            "mortality": mortality,
+            "mortality_rate_percent": percent(
+                Decimal(mortality),
+                Decimal(birds_placed),
+            ),
+            "collection_rate_percent": percent(collected, revenue),
+            "profit_per_bird_sold": (
+                money(gross_profit / Decimal(birds_sold)) if birds_sold else None
+            ),
+            "production_cost_per_saleable_bird": (
+                money(production_cost / Decimal(saleable_birds))
+                if saleable_birds
+                else None
+            ),
+            "break_even_selling_price_per_remaining_bird": (
+                money(additional_revenue_required / Decimal(remaining_birds))
+                if remaining_birds
+                else None
+            ),
+            "additional_revenue_required_to_break_even": additional_revenue_required,
+            "active_batch_cost_exposure": active_exposure,
+        },
+        "results": rows,
+        "warnings": warnings,
+    }
+
+
+def create_final_snapshot(
+    batch: Batch,
+    *,
+    accounting_period: AccountingPeriod,
+    generated_by=None,
+) -> BatchProfitabilitySnapshot:
     data = batch_profitability(batch)
     snapshot, _ = BatchProfitabilitySnapshot.objects.get_or_create(
         batch=batch,
         final=True,
         defaults={
+            "accounting_period": accounting_period,
             "status": data["status"],
             "revenue": data["revenue"],
             "cash_collected": data["cash_collected"],

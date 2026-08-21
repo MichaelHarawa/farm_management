@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal
 
+from django.db import transaction
+from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import mixins, status, viewsets
@@ -11,7 +13,7 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.poultry.models import Batch
+from apps.poultry.models import Batch, BatchStatus
 
 from .models import (
     AccountingPeriod,
@@ -23,6 +25,7 @@ from .models import (
     AssetUsageRecord,
     AssetCategory,
     AssetStatus,
+    BatchProfitabilitySnapshot,
     BirdDaySnapshot,
     ConsumableUsage,
     CostAllocation,
@@ -65,7 +68,11 @@ from .services.depreciation import (
     generate_depreciation_for_period,
 )
 from .services.payroll import generate_payroll_for_period
-from .services.profitability import batch_profitability
+from .services.profitability import (
+    batch_portfolio_report,
+    batch_profitability,
+    create_final_snapshot,
+)
 from .services.reporting import (
     dashboard_indicators,
     monthly_profitability_report,
@@ -163,10 +170,22 @@ class AccountingPeriodViewSet(viewsets.ModelViewSet):
         )
 
     @action(detail=True, methods=["post"], url_path="close")
+    @transaction.atomic
     def close(self, request, pk=None):
         period = self.get_object()
         if period.status == PeriodStatus.CLOSED:
             return Response(self.get_serializer(period).data)
+
+        try:
+            regenerate_allocations_for_period(
+                period,
+                generated_by=request.user,
+            )
+        except ValueError as error:
+            return Response(
+                {"detail": str(error)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         period.status = PeriodStatus.CLOSED
         period.closed_at = timezone.now()
@@ -181,9 +200,37 @@ class AccountingPeriodViewSet(viewsets.ModelViewSet):
         AssetDepreciationEntry.objects.filter(accounting_period=period).update(
             locked=True
         )
+        batches_to_finalize = list(
+            Batch.objects.filter(
+                status=BatchStatus.CLOSED,
+                closed_at__date__gte=period.period_start,
+                closed_at__date__lte=period.period_end,
+            )
+        )
+        finalizing_batch_ids = [batch.pk for batch in batches_to_finalize]
+        retired_legacy_snapshots = BatchProfitabilitySnapshot.objects.filter(
+            batch_id__in=finalizing_batch_ids,
+            final=True,
+        ).exclude(accounting_period=period)
+        retired_batch_ids = list(
+            retired_legacy_snapshots.values_list("batch_id", flat=True)
+        )
+        retired_legacy_snapshots.update(final=False)
+        Batch.objects.filter(pk__in=retired_batch_ids).update(
+            profitability_finalized_at=None
+        )
+        for batch in batches_to_finalize:
+            if batch.pk in retired_batch_ids:
+                batch.profitability_finalized_at = None
+            create_final_snapshot(
+                batch,
+                accounting_period=period,
+                generated_by=request.user,
+            )
         return Response(self.get_serializer(period).data)
 
     @action(detail=True, methods=["post"], url_path="reopen")
+    @transaction.atomic
     def reopen(self, request, pk=None):
         period = self.get_object()
         reason = str(request.data.get("reason", "")).strip()
@@ -206,6 +253,31 @@ class AccountingPeriodViewSet(viewsets.ModelViewSet):
                 "recalculation_version",
                 "updated_at",
             ]
+        )
+        CostAllocation.objects.filter(accounting_period=period).update(locked=False)
+        ConsumableUsage.objects.filter(accounting_period=period).update(locked=False)
+        ExpenseRecognitionSchedule.objects.filter(accounting_period=period).update(
+            locked=False
+        )
+        AssetUsageRecord.objects.filter(accounting_period=period).update(locked=False)
+        AssetDepreciationEntry.objects.filter(accounting_period=period).update(
+            locked=False
+        )
+        finalized_snapshots = BatchProfitabilitySnapshot.objects.filter(
+            Q(accounting_period=period)
+            | Q(
+                accounting_period__isnull=True,
+                batch__closed_at__date__gte=period.period_start,
+                batch__closed_at__date__lte=period.period_end,
+            ),
+            final=True,
+        )
+        finalized_batch_ids = list(
+            finalized_snapshots.values_list("batch_id", flat=True)
+        )
+        finalized_snapshots.update(final=False)
+        Batch.objects.filter(pk__in=finalized_batch_ids).update(
+            profitability_finalized_at=None
         )
         return Response(self.get_serializer(period).data)
 
@@ -577,6 +649,69 @@ class BatchProfitabilityView(APIView):
     def get(self, request, batch_id: int):
         batch = get_object_or_404(Batch, pk=batch_id)
         return Response(json_safe(batch_profitability(batch)))
+
+
+class BatchPortfolioView(APIView):
+    permission_classes = (FinancePermission,)
+    max_batch_selection = 50
+
+    def get(self, request):
+        raw_values = [
+            *request.query_params.getlist("batch"),
+            *request.query_params.getlist("batch_ids"),
+        ]
+        raw_ids = [
+            token.strip()
+            for raw_value in raw_values
+            for token in raw_value.split(",")
+            if token.strip()
+        ]
+
+        if not raw_ids:
+            raise ValidationError(
+                {"batch": "Select at least one poultry batch to analyse."}
+            )
+
+        try:
+            parsed_ids = [int(raw_id) for raw_id in raw_ids]
+        except ValueError as error:
+            raise ValidationError(
+                {"batch": "Batch selections must be positive whole numbers."}
+            ) from error
+
+        if any(batch_id <= 0 for batch_id in parsed_ids):
+            raise ValidationError(
+                {"batch": "Batch selections must be positive whole numbers."}
+            )
+
+        selected_ids = list(dict.fromkeys(parsed_ids))
+        if len(selected_ids) > self.max_batch_selection:
+            raise ValidationError(
+                {
+                    "batch": (
+                        f"Select no more than {self.max_batch_selection} batches "
+                        "at one time."
+                    )
+                }
+            )
+
+        batches_by_id = Batch.objects.in_bulk(selected_ids)
+        missing_ids = [
+            batch_id for batch_id in selected_ids if batch_id not in batches_by_id
+        ]
+        if missing_ids:
+            raise ValidationError(
+                {
+                    "batch": (
+                        "Unknown poultry batch selection(s): "
+                        + ", ".join(str(batch_id) for batch_id in missing_ids)
+                        + "."
+                    )
+                }
+            )
+
+        batches = [batches_by_id[batch_id] for batch_id in selected_ids]
+        return Response(json_safe(batch_portfolio_report(batches)))
 
 
 class DashboardView(APIView):

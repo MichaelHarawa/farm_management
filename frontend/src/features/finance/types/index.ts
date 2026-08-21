@@ -203,7 +203,13 @@ export type BatchProfitabilityReport = {
   batch: number;
   batch_id: string;
   status: string;
-  profitability_status: "booked" | "provisional" | "final";
+  profitability_status:
+    | "booked"
+    | "provisional"
+    | "pending_finalization"
+    | "final";
+  calculation_basis?: "current_unfinalized" | "final_snapshot";
+  included_in_portfolio_summary: boolean;
   revenue: DecimalString;
   cash_collected: DecimalString;
   accounts_receivable: DecimalString;
@@ -216,6 +222,7 @@ export type BatchProfitabilityReport = {
   allocated_administration_cost: DecimalString;
   fully_loaded_batch_profit: DecimalString;
   fully_loaded_margin_percent: DecimalString | null;
+  birds_placed: number;
   valid_bird_units_sold: number;
   remaining_live_birds: number;
   profit_per_bird_sold: DecimalString | null;
@@ -228,6 +235,50 @@ export type BatchProfitabilityReport = {
   break_even_selling_price_per_remaining_bird: DecimalString | null;
   additional_revenue_required_to_break_even: DecimalString;
   active_batch_cost_exposure: DecimalString;
+};
+
+export type BatchPortfolioSummary = {
+  revenue: DecimalString;
+  cash_collected: DecimalString;
+  accounts_receivable: DecimalString;
+  direct_batch_cost: DecimalString;
+  allocated_production_cost: DecimalString;
+  total_production_cost: DecimalString;
+  batch_gross_profit: DecimalString;
+  batch_gross_margin_percent: DecimalString | null;
+  selling_cost: DecimalString;
+  allocated_administration_cost: DecimalString;
+  fully_loaded_batch_profit: DecimalString;
+  fully_loaded_margin_percent: DecimalString | null;
+  birds_placed: number;
+  valid_bird_units_sold: number;
+  remaining_live_birds: number;
+  mortality: number;
+  mortality_rate_percent: DecimalString | null;
+  collection_rate_percent: DecimalString | null;
+  profit_per_bird_sold: DecimalString | null;
+  production_cost_per_saleable_bird: DecimalString | null;
+  break_even_selling_price_per_remaining_bird: DecimalString | null;
+  additional_revenue_required_to_break_even: DecimalString;
+  active_batch_cost_exposure: DecimalString;
+};
+
+export type BatchPortfolioReport = {
+  analysis_basis: "lifecycle_management_cost";
+  calculation_version: string;
+  selected_batch_ids: number[];
+  selected_batch_count: number;
+  included_batch_count: number;
+  profitability_status:
+    | "empty"
+    | "booked"
+    | "provisional"
+    | "pending_finalization"
+    | "final"
+    | "mixed";
+  summary: BatchPortfolioSummary;
+  results: BatchProfitabilityReport[];
+  warnings: string[];
 };
 
 export type MonthlyReport = {
