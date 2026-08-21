@@ -35,17 +35,19 @@ export function FinancePageShell({
   return (
     <main className="bg-[var(--page-cream)]">
       <section className="border-b border-[var(--line)] bg-[var(--surface-cream)]">
-        <div className="mx-auto grid max-w-7xl gap-6 px-5 py-8 sm:px-8 lg:grid-cols-[1fr_auto] lg:items-end">
-          <div>
+        <div className="mx-auto flex max-w-7xl flex-col items-center px-5 py-6 text-center sm:px-8 sm:py-7">
+          <div className="max-w-4xl">
             <p className="text-label text-[var(--navy-muted)]">{eyebrow}</p>
-            <h1 className="font-display mt-4 text-4xl leading-none text-[var(--navy)] sm:text-6xl">
+            <h1 className="font-display mt-3 text-4xl leading-tight text-[var(--navy)] sm:text-5xl">
               {title}
             </h1>
-            <p className="mt-4 max-w-3xl text-sm leading-6 text-[var(--navy-soft)]">
+            <p className="mx-auto mt-3 max-w-3xl text-sm leading-6 text-[var(--navy-soft)]">
               {detail}
             </p>
           </div>
-          {actions ? <div className="flex flex-wrap gap-3">{actions}</div> : null}
+          {actions ? (
+            <div className="mt-5 flex w-full justify-center">{actions}</div>
+          ) : null}
         </div>
       </section>
       <section className="px-5 py-8 sm:px-8">
@@ -68,7 +70,7 @@ export function FinanceNav() {
   ];
 
   return (
-    <nav className="flex flex-wrap gap-2">
+    <nav className="flex flex-wrap justify-center gap-2">
       {links.map(([label, href]) => (
         <Link
           key={href}
