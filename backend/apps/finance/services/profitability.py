@@ -29,6 +29,7 @@ from ..models import (
     SharedExpenseScope,
 )
 from apps.poultry.services.batch_lifecycle import BirdBalance, calculate_bird_balance
+from .warnings import finance_warning
 
 
 ZERO = Decimal("0.00")
@@ -643,45 +644,85 @@ def batch_portfolio_report(batches: Iterable[Batch]) -> dict:
         portfolio_status = "mixed"
 
     warnings = [
-        (
-            "Lifecycle management-cost view: active batches remain provisional; "
-            "closed batches become final when their accounting period is closed."
+        finance_warning(
+            code="lifecycle_management_cost_basis",
+            severity="info",
+            message=(
+                "Lifecycle management-cost view: active batches remain provisional; "
+                "closed batches become final when their accounting period is closed."
+            ),
         ),
-        (
-            "Central administration, finance costs and tax are not allocated to "
-            "batches, so contribution after selling costs is not whole-farm net profit."
+        finance_warning(
+            code="central_costs_excluded",
+            severity="info",
+            message=(
+                "Central administration, finance costs and tax are not allocated to "
+                "batches, so contribution after selling costs is not whole-farm net profit."
+            ),
         ),
-        (
-            "Employee payroll selling percentages remain in the monthly whole-farm "
-            "report and are not yet allocated to individual batches."
+        finance_warning(
+            code="selling_payroll_excluded",
+            severity="info",
+            message=(
+                "Employee payroll selling percentages remain in the monthly whole-farm "
+                "report and are not yet allocated to individual batches."
+            ),
         ),
-        (
-            "Living-bird fair value is not recorded; this report is not an IAS 41 "
-            "biological-asset valuation."
+        finance_warning(
+            code="ias_41_fair_value_not_recorded",
+            severity="info",
+            message=(
+                "Living-bird fair value is not recorded; this report is not an IAS 41 "
+                "biological-asset valuation."
+            ),
         ),
-        (
-            "Poultry InputCosts are recognized as batch costs when entered; unused "
-            "feed or medicine is deferred only when purchased and issued through "
-            "finance consumable lots."
+        finance_warning(
+            code="input_cost_recognition_basis",
+            severity="info",
+            message=(
+                "Poultry InputCosts are recognized as batch costs when entered; unused "
+                "feed or medicine is deferred only when purchased and issued through "
+                "finance consumable lots."
+            ),
         ),
-        (
-            "Cash collected reflects the amount currently stored on each sale, not "
-            "a dated receipt ledger."
+        finance_warning(
+            code="cash_receipt_ledger_limitation",
+            severity="info",
+            message=(
+                "Cash collected reflects the amount currently stored on each sale, not "
+                "a dated receipt ledger."
+            ),
         ),
-        (
-            "Closed batches use their stored final snapshot. Corrections require a "
-            "controlled reopen or reversal workflow so finalized profit does not drift."
+        finance_warning(
+            code="closed_batch_snapshot_controls",
+            severity="info",
+            message=(
+                "Closed batches use their stored final snapshot. Corrections require a "
+                "controlled reopen or reversal workflow so finalized profit does not drift."
+            ),
         ),
     ]
     if any(row["profitability_status"] == "booked" for row in rows):
         warnings.append(
-            "Booked or delivered flocks are excluded from the combined performance "
-            "summary until delivery is confirmed."
+            finance_warning(
+                code="booked_batches_excluded",
+                severity="warning",
+                message=(
+                    "Booked or delivered flocks are excluded from the combined performance "
+                    "summary until delivery is confirmed."
+                ),
+            )
         )
     if any(row["profitability_status"] == "pending_finalization" for row in rows):
         warnings.append(
-            "A closed flock is awaiting accounting-period close and allocation "
-            "reconciliation before its immutable final snapshot is created."
+            finance_warning(
+                code="pending_batch_finalization",
+                severity="warning",
+                message=(
+                    "A closed flock is awaiting accounting-period close and allocation "
+                    "reconciliation before its immutable final snapshot is created."
+                ),
+            )
         )
 
     return {

@@ -1,4 +1,5 @@
 import { getMonthlyReport } from "@/features/finance/api/finance";
+import { FinanceWarningList } from "@/features/finance/components/FinanceWarningList";
 import {
   EmptyState,
   FinanceBarChart,
@@ -227,13 +228,7 @@ export default async function FinanceMonthlyPage() {
             </Panel>
             <Panel title="Warnings">
               {report.warnings.length ? (
-                <ul className="grid gap-3">
-                  {report.warnings.map((warning) => (
-                    <li key={`${warning.code}-${warning.message}`} className="text-sm font-semibold">
-                      {warning.message}
-                    </li>
-                  ))}
-                </ul>
+                <FinanceWarningList warnings={report.warnings} />
               ) : (
                 <EmptyState message="No allocation warnings for this period." />
               )}

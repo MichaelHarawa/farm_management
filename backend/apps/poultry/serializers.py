@@ -6,6 +6,8 @@ from rest_framework import serializers
 from .models import(
     Batch,
     BatchStatus,
+    BatchWeightSample,
+    BroilerStrain,
     BuyerType,
     ChicksSource,
     PaymentStatus,
@@ -18,6 +20,11 @@ from .models import(
 
 class BatchSerializer(serializers.ModelSerializer):
     created_by_name = serializers.SerializerMethodField()
+    broiler_strain = serializers.ChoiceField(
+        choices=BroilerStrain.choices,
+        required=False,
+        allow_null=True,
+    )
 
     class Meta:
         model = Batch
@@ -25,6 +32,7 @@ class BatchSerializer(serializers.ModelSerializer):
             "id",
             "batch_id",
             "bird_type",
+            "broiler_strain",
             "source",
             "source_other",
             "booking_date",
@@ -82,6 +90,41 @@ class BatchSerializer(serializers.ModelSerializer):
             return ""
 
         return obj.created_by.get_full_name() or obj.created_by.username
+
+
+class BatchWeightSampleSerializer(serializers.ModelSerializer):
+    created_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = BatchWeightSample
+        fields = (
+            "id",
+            "batch",
+            "age_in_days",
+            "sampled_at",
+            "sample_size",
+            "average_weight_g",
+            "notes",
+            "reported_by_name",
+            "created_at",
+            "updated_at",
+            "created_by",
+            "created_by_name",
+        )
+        read_only_fields = (
+            "id",
+            "batch",
+            "created_at",
+            "updated_at",
+            "created_by",
+            "created_by_name",
+        )
+
+    def get_created_by_name(self, obj):
+        if obj.created_by_id is None:
+            return ""
+        return obj.created_by.get_full_name() or obj.created_by.username
+
 
 
 class BatchStatusTransitionSerializer(serializers.Serializer):

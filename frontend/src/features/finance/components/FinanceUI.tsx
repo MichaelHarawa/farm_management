@@ -61,6 +61,7 @@ export function FinanceNav() {
   const links = [
     ["Dashboard", "/finance"],
     ["Batch Analysis", "/finance/batches"],
+    ["Receivables", "/finance/receivables"],
     ["Employees", "/finance/employees"],
     ["Payroll", "/finance/payroll"],
     ["Labour", "/finance/labour"],
@@ -108,14 +109,16 @@ export function MetricCard({
 }
 
 export function Panel({
+  id,
   title,
   children,
 }: {
+  id?: string;
   title: string;
   children: ReactNode;
 }) {
   return (
-    <section className="rounded-lg border border-[var(--line)] bg-[var(--surface-cream)] p-5 shadow-[var(--shadow-card)]">
+    <section id={id} className="rounded-lg border border-[var(--line)] bg-[var(--surface-cream)] p-5 shadow-[var(--shadow-card)]">
       <h2 className="text-lg font-extrabold text-[var(--navy)]">{title}</h2>
       <div className="mt-5">{children}</div>
     </section>

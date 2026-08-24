@@ -2,6 +2,8 @@ from django.contrib import admin
 
 from .models import (
     Batch,
+    BatchWeightSample,
+    BroilerStrain,
     DrugsVaccination,
     FeedUsage,
     InputCosts,
@@ -12,8 +14,8 @@ from .models import (
 
 @admin.register(Batch)
 class BatchAdmin(admin.ModelAdmin):
-    list_display = ("batch_id", "bird_type", "quantity", "status", "entry_date")
-    list_filter = ("status", "bird_type", "source")
+    list_display = ("batch_id", "bird_type", "broiler_strain", "quantity", "status", "entry_date")
+    list_filter = ("status", "bird_type", "broiler_strain", "source")
     search_fields = ("batch_id",)
 
 
@@ -54,4 +56,12 @@ class DrugsVaccinationAdmin(admin.ModelAdmin):
     list_display = ("batch", "drug_category", "drug_vaccination_type", "vaccination_date")
     list_filter = ("drug_category", "drug_vaccination_type")
     search_fields = ("batch__batch_id", "other_drug_vaccination")
+    autocomplete_fields = ("batch", "created_by")
+
+
+@admin.register(BatchWeightSample)
+class BatchWeightSampleAdmin(admin.ModelAdmin):
+    list_display = ("batch", "age_in_days", "average_weight_g", "sample_size", "sampled_at")
+    list_filter = ("age_in_days",)
+    search_fields = ("batch__batch_id",)
     autocomplete_fields = ("batch", "created_by")

@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { getBatchPortfolioReport } from "@/features/finance/api/finance";
 import { BatchSelectionFilter } from "@/features/finance/components/BatchSelectionFilter";
+import { FinanceWarningList } from "@/features/finance/components/FinanceWarningList";
 import { MAX_BATCH_SELECTION } from "@/features/finance/constants";
 import {
   EmptyState,
@@ -193,16 +194,7 @@ export default async function FinanceBatchAnalysisPage({ searchParams }: PagePro
               />
             </Panel>
             <Panel title="Report Basis And Warnings">
-              <ul className="grid gap-3">
-                {report.warnings.map((warning) => (
-                  <li
-                    key={warning}
-                    className="rounded-lg border border-[var(--line)] bg-white/60 px-4 py-3 text-sm leading-6 text-[var(--navy-soft)]"
-                  >
-                    {warning}
-                  </li>
-                ))}
-              </ul>
+              <FinanceWarningList warnings={report.warnings} />
             </Panel>
           </div>
 

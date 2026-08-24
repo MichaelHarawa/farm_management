@@ -40,7 +40,7 @@ export default async function FinanceLabourPage() {
         )}
       </Panel>
 
-      <Panel title="Labour Ledger">
+      <Panel id="labour-ledger" title="Labour Ledger">
         {labour.length ? (
           <div className="overflow-x-auto">
             <table className="min-w-full border-collapse text-sm">

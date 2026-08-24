@@ -49,16 +49,16 @@ export default async function FinanceAssetsPage() {
       </Panel>
 
       {latestPeriod ? (
-        <Panel title={`Depreciation: ${formatDate(latestPeriod.period_start)} to ${formatDate(latestPeriod.period_end)}`}>
+        <Panel id="depreciation" title={`Depreciation: ${formatDate(latestPeriod.period_start)} to ${formatDate(latestPeriod.period_end)}`}>
           <PeriodDepreciationButtons period={latestPeriod} />
         </Panel>
       ) : (
-        <Panel title="Depreciation">
+        <Panel id="depreciation" title="Depreciation">
           <EmptyState message="Create an accounting period before generating depreciation." />
         </Panel>
       )}
 
-      <Panel title="Asset Register">
+      <Panel id="asset-register" title="Asset Register">
         {assets.length ? (
           <div className="overflow-x-auto">
             <table className="min-w-full border-collapse text-sm">

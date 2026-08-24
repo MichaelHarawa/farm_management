@@ -41,6 +41,7 @@ from ..models import (
 )
 from apps.poultry.services.batch_lifecycle import calculate_bird_balance
 from .profitability import batch_profitability, money, percent
+from .warnings import finance_warning
 
 
 PRE_PRODUCTION_BATCH_STATUSES = [
@@ -615,6 +616,7 @@ def dashboard_warnings(period: AccountingPeriod | None = None) -> list[dict[str,
                     "code": "high_mortality",
                     "severity": "warning",
                     "message": f"{batch.batch_id} mortality is {mortality_rate}%.",
+                    "action_href": f"/poultry/batches/{batch.pk}?tab=mortality",
                 }
             )
         if (
@@ -628,6 +630,7 @@ def dashboard_warnings(period: AccountingPeriod | None = None) -> list[dict[str,
                     "code": "past_maturity_no_sales",
                     "severity": "warning",
                     "message": f"{batch.batch_id} is past maturity with no valid sales.",
+                    "action_href": f"/poultry/batches/{batch.pk}?tab=sales",
                 }
             )
         recent_feed = batch.feed_usage_row.filter(
@@ -642,6 +645,7 @@ def dashboard_warnings(period: AccountingPeriod | None = None) -> list[dict[str,
                     "code": "stale_batch_updates",
                     "severity": "info",
                     "message": f"{batch.batch_id} has no recent feed or mortality update.",
+                    "action_href": f"/poultry/batches/{batch.pk}?tab=feed",
                 }
             )
 
@@ -884,7 +888,7 @@ def dashboard_warnings(period: AccountingPeriod | None = None) -> list[dict[str,
             }
         )
 
-    return warnings
+    return [finance_warning(**warning) for warning in warnings]
 
 
 def dashboard_indicators() -> dict:

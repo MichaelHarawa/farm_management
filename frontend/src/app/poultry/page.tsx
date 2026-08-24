@@ -79,20 +79,22 @@ export default async function PoultryPage() {
         <div className="mx-auto grid max-w-7xl gap-6">
           <div className="grid gap-4 md:grid-cols-3">
             <RegisterSignal
-              label="Register quality"
-              value="Current"
-              detail="No stale client cache"
+              label="FLOCK DASHBOARD"
+              value="Live Metrics"
+              detail="Status, trends, sales, mortality, feed &amp; more"
+              href="/poultry/dashboard"
             />
             <RegisterSignal
-              label="Financial workspace"
+              label="FINANCIAL WORKSPACE"
               value="Finance Control"
               detail="Open workforce, payroll, and profitability"
               href="/finance"
             />
             <RegisterSignal
-              label="Care workspace"
-              value="Flock notes"
-              detail="Mortality and feed views ready"
+              label="OPERATIONS GUIDE"
+              value="Help Center"
+              detail="How to use the system, record data, and best practices"
+              href="/poultry/guides"
             />
           </div>
 

@@ -22,8 +22,6 @@ export default async function FinancePayrollPage() {
     getAccountingPeriods("/finance/payroll"),
     getPayrollEntries("/finance/payroll"),
   ]);
-  const latestPeriod = periods[0];
-
   return (
     <FinancePageShell
       eyebrow="Finance / Payroll"
@@ -35,12 +33,29 @@ export default async function FinancePayrollPage() {
         <AccountingPeriodCreateDialog />
       </Panel>
 
-      {latestPeriod ? (
-        <Panel title={`Current Period: ${formatDate(latestPeriod.period_start)} to ${formatDate(latestPeriod.period_end)}`}>
-          <PeriodActionButtons period={latestPeriod} />
+      {periods.length ? (
+        <Panel id="period-actions" title="Accounting Periods">
+          <div className="grid gap-4">
+            {periods.map((period) => (
+              <div
+                key={period.id}
+                className="flex flex-col gap-4 rounded-lg border border-[var(--line)] bg-white/55 p-4 lg:flex-row lg:items-center lg:justify-between"
+              >
+                <div>
+                  <p className="font-extrabold text-[var(--navy)]">
+                    {formatDate(period.period_start)} to {formatDate(period.period_end)}
+                  </p>
+                  <p className="mt-1 text-sm capitalize text-[var(--navy-muted)]">
+                    {period.status} period
+                  </p>
+                </div>
+                <PeriodActionButtons period={period} />
+              </div>
+            ))}
+          </div>
         </Panel>
       ) : (
-        <Panel title="Current Period">
+        <Panel id="period-actions" title="Accounting Periods">
           <EmptyState message="No accounting period has been created yet." />
         </Panel>
       )}

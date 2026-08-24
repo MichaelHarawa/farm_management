@@ -3,6 +3,7 @@ import {
 } from "@/features/finance/api/finance";
 import Link from "next/link";
 
+import { FinanceWarningList } from "@/features/finance/components/FinanceWarningList";
 import {
   EmptyState,
   FinanceBarChart,
@@ -154,16 +155,7 @@ export default async function FinanceDashboardPage() {
 
         <Panel title="Warnings">
           {dashboard.warnings.length ? (
-            <ul className="grid gap-3">
-              {dashboard.warnings.map((warning) => (
-                <li
-                  key={`${warning.code}-${warning.message}`}
-                  className="rounded-lg border border-[var(--line)] bg-white/60 px-4 py-3 text-sm font-semibold text-[var(--navy-soft)]"
-                >
-                  {warning.message}
-                </li>
-              ))}
-            </ul>
+            <FinanceWarningList warnings={dashboard.warnings} />
           ) : (
             <EmptyState message="No finance warnings are currently open." />
           )}

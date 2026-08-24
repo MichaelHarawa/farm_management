@@ -29,4 +29,7 @@ export const poultryApiPaths = {
 
   vaccinations: (batchId: number) =>
     `${POULTRY_ROOT}/${batchId}/drugs_vaccine`,
+
+  weightSamples: (batchId: number) =>
+    `${POULTRY_ROOT}/${batchId}/weight_samples`,
 } as const;

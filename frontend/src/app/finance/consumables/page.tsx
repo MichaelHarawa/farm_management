@@ -59,7 +59,7 @@ export default async function FinanceConsumablesPage() {
         </div>
       </Panel>
 
-      <Panel title="Consumable Lots">
+      <Panel id="consumable-lots" title="Consumable Lots">
         {lots.length ? (
           <div className="overflow-x-auto">
             <table className="min-w-full border-collapse text-sm">
@@ -101,7 +101,7 @@ export default async function FinanceConsumablesPage() {
         )}
       </Panel>
 
-      <Panel title="Usage Recognition">
+      <Panel id="usage-recognition" title="Usage Recognition">
         {usages.length ? (
           <div className="overflow-x-auto">
             <table className="min-w-full border-collapse text-sm">

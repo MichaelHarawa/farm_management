@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
 import { useMemo, useState, type ReactNode } from "react";
 import { X } from "lucide-react";
@@ -15,6 +16,7 @@ import type {
   PoultryMortality,
   PoultrySale,
   PoultryVaccination,
+  WeightSamplesResponse,
 } from "../types";
 import {
   formatCurrency,
@@ -26,6 +28,8 @@ import { AddSaleForm } from "./AddSaleForm";
 import { AddMortalityForm } from "./AddMortalityForm";
 import { AddFeedUsageForm } from "./AddFeedUsageForm";
 import { AddVaccinationForm } from "./AddVaccinationForm";
+import { AddWeightSampleForm } from "./AddWeightSampleForm";
+import { GrowthTab } from "./GrowthTab";
 
 type BatchDetailViewProps = {
   batch: PoultryBatch;
@@ -36,22 +40,26 @@ type BatchDetailViewProps = {
   mortalities: PoultryMortality[];
   feedUsages: PoultryFeedUsage[];
   vaccinations: PoultryVaccination[];
+  weightSamplesResponse?: import("../types").WeightSamplesResponse | null;
+  initialTab?: BatchDetailTab;
 };
 
-type ActiveTab =
+export type BatchDetailTab =
   | "overview"
   | "flock"
   | "costs"
   | "sales"
   | "mortality"
   | "feed"
-  | "vaccination";
+  | "vaccination"
+  | "growth";
 type ModalKind =
   | "input-cost-form"
   | "sale-form"
   | "mortality-form"
   | "feed-usage-form"
   | "vaccination-form"
+  | "weight-sample-form"
   | null;
 
 type BreakdownItem = {
@@ -77,7 +85,7 @@ type VaccinationScheduleItem = {
 };
 
 const tabs: Array<{
-  id: ActiveTab;
+  id: BatchDetailTab;
   label: string;
   sidebarLabel: string;
 }> = [
@@ -92,6 +100,7 @@ const tabs: Array<{
     label: "Vaccination & Drugs",
     sidebarLabel: "Vaccination & Drugs",
   },
+  { id: "growth", label: "Growth", sidebarLabel: "Growth tracking" },
 ];
 
 const dayInMs = 24 * 60 * 60 * 1000;
@@ -215,7 +224,7 @@ function formatRecordCount(count: number): string {
 
 function formatSignedCurrency(value: number): string {
   if (value < 0) {
-    return `- ${formatCurrency(Math.abs(value))}`;
+    return `-${formatCurrency(Math.abs(value))}`;
   }
 
   return formatCurrency(value);
@@ -446,9 +455,14 @@ export function BatchDetailView({
   mortalities,
   feedUsages,
   vaccinations,
+  weightSamplesResponse,
+  initialTab = "overview",
 }: BatchDetailViewProps) {
-  const [activeTab, setActiveTab] = useState<ActiveTab>("overview");
+  const [activeTab, setActiveTab] = useState<BatchDetailTab>(initialTab);
   const [openModal, setOpenModal] = useState<ModalKind>(null);
+  const [weightSamplesResp, setWeightSamplesResp] = useState<import("../types").WeightSamplesResponse | null>(
+    weightSamplesResponse ?? null
+  );
 
   const metrics = useMemo(() => {
     const recordedInputCosts = inputCosts.reduce(
@@ -758,7 +772,6 @@ export function BatchDetailView({
               sales={sales}
               metrics={metrics}
               followUpSale={followUpSale}
-              onAddSale={() => setOpenModal("sale-form")}
             />
           ) : null}
 
@@ -787,6 +800,24 @@ export function BatchDetailView({
               vaccinations={vaccinations}
               vaccinationSchedule={vaccinationSchedule}
               onAddVaccination={() => setOpenModal("vaccination-form")}
+            />
+          ) : null}
+
+          {activeTab === "growth" ? (
+            <GrowthTab
+              batch={batch}
+              weightSamplesResp={weightSamplesResp}
+              onWeighIn={() => setOpenModal("weight-sample-form")}
+              refreshSamples={async () => {
+                // lightweight client refresh - must use client-safe module
+                try {
+                  const mod = await import("../api/weight-sample-mutations");
+                  const fresh = await mod.getBatchWeightSamples(batch.id);
+                  setWeightSamplesResp(fresh);
+                } catch {
+                  // ignore - next load will refetch server-side
+                }
+              }}
             />
           ) : null}
         </div>
@@ -853,11 +884,33 @@ export function BatchDetailView({
           currentBirds={metrics.currentBirds}
         />
       </DetailModal>
+
+      <DetailModal
+        isOpen={openModal === "weight-sample-form"}
+        label="Weigh-in"
+        title="Record flock average weight"
+        onClose={() => setOpenModal(null)}
+      >
+        <AddWeightSampleForm
+          batchId={batch.id}
+          defaultAge={metrics.dayOfCycle}
+          onSuccess={async (created) => {
+            setOpenModal(null);
+            try {
+              const mod = await import("../api/weight-sample-mutations");
+              const fresh = await mod.getBatchWeightSamples(batch.id);
+              setWeightSamplesResp(fresh);
+            } catch {
+              // swallow; next navigation will fetch
+            }
+          }}
+        />
+      </DetailModal>
     </main>
   );
 }
 
-function getPageHeader(activeTab: ActiveTab, batch: PoultryBatch) {
+function getPageHeader(activeTab: BatchDetailTab, batch: PoultryBatch) {
   if (activeTab === "flock") {
     return {
       title: "Flock activity",
@@ -909,6 +962,14 @@ function getPageHeader(activeTab: ActiveTab, batch: PoultryBatch) {
     };
   }
 
+  if (activeTab === "growth") {
+    return {
+      title: "Growth tracking",
+      description: "Record weigh-ins and compare against Ross 308 / Cobb 500 target curves.",
+      actionLabel: undefined,
+    };
+  }
+
   return {
     title: `${formatLabel(batch.bird_type)} batch`,
     description: "A calm operational summary for the current production cycle.",
@@ -944,9 +1005,9 @@ type Metrics = {
 };
 
 type DetailSidebarProps = {
-  activeTab: ActiveTab;
+  activeTab: BatchDetailTab;
   batch: PoultryBatch;
-  onTabChange: (tab: ActiveTab) => void;
+  onTabChange: (tab: BatchDetailTab) => void;
 };
 
 function DetailSidebar({ activeTab, batch, onTabChange }: DetailSidebarProps) {
@@ -1000,10 +1061,10 @@ function DetailSidebar({ activeTab, batch, onTabChange }: DetailSidebarProps) {
 type PageHeaderProps = {
   title: string;
   description: string;
-  activeTab: ActiveTab;
+  activeTab: BatchDetailTab;
   actionLabel?: string;
   onAction: () => void;
-  onTabChange: (tab: ActiveTab) => void;
+  onTabChange: (tab: BatchDetailTab) => void;
 };
 
 function PageHeader({
@@ -1612,10 +1673,9 @@ type SalesTabProps = {
   sales: PoultrySale[];
   metrics: Metrics;
   followUpSale?: PoultrySale;
-  onAddSale: () => void;
 };
 
-function SalesTab({ sales, metrics, followUpSale, onAddSale }: SalesTabProps) {
+function SalesTab({ sales, metrics, followUpSale }: SalesTabProps) {
   return (
     <div className="mt-8 grid gap-8">
       <div className="grid gap-6 lg:grid-cols-3">
@@ -1681,13 +1741,12 @@ function SalesTab({ sales, metrics, followUpSale, onAddSale }: SalesTabProps) {
               Follow up: {formatCurrency(followUpSale.balance)} remains due on{" "}
               {followUpSale.sale_id}.
             </p>
-            <button
-              type="button"
-              onClick={onAddSale}
-              className="rounded-lg bg-[#151f36] px-8 py-4 text-base font-bold text-white"
+            <Link
+              href="/finance/receivables"
+              className="rounded-lg bg-[#151f36] px-8 py-4 text-center text-base font-bold text-white"
             >
-              Record payment
-            </button>
+              Review receivable
+            </Link>
           </div>
         ) : null}
       </Card>
@@ -2078,8 +2137,9 @@ function ExecutiveMetric({
       <p className="text-xs font-extrabold uppercase tracking-[0.15em] text-[#747b8d]">
         {label}
       </p>
-      <p className="mt-3 text-3xl font-extrabold tracking-[-0.02em] text-[#151926]">
-        {value}
+      <p className="mt-3 flex items-baseline gap-0.5 text-3xl font-extrabold tracking-[-0.02em] text-[#151926]">
+        {value.startsWith("-") && <span className="select-none">-</span>}
+        <span className="whitespace-nowrap">{value.replace(/^-/, "")}</span>
       </p>
       <p className="mt-2 text-sm leading-6 text-[#747b8d]">{detail}</p>
       {typeof progress === "number" ? (

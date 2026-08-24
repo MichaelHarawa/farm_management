@@ -16,10 +16,16 @@ from apps.poultry.services.batch_lifecycle import (
     create_sale_with_lifecycle,
     recalculate_batch_status,
 )
+from apps.poultry.services.growth import (
+    compute_growth_series,
+    get_broiler_strain_for_batch,
+    latest_growth_status,
+)
 
 from .models import(
     Batch,
     BatchStatus,
+    BatchWeightSample,
     InputCosts,
     Sales,
     Mortality,
@@ -31,6 +37,7 @@ from .serializers import(
     BatchDeliverySerializer,
     BatchSerializer,
     BatchStatusTransitionSerializer,
+    BatchWeightSampleSerializer,
     InputCostsSerializer,
     SalesSerializer,
     MortalitySerializer,
@@ -68,6 +75,8 @@ class BatchViewset(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retrie
             return FeedUsageSerializer
         elif self.action == "drugs_vaccine":
             return DrugsVaccinationSerializer
+        elif self.action == "weight_samples":
+            return BatchWeightSampleSerializer
         return BatchSerializer
 
     @action(detail=True, methods=["post"], url_path="mark-delivered")
@@ -308,8 +317,41 @@ class BatchViewset(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retrie
             status=status.HTTP_201_CREATED,
         )
 
+    @action(detail=True, methods=["get", "post"], url_path="weight_samples")
+    def weight_samples(self, request, pk=None):
+        """CRUD for live weight samples. GET returns series + latest alert status."""
+        poultry_batch = self.get_object()
 
+        if request.method == "GET":
+            samples = poultry_batch.weight_samples.all().order_by("sampled_at")
+            ser = self.get_serializer(samples, many=True)
+            return Response(
+                {
+                    "samples": ser.data,
+                    "latest_status": latest_growth_status(poultry_batch),
+                    "strain": get_broiler_strain_for_batch(poultry_batch),
+                    "series": compute_growth_series(poultry_batch),
+                },
+                status=status.HTTP_200_OK,
+            )
 
+        # Only allow weight sampling on active production batches
+        try:
+            assert_batch_in_production(poultry_batch)
+        except ValueError as error:
+            raise ValidationError({"batch": str(error)}) from error
 
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        sample = self.save_with_current_user(
+            serializer,
+            batch=poultry_batch,
+        )
+
+        return Response(
+            self.get_serializer(sample).data,
+            status=status.HTTP_201_CREATED,
+        )
 
 

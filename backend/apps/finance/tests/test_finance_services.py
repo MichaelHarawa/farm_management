@@ -1338,6 +1338,16 @@ class FinanceServiceTests(TestCase):
         self.assertEqual(report["cash_flow"]["reserve_contributions"], Decimal("50000.00"))
         self.assertEqual(report["other_costs"]["net_profit_before_tax"], Decimal("0.00"))
 
+    def test_batch_portfolio_warnings_include_solution_and_system_action(self):
+        report = batch_portfolio_report([self.batch()])
+
+        self.assertTrue(report["warnings"])
+        for warning in report["warnings"]:
+            self.assertIn(warning["severity"], {"info", "warning", "critical"})
+            self.assertTrue(warning["message"])
+            self.assertTrue(warning["solution"])
+            self.assertTrue(warning["action_label"])
+            self.assertTrue(warning["action_href"].startswith("/"))
 
 class FinancePermissionTests(TestCase):
     def setUp(self):

@@ -26,6 +26,7 @@ const ACTION_PATH_MAP: Record<string, string> = {
   "confirm-delivery": "confirm-delivery",
   mortality: "mortality",
   sales: "sales",
+  "weight-samples": "weight_samples",
 };
 
 function toBackendPath(segments: string[]): string | null {

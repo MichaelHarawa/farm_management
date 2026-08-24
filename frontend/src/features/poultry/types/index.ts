@@ -5,12 +5,15 @@ export type BirdType =
   | "kloilers"
   | "mikolongwe";
 
+export type BroilerStrain = "ross308" | "cobb500";
+
 export type ChicksSource = "central_poultry" | "proto" | "other";
 
 export type PoultryBatch = {
   id: number;
   batch_id: string;
   bird_type: BirdType;
+  broiler_strain?: BroilerStrain | null;
   source: ChicksSource;
   source_other: string;
   booking_date: string | null;
@@ -38,6 +41,7 @@ export type PoultryBatch = {
 
 export type CreatePoultryBatchPayload = {
   bird_type: BirdType;
+  broiler_strain?: BroilerStrain | null;
   source: ChicksSource;
   source_other: string;
   booking_date?: string;
@@ -263,5 +267,60 @@ export type CreateFeedUsagePayload = {
   unit_of_measurement: FeedUnitMeasurement;
   current_number_of_birds: number;
   notes: string;
+  reported_by_name: string;
+};
+
+export type PoultryWeightSample = {
+  id: number;
+  batch: number;
+  age_in_days: number;
+  sampled_at: string;
+  sample_size: number;
+  average_weight_g: number;
+  notes: string;
+  reported_by_name: string;
+  created_at: string;
+  updated_at: string;
+  created_by: string | null;
+  created_by_name: string;
+};
+
+export type WeightSampleSeriesPoint = {
+  age_in_days: number;
+  sampled_at: string;
+  actual_g: number;
+  target_g: number | null;
+  deviation_pct: number | null;
+  sample_size: number;
+  severity: "ok" | "watch" | "action" | "urgent";
+};
+
+export type WeightSampleStatus = {
+  sample_id: number;
+  age_in_days: number;
+  sampled_at: string;
+  average_weight_g: number;
+  sample_size: number;
+  target_weight_g: number | null;
+  deviation_percent: number | null;
+  severity: "ok" | "watch" | "action" | "urgent";
+  message: string;
+  recommended_actions: string[];
+  strain: string;
+} | null;
+
+export type WeightSamplesResponse = {
+  samples: PoultryWeightSample[];
+  latest_status: WeightSampleStatus;
+  strain: string;
+  series: WeightSampleSeriesPoint[];
+};
+
+export type CreateWeightSamplePayload = {
+  age_in_days: number;
+  sampled_at: string;
+  sample_size: number;
+  average_weight_g: number;
+  notes?: string;
   reported_by_name: string;
 };

@@ -16,6 +16,11 @@ import {
   type BookingFormValues,
 } from "../validation/batch";
 
+const broilerStrainOptions = [
+  { value: "ross308", label: "Ross 308" },
+  { value: "cobb500", label: "Cobb 500" },
+] as const;
+
 const EXPECTED_DELIVERY_LEAD_DAYS = 10;
 const DEFAULT_MATURITY_DAYS = 46;
 
@@ -115,6 +120,7 @@ export function BookChicksDialog({ buttonClassName }: AddBatchDialogProps) {
     reset,
     control,
     setValue,
+    watch,
     formState: { errors, isSubmitting },
   } = useForm<BookingFormValues>({
     resolver: zodResolver(bookingSchema),
@@ -130,6 +136,8 @@ export function BookChicksDialog({ buttonClassName }: AddBatchDialogProps) {
     control,
     name: "booking_date",
   });
+  const selectedBirdType = watch("bird_type");
+  const [broilerStrain, setBroilerStrain] = useState<"ross308" | "cobb500">("ross308");
 
   useEffect(() => {
     if (!bookingDate) {
@@ -172,8 +180,9 @@ export function BookChicksDialog({ buttonClassName }: AddBatchDialogProps) {
     const maturityDate = new Date(arrivalDateTime);
     maturityDate.setDate(maturityDate.getDate() + DEFAULT_MATURITY_DAYS);
 
-    const payload: CreatePoultryBatchPayload = {
+  const payload: CreatePoultryBatchPayload = {
       bird_type: values.bird_type,
+      broiler_strain: values.bird_type === "broilers" ? broilerStrain : "ross308",
       source: values.source,
       source_other:
         values.source === "other" ? values.source_other?.trim() ?? "" : "",
@@ -372,12 +381,14 @@ export function AddBatchDialog({ buttonClassName }: AddBatchDialogProps) {
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
+  const [broilerStrain, setBroilerStrain] = useState<"ross308" | "cobb500">("ross308");
 
   const {
     register,
     handleSubmit,
     reset,
     control,
+    watch,
     formState: { errors, isSubmitting },
   } = useForm<BatchFormValues>({
     resolver: zodResolver(batchSchema),
@@ -389,6 +400,8 @@ export function AddBatchDialog({ buttonClassName }: AddBatchDialogProps) {
     control,
     name: "source",
   });
+
+  const selectedBirdType = watch("bird_type");
 
   const openDialog = () => {
     setServerError(null);
@@ -409,6 +422,7 @@ export function AddBatchDialog({ buttonClassName }: AddBatchDialogProps) {
 
     const payload: CreatePoultryBatchPayload = {
       bird_type: values.bird_type,
+      broiler_strain: values.bird_type === "broilers" ? broilerStrain : "ross308",
       source: values.source,
       source_other:
         values.source === "other" ? values.source_other?.trim() ?? "" : "",
@@ -497,6 +511,25 @@ export function AddBatchDialog({ buttonClassName }: AddBatchDialogProps) {
                     ))}
                   </select>
                 </FormField>
+
+                {selectedBirdType === "broilers" ? (
+                  <FormField label="Broiler strain" error={undefined}>
+                    <select
+                      id="batch-broiler-strain"
+                      value={broilerStrain}
+                      onChange={(e) =>
+                        setBroilerStrain(e.target.value as "ross308" | "cobb500")
+                      }
+                      className="form-input"
+                    >
+                      {broilerStrainOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </FormField>
+                ) : null}
 
                 <FormField
                   label="Initial birds"

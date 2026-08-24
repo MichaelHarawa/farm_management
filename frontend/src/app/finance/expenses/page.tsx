@@ -40,7 +40,7 @@ export default async function FinanceExpensesPage() {
         )}
       </Panel>
 
-      <Panel title="Expense Ledger">
+      <Panel id="expense-ledger" title="Expense Ledger">
         {expenses.length ? (
           <div className="overflow-x-auto">
             <table className="min-w-full border-collapse text-sm">

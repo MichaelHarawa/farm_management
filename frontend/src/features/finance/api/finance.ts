@@ -18,6 +18,7 @@ import type {
   MonthlyReport,
   PaginatedResponse,
   PayrollEntry,
+  ReceivablesReport,
   SharedExpense,
   SharedConsumableLot,
 } from "../types";
@@ -179,4 +180,13 @@ export async function getBatchPortfolioReport(
       cache: "no-store",
     }
   );
+}
+
+export async function getReceivables(
+  returnTo: string
+): Promise<ReceivablesReport> {
+  return authenticatedBackendFetch<ReceivablesReport>(financeApiPaths.receivables, {
+    returnTo,
+    cache: "no-store",
+  });
 }

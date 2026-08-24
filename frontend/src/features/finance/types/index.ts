@@ -197,6 +197,9 @@ export type FinanceWarning = {
   code: string;
   severity: "info" | "warning" | "critical";
   message: string;
+  solution: string;
+  action_label: string;
+  action_href: string;
 };
 
 export type BatchProfitabilityReport = {
@@ -278,7 +281,7 @@ export type BatchPortfolioReport = {
     | "mixed";
   summary: BatchPortfolioSummary;
   results: BatchProfitabilityReport[];
-  warnings: string[];
+  warnings: FinanceWarning[];
 };
 
 export type MonthlyReport = {
@@ -305,4 +308,22 @@ export type FinanceDashboard = {
   receivables: DecimalString;
   latest_month: MonthlyReport | null;
   warnings: FinanceWarning[];
+};
+
+export type ReceivableSale = {
+  sale_id: string;
+  batch: number;
+  batch_id: string;
+  buyer_name: string;
+  sale_date: string;
+  sale_total: DecimalString;
+  amount_paid: DecimalString;
+  balance: DecimalString;
+  payment_status: string;
+};
+
+export type ReceivablesReport = {
+  total_receivable: DecimalString;
+  count: number;
+  results: ReceivableSale[];
 };

@@ -83,6 +83,11 @@ class UnitMeasurement(models.TextChoices):
 #     GAUGE = "gauge", "Gauge"
 
 
+class BroilerStrain(models.TextChoices):
+    ROSS_308 = "ross308", "Ross 308"
+    COBB_500 = "cobb500", "Cobb 500"
+
+
 class DrugVaccinationType(models.TextChoices):
     GUMBOLO = "gumbolo", "Gumbolo"
     HITCHNER = "hitchner", "Hitchner"
@@ -137,6 +142,12 @@ class Batch(models.Model):
     bird_type = models.CharField(max_length=200,
         choices=BirdType.choices,
         default=BirdType.BROILERS,)
+    broiler_strain = models.CharField(
+        max_length=20,
+        choices=BroilerStrain.choices,
+        default=BroilerStrain.ROSS_308,
+        help_text="For broilers only. Used for target weight curves.",
+    )
     source = models.CharField(
         max_length=200,
         choices=ChicksSource.choices,
@@ -574,4 +585,59 @@ class DrugsVaccination(models.Model):
 
     def __str__(self) -> str:
         return f"{self.batch} {self.quantity} administered on {self.vaccination_date}"
+
+
+class BatchWeightSample(models.Model):
+    """Actual average weight samples taken from the flock at a known age.
+
+    Used to compare against breed-specific target curves (Ross 308 / Cobb 500)
+    and trigger urgent intervention alerts when the flock is under-performing.
+    """
+
+    batch = models.ForeignKey(
+        Batch,
+        on_delete=models.CASCADE,
+        related_name="weight_samples",
+    )
+    age_in_days = models.PositiveIntegerField(
+        help_text="Age in days since entry (0 on placement day)."
+    )
+    sampled_at = models.DateTimeField(
+        help_text="When the weighing took place."
+    )
+    sample_size = models.PositiveIntegerField(
+        default=10,
+        help_text="Number of birds weighed for this average.",
+    )
+    average_weight_g = models.PositiveIntegerField(
+        help_text="Average live weight in grams."
+    )
+    notes = models.TextField(blank=True, default="")
+    reported_by_name = models.CharField(max_length=200)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_weight_samples",
+    )
+
+    class Meta:
+        ordering = ["-sampled_at"]
+
+    def __str__(self) -> str:
+        return f"{self.batch} day {self.age_in_days} @ {self.average_weight_g}g (n={self.sample_size})"
+
+    def clean(self):
+        super().clean()
+        if self.average_weight_g <= 0:
+            raise ValidationError(
+                {"average_weight_g": "Average weight must be greater than zero."}
+            )
+        if self.sample_size <= 0:
+            raise ValidationError(
+                {"sample_size": "Sample size must be greater than zero."}
+            )
 

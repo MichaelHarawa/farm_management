@@ -289,16 +289,25 @@ export function EmployeeCreateDialog() {
 export function PeriodActionButtons({ period }: { period: AccountingPeriod }) {
   const router = useRouter();
   const [state, setState] = useState(initialState);
+  const [reopenIsOpen, setReopenIsOpen] = useState(false);
+  const [reopeningReason, setReopeningReason] = useState("");
 
-  async function runAction(action: "generate-payroll" | "recalculate" | "close") {
+  async function runAction(
+    action: "generate-payroll" | "recalculate" | "close" | "reopen",
+    payload: Record<string, unknown> = {}
+  ) {
     if (action === "close" && !confirm("Close this accounting period?")) {
       return;
     }
 
     setState({ status: "loading", message: "" });
     try {
-      await postJson(`/api/finance/accounting-periods/${period.id}/${action}`, {});
+      await postJson(`/api/finance/accounting-periods/${period.id}/${action}`, payload);
       setState(initialState);
+      if (action === "reopen") {
+        setReopenIsOpen(false);
+        setReopeningReason("");
+      }
       router.refresh();
     } catch (error) {
       setState({
@@ -309,27 +318,103 @@ export function PeriodActionButtons({ period }: { period: AccountingPeriod }) {
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-3">
-      <button type="button" onClick={() => runAction("generate-payroll")} className="finance-button">
-        Generate Payroll
-      </button>
-      <button type="button" onClick={() => runAction("recalculate")} className="finance-button">
-        Recalculate
-      </button>
-      <button
-        type="button"
-        onClick={() => runAction("close")}
-        disabled={period.status === "closed"}
-        className="finance-button disabled:cursor-not-allowed disabled:opacity-50"
+    <>
+      <div className="flex flex-wrap items-center gap-3">
+        {period.status === "open" ? (
+          <>
+            <button
+              type="button"
+              onClick={() => runAction("generate-payroll")}
+              disabled={state.status === "loading"}
+              className="finance-button disabled:cursor-wait disabled:opacity-60"
+            >
+              Generate Payroll
+            </button>
+            <button
+              type="button"
+              onClick={() => runAction("recalculate")}
+              disabled={state.status === "loading"}
+              className="finance-button disabled:cursor-wait disabled:opacity-60"
+            >
+              Recalculate
+            </button>
+            <button
+              type="button"
+              onClick={() => runAction("close")}
+              disabled={state.status === "loading"}
+              className="finance-button disabled:cursor-wait disabled:opacity-60"
+            >
+              Close Period
+            </button>
+          </>
+        ) : (
+          <button
+            type="button"
+            onClick={() => {
+              setState(initialState);
+              setReopenIsOpen(true);
+            }}
+            className="finance-button"
+          >
+            Reopen Period
+          </button>
+        )}
+        {state.status === "error" ? (
+          <span className="text-sm font-semibold text-[var(--danger)]">
+            {state.message}
+          </span>
+        ) : null}
+      </div>
+
+      <Dialog
+        open={reopenIsOpen}
+        onClose={() => setReopenIsOpen(false)}
+        eyebrow="Controlled correction"
+        title="Reopen accounting period"
+        size="md"
       >
-        Close Period
-      </button>
-      {state.status === "error" ? (
-        <span className="text-sm font-semibold text-[var(--danger)]">
-          {state.message}
-        </span>
-      ) : null}
-    </div>
+        <div className="grid gap-5">
+          <p className="text-sm leading-6 text-[var(--navy-soft)]">
+            Reopening unlocks allocations and invalidates affected final batch snapshots.
+            Make the correction, recalculate, and close the period again.
+          </p>
+          <label className="grid gap-2">
+            <span className="text-label text-[var(--navy-muted)]">
+              Reason for reopening
+            </span>
+            <textarea
+              value={reopeningReason}
+              onChange={(event) => setReopeningReason(event.target.value)}
+              rows={4}
+              placeholder="Example: Correct shared utility allocation entered against the wrong period."
+              className="rounded-lg border border-[var(--line)] bg-white px-4 py-3 text-sm text-[var(--navy)] outline-none transition focus:border-[var(--gold)] focus:ring-2 focus:ring-[var(--gold)]/20"
+            />
+          </label>
+          {state.status === "error" ? (
+            <p role="alert" className="text-sm font-semibold text-[var(--danger)]">
+              {state.message}
+            </p>
+          ) : null}
+          <div className="flex flex-col-reverse gap-3 border-t border-[var(--line)] pt-5 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              onClick={() => setReopenIsOpen(false)}
+              className="rounded-lg px-4 py-3 text-sm font-extrabold text-[var(--navy-muted)] transition hover:bg-[var(--page-cream)]"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => runAction("reopen", { reason: reopeningReason.trim() })}
+              disabled={state.status === "loading" || !reopeningReason.trim()}
+              className="finance-button disabled:cursor-wait disabled:opacity-60"
+            >
+              {state.status === "loading" ? "Reopening..." : "Reopen Period"}
+            </button>
+          </div>
+        </div>
+      </Dialog>
+    </>
   );
 }
 
