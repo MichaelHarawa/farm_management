@@ -3,6 +3,7 @@ import { z } from "zod";
 export const saleSchema = z
   .object({
     sale_date: z.string().min(1, "Sale date is required."),
+    due_date: z.string(),
 
     product_type: z.enum(["live_chicken", "dressed_chicken", "eggs", "manure"]),
 

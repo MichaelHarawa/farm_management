@@ -316,6 +316,12 @@ class Sales(models.Model):
     related_name="sales_row",)
     sale_id = models.CharField(max_length=32, unique=True, editable=False, db_index=True)
     sale_date = models.DateTimeField()
+    due_date = models.DateField(
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="Optional collection due date for credit sales.",
+    )
     product_type = models.CharField(
         max_length=20,
         choices=ProductType.choices,

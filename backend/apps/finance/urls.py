@@ -17,9 +17,17 @@ from .views import (
     EmployeeBatchWorkLogViewSet,
     EmployeeProfileViewSet,
     ExpenseRecognitionScheduleViewSet,
+    ExpenditureViewSet,
+    ExpenditureCategoryViewSet,
+    FundingSourceViewSet,
+    FundingReceiptViewSet,
     MonthlyReportView,
+    BatchRevenueUtilizationView,
+    CrossBatchFinancingReportView,
     PayrollEntryViewSet,
     ReceivablesView,
+    SalePaymentsView,
+    SalePaymentReverseView,
     ReplacementReserveTransactionViewSet,
     SharedExpenseViewSet,
     SharedConsumableLotViewSet,
@@ -67,6 +75,10 @@ router.register(
 router.register("work-logs", EmployeeBatchWorkLogViewSet, basename="finance-work-log")
 router.register("bird-day-snapshots", BirdDaySnapshotViewSet, basename="finance-bird-days")
 router.register("allocations", CostAllocationViewSet, basename="finance-allocation")
+router.register("expenditures", ExpenditureViewSet, basename="finance-expenditure")
+router.register("funding-sources", FundingSourceViewSet, basename="finance-funding-source")
+router.register("funding-receipts", FundingReceiptViewSet, basename="finance-funding-receipt")
+router.register("expenditure-categories", ExpenditureCategoryViewSet, basename="finance-expenditure-category")
 
 app_name = "finance"
 
@@ -85,4 +97,24 @@ urlpatterns = [
     ),
     path("dashboard", DashboardView.as_view(), name="dashboard"),
     path("receivables", ReceivablesView.as_view(), name="receivables"),
+    path(
+        "receivables/<int:sale_id>/payments",
+        SalePaymentsView.as_view(),
+        name="sale-payments",
+    ),
+    path(
+        "payments/<int:payment_id>/reverse",
+        SalePaymentReverseView.as_view(),
+        name="sale-payment-reverse",
+    ),
+    path(
+        "reports/batches/<int:batch_id>/revenue-utilization",
+        BatchRevenueUtilizationView.as_view(),
+        name="batch-revenue-utilization",
+    ),
+    path(
+        "reports/cross-batch-financing",
+        CrossBatchFinancingReportView.as_view(),
+        name="cross-batch-financing",
+    ),
 ]

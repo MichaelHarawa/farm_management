@@ -125,6 +125,7 @@ class AllocationSourceType(models.TextChoices):
     SHARED_EXPENSE = "shared_expense", "Shared expense"
     CONSUMABLE_USAGE = "consumable_usage", "Consumable usage"
     DEPRECIATION = "depreciation", "Depreciation"
+    EXPENDITURE = "expenditure", "Expenditure"
 
 
 class ConsumableUsageScope(models.TextChoices):
@@ -1076,6 +1077,14 @@ class CostAllocation(TimestampedModel):
         blank=True,
         related_name="cost_allocations",
     )
+    expenditure = models.ForeignKey(
+        "Expenditure",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="cost_allocations",
+        help_text="Link when this cost allocation comes from a general Expenditure.",
+    )
     allocation_method = models.CharField(
         max_length=40,
         choices=AllocationMethod.choices,
@@ -1942,3 +1951,408 @@ class BatchProfitabilitySnapshot(TimestampedModel):
     def __str__(self) -> str:
         label = "final" if self.final else "provisional"
         return f"{self.batch} {label} profitability"
+
+
+# =============================================================================
+# Revenue Funding & Expenditure Tracking (new for batch cash utilization)
+# =============================================================================
+
+class AccountingNature(models.TextChoices):
+    DIRECT_COST = "direct_cost", "Direct Cost"
+    INDIRECT_OPERATING_EXPENSE = "indirect_operating_expense", "Indirect Operating Expense"
+    CAPITAL_EXPENDITURE = "capital_expenditure", "Capital Expenditure"
+    LOAN_REPAYMENT = "loan_repayment", "Loan Repayment"
+    OWNER_WITHDRAWAL = "owner_withdrawal", "Owner Withdrawal"
+    TRANSFER = "transfer", "Transfer"
+    OTHER = "other", "Other"
+
+
+class ExpenditureCategory(models.Model):
+    """Configurable categories for expenditures with default accounting nature."""
+    name = models.CharField(max_length=120, unique=True)
+    code = models.CharField(max_length=50, unique=True)
+    default_accounting_nature = models.CharField(
+        max_length=40,
+        choices=AccountingNature.choices,
+        default=AccountingNature.OTHER,
+    )
+    is_active = models.BooleanField(default=True, db_index=True)
+    display_order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["display_order", "name"]
+
+    def __str__(self):
+        return self.name
+
+
+class ExpenditureStatus(models.TextChoices):
+    DRAFT = "draft", "Draft"
+    POSTED = "posted", "Posted"
+    VOID = "void", "Void"
+
+
+class FundingSourceType(models.TextChoices):
+    BATCH_COLLECTION = "batch_collection", "Batch Sales Collections"
+    OWNER_CAPITAL = "owner_capital", "Owner Capital"
+    LOAN = "loan", "Loan Funding"
+    GRANT = "grant", "Grant / Subsidy"
+    OTHER_INCOME = "other_income", "Other Income"
+    GENERAL_FARM_CASH = "general_farm_cash", "General Farm Cash"
+
+
+class FundingClassification(models.TextChoices):
+    REINVESTMENT = "reinvestment", "Reinvestment in Operations"
+    WORKING_CAPITAL = "working_capital", "Working Capital"
+    COST_RECOVERY = "cost_recovery", "Cost Recovery"
+    OWNER_DISTRIBUTION = "owner_distribution", "Owner Distribution"
+    DEBT_SERVICE = "debt_service", "Debt Service"
+    OTHER = "other", "Other"
+
+
+class FundingSource(TimestampedModel):
+    """
+    Represents a source of funds that can be used to pay for expenditures.
+    For BATCH_COLLECTION, the available balance is derived from posted
+    FundingAllocations + the batch's cash_collected.
+    """
+    source_type = models.CharField(
+        max_length=30,
+        choices=FundingSourceType.choices,
+        db_index=True,
+    )
+    batch = models.ForeignKey(
+        Batch,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="funding_sources",
+        help_text="The batch whose collected revenue is the source (for BATCH_COLLECTION).",
+    )
+    description = models.CharField(max_length=255, blank=True)
+    notes = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["source_type", "batch"]),
+        ]
+
+    def __str__(self) -> str:
+        if self.batch and self.source_type == FundingSourceType.BATCH_COLLECTION:
+            return f"Batch {self.batch.batch_id} sales collections"
+        return self.description or self.get_source_type_display()
+
+
+class FundingReceiptStatus(models.TextChoices):
+    POSTED = "posted", "Posted"
+    REVERSED = "reversed", "Reversed"
+
+
+class FundingReceipt(TimestampedModel):
+    """Append-only cash received for non-sales funding sources."""
+
+    funding_source = models.ForeignKey(
+        FundingSource,
+        on_delete=models.PROTECT,
+        related_name="receipts",
+    )
+    amount = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal("0.01"))],
+    )
+    receipt_date = models.DateTimeField(default=timezone.now, db_index=True)
+    reference = models.CharField(max_length=120, blank=True, default="")
+    notes = models.TextField(blank=True, default="")
+    status = models.CharField(
+        max_length=20,
+        choices=FundingReceiptStatus.choices,
+        default=FundingReceiptStatus.POSTED,
+        db_index=True,
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_funding_receipts",
+    )
+    reversed_at = models.DateTimeField(null=True, blank=True)
+    reversed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reversed_funding_receipts",
+    )
+    reversal_reason = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["-receipt_date", "-created_at"]
+        indexes = [models.Index(fields=["funding_source", "status"])]
+
+    def __str__(self) -> str:
+        return f"{self.amount} received into {self.funding_source}"
+
+
+class Expenditure(DollarReferenceMixin, TimestampedModel):
+    """
+    A general record of money spent by the farm.
+    This is the central record for tracking both funding source and cost allocation.
+    """
+    expenditure_date = models.DateField(db_index=True)
+    accounting_period = models.ForeignKey(
+        AccountingPeriod,
+        on_delete=models.PROTECT,
+        related_name="expenditures",
+        null=True,
+        blank=True,
+    )
+
+    amount = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        validators=[MONEY_VALIDATOR],
+    )
+    category = models.ForeignKey(
+        "ExpenditureCategory",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="expenditures",
+    )
+    other_category_detail = models.CharField(max_length=200, blank=True, default="")
+    accounting_nature = models.CharField(
+        max_length=40,
+        choices=AccountingNature.choices,
+        default=AccountingNature.OTHER,
+        db_index=True,
+    )
+    other_nature_detail = models.CharField(max_length=200, blank=True, default="")
+
+    description = models.CharField(max_length=255)
+    payee = models.CharField(max_length=160, blank=True, default="")
+    payment_method = models.CharField(max_length=50, blank=True, default="")
+    reference_number = models.CharField(max_length=120, blank=True, default="", editable=False)  # now generated EXP-...
+    external_reference = models.CharField(max_length=120, blank=True, default="")  # receipt/invoice
+
+    status = models.CharField(
+        max_length=20,
+        choices=ExpenditureStatus.choices,
+        default=ExpenditureStatus.DRAFT,
+        db_index=True,
+    )
+
+    # Replaced free-text farm_module with structured beneficiary
+    farm_module = models.CharField(max_length=50, blank=True, default="")  # legacy
+    beneficiary_type = models.CharField(max_length=50, blank=True, default="")  # one_batch, multiple_batches, whole_poultry, crops, admin, capital, other
+    beneficiary_detail = models.TextField(blank=True, default="")
+    cost_allocation_plan = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Draft beneficiary allocation rows applied atomically when posted.",
+    )
+
+    # Generated unique reference
+    expenditure_reference = models.CharField(max_length=32, unique=True, null=True, blank=True, editable=False, db_index=True)
+
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_expenditures",
+    )
+    posted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="posted_expenditures",
+    )
+    posted_at = models.DateTimeField(null=True, blank=True)
+
+    # For reversals / corrections
+    reversed_expenditure = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reversals",
+    )
+    reversal_reason = models.TextField(blank=True, default="")
+    reversed_at = models.DateTimeField(null=True, blank=True)
+    reversed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reversed_expenditures",
+    )
+
+    notes = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["-expenditure_date", "-created_at"]
+        indexes = [
+            models.Index(fields=["status", "expenditure_date"]),
+            models.Index(fields=["accounting_nature"]),
+            models.Index(fields=["accounting_period"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.expenditure_date} - {self.description} ({self.amount})"
+
+    @property
+    def is_posted(self) -> bool:
+        return self.status == ExpenditureStatus.POSTED
+
+    def clean(self):
+        super().clean()
+        if self.category and self.category.name.lower() == "other" and not self.other_category_detail:
+            if self.status == ExpenditureStatus.POSTED:
+                raise ValidationError({"other_category_detail": "Provide details when category is 'Other'."})
+        if self.accounting_nature == AccountingNature.OTHER and not self.other_nature_detail:
+            # Only enforce when trying to post
+            if self.status == ExpenditureStatus.POSTED:
+                raise ValidationError({"other_nature_detail": "Provide details when nature is 'Other'."})
+
+    def save(self, *args, **kwargs):
+        self.set_usd_equivalent(self.amount)
+        if not self.expenditure_reference:
+            from datetime import date
+            today = date.today()
+            prefix = f"EXP-{today.strftime('%Y%m%d')}"
+            # Simple unique by counting same prefix today (transactional best effort)
+            existing = Expenditure.objects.filter(expenditure_reference__startswith=prefix).count() + 1
+            self.expenditure_reference = f"{prefix}-{existing:04d}"
+        super().save(*args, **kwargs)
+
+
+class FundingAllocation(TimestampedModel):
+    """
+    Links an Expenditure to the source of funds used to pay for it.
+    This is the "Funding allocation" dimension (where the money came from).
+    """
+    expenditure = models.ForeignKey(
+        Expenditure,
+        on_delete=models.CASCADE,
+        related_name="funding_allocations",
+    )
+    funding_source = models.ForeignKey(
+        FundingSource,
+        on_delete=models.PROTECT,
+        related_name="allocations",
+    )
+    amount = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        validators=[MONEY_VALIDATOR],
+    )
+    allocation_date = models.DateField()
+
+    classification = models.CharField(
+        max_length=30,
+        choices=FundingClassification.choices,
+        default=FundingClassification.REINVESTMENT,
+    )
+    notes = models.TextField(blank=True, default="")
+
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_funding_allocations",
+    )
+
+    class Meta:
+        ordering = ["-allocation_date"]
+        indexes = [
+            models.Index(fields=["expenditure"]),
+            models.Index(fields=["funding_source"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.amount} from {self.funding_source} to expenditure {self.expenditure_id}"
+
+
+class SalePaymentStatus(models.TextChoices):
+    POSTED = "posted", "Posted"
+    REVERSED = "reversed", "Reversed"
+
+
+class SalePayment(TimestampedModel):
+    """Immutable receipt ledger for a poultry sale; reversals preserve the row."""
+
+    sale = models.ForeignKey(
+        "poultry.Sales",
+        on_delete=models.PROTECT,
+        related_name="payments",
+    )
+    payment_reference = models.CharField(
+        max_length=40,
+        unique=True,
+        editable=False,
+        db_index=True,
+    )
+    idempotency_key = models.CharField(
+        max_length=120,
+        unique=True,
+        null=True,
+        blank=True,
+        editable=False,
+    )
+    amount = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal("0.01"))],
+    )
+    payment_date = models.DateTimeField(default=timezone.now, db_index=True)
+    payment_method = models.CharField(max_length=50)
+    external_reference = models.CharField(max_length=120, blank=True, default="")
+    received_by_name = models.CharField(max_length=200, blank=True, default="")
+    notes = models.TextField(blank=True, default="")
+    status = models.CharField(
+        max_length=20,
+        choices=SalePaymentStatus.choices,
+        default=SalePaymentStatus.POSTED,
+        db_index=True,
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_sale_payments",
+    )
+    reversed_at = models.DateTimeField(null=True, blank=True)
+    reversed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reversed_sale_payments",
+    )
+    reversal_reason = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["-payment_date", "-created_at"]
+        indexes = [
+            models.Index(fields=["sale", "status"]),
+            models.Index(fields=["payment_date", "status"]),
+        ]
+
+    def save(self, *args, **kwargs):
+        if not self.payment_reference:
+            self.payment_reference = f"PAY-{timezone.localdate():%Y%m%d}-{uuid.uuid4().hex[:10].upper()}"
+        super().save(*args, **kwargs)
+
+    def __str__(self) -> str:
+        return f"{self.payment_reference}: {self.amount} for {self.sale_id}"
+
+
+# Note: Cost allocation side continues to use the existing CostAllocation model
+# (or can be extended later). The combination of FundingAllocation + CostAllocation
+# gives the two required dimensions.

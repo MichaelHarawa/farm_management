@@ -238,7 +238,12 @@ export type BatchProfitabilityReport = {
   break_even_selling_price_per_remaining_bird: DecimalString | null;
   additional_revenue_required_to_break_even: DecimalString;
   active_batch_cost_exposure: DecimalString;
+
+  // Revenue utilization (funding side)
+  available_batch_cash?: DecimalString;
+  cash_used_from_batch?: DecimalString;
 };
+
 
 export type BatchPortfolioSummary = {
   revenue: DecimalString;
@@ -311,19 +316,133 @@ export type FinanceDashboard = {
 };
 
 export type ReceivableSale = {
+  id: number;
   sale_id: string;
   batch: number;
   batch_id: string;
   buyer_name: string;
   sale_date: string;
+  due_date: string | null;
+  age_days: number;
+  days_overdue: number;
   sale_total: DecimalString;
   amount_paid: DecimalString;
   balance: DecimalString;
   payment_status: string;
+  receivable_status: "unpaid" | "partially_paid" | "paid" | "overdue" | "cancelled";
+  is_overdue: boolean;
+  payments: SalePayment[];
+};
+
+export type SalePayment = {
+  id: number;
+  payment_reference: string;
+  amount: DecimalString;
+  payment_date: string;
+  payment_method: string;
+  external_reference: string;
+  received_by_name: string;
+  notes: string;
+  status: "posted" | "reversed";
+  reversed_at: string | null;
+  reversal_reason: string;
 };
 
 export type ReceivablesReport = {
   total_receivable: DecimalString;
   count: number;
   results: ReceivableSale[];
+};
+
+export type Expenditure = {
+  id: number;
+  expenditure_date: string;
+  amount: DecimalString;
+  category: string;
+  accounting_nature: string;
+  other_nature_detail?: string;
+  description: string;
+  payee?: string;
+  payment_method?: string;
+  reference_number?: string;
+  expenditure_reference?: string;
+  external_reference?: string;
+  status: "draft" | "posted" | "void";
+  farm_module?: string;
+  notes?: string;
+  created_at: string;
+  updated_at: string;
+  funding_allocations?: Array<{
+    id?: number;
+    funding_source: number;
+    amount: DecimalString;
+    classification?: string;
+  }>;
+  total_funded?: DecimalString;
+  funding_status?: "funded" | "partially_funded" | "unfunded" | "reversed";
+  beneficiary_type?: string;
+  beneficiary_detail?: string;
+  cost_allocation_plan?: CostAllocationInput[];
+};
+
+export type BatchRevenueUtilization = {
+  batch_id: number;
+  batch_code: string;
+  cash_collected: DecimalString;
+  gross_collections: DecimalString;
+  refunds: DecimalString;
+  cash_used: DecimalString;
+  available_cash: DecimalString;
+  utilization_percent: DecimalString | null;
+  by_category: Record<string, DecimalString>;
+  by_accounting_nature: Record<string, DecimalString>;
+  beneficiary_modules: string[];
+  transactions: Array<{
+    allocation_id: number;
+    expenditure_id: number;
+    expenditure_reference: string;
+    date: string;
+    description: string;
+    amount: DecimalString;
+    total_expenditure: DecimalString;
+    category: string;
+    accounting_nature: string;
+    beneficiary: string;
+    funding_source: string;
+    status: string;
+    remaining_cash_after: DecimalString;
+  }>;
+};
+
+export type FundingSource = {
+  id: number;
+  source_type: string;
+  batch: number | null;
+  description: string;
+  notes?: string;
+  available_balance?: DecimalString | null;
+  display_name: string;
+  batch_code: string | null;
+};
+
+export type FundingAllocationInput = {
+  funding_source: number;
+  amount: DecimalString;
+  classification?: string;
+};
+
+export type CostAllocationInput = {
+  batch: number;
+  amount: DecimalString;
+};
+
+export type CrossBatchFlow = {
+  funding_batch_id: number;
+  funding_batch_code: string;
+  expenditure_id: number;
+  expenditure_desc: string;
+  amount_funded: DecimalString;
+  allocated_to_batch_id: number;
+  allocated_amount: DecimalString;
+  date: string;
 };

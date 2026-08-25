@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { getBatchProfitability } from "@/features/finance/api/finance";
+import { getBatchProfitability, getBatchRevenueUtilization } from "@/features/finance/api/finance";
 import {
   FinanceNav,
   FinancePageShell,
@@ -14,7 +14,7 @@ import {
   formatNumber,
   formatPercent,
 } from "@/features/finance/utils/formatters";
-import type { BatchProfitabilityReport } from "@/features/finance/types";
+import type { BatchProfitabilityReport, BatchRevenueUtilization } from "@/features/finance/types";
 import { BackendApiError } from "@/lib/server/backend-api";
 
 type PageProps = {
@@ -32,8 +32,10 @@ export default async function FinanceBatchProfitabilityPage({ params }: PageProp
   }
 
   let report: BatchProfitabilityReport;
+  let utilization: BatchRevenueUtilization | null = null;
   try {
     report = await getBatchProfitability(batchId, `/finance/batches/${batchId}`);
+    utilization = await getBatchRevenueUtilization(batchId, `/finance/batches/${batchId}`).catch(() => null);
   } catch (error) {
     if (error instanceof BackendApiError && error.status === 404) {
       notFound();
@@ -85,6 +87,27 @@ export default async function FinanceBatchProfitabilityPage({ params }: PageProp
             ]}
           />
         </Panel>
+
+        {/* New: Revenue Utilization / Available Batch Cash */}
+        <Panel title="Batch Cash Position (Revenue Utilization)">
+          <Rows
+            rows={[
+              ["Cash collected from this batch", formatCurrency(report.cash_collected)],
+              ["Cash used (funding allocations)", formatCurrency(report.cash_used_from_batch ?? utilization?.cash_used ?? "0")],
+              ["Available cash from this batch", formatCurrency(report.available_batch_cash ?? utilization?.available_cash ?? report.cash_collected)],
+            ]}
+          />
+          {utilization && (
+            <div className="mt-3 text-xs">
+              <div>By category: {Object.keys(utilization.by_category || {}).join(", ") || "—"}</div>
+            </div>
+          )}
+          <p className="mt-3 text-xs text-[var(--navy-muted)]">
+            This shows how much of the money collected from this batch&apos;s sales is still available.
+            It is separate from accounting profit.
+          </p>
+        </Panel>
+
       </div>
     </FinancePageShell>
   );

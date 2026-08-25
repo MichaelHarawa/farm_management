@@ -175,7 +175,19 @@ def create_sale_with_lifecycle(*, batch_id: int, created_by, **data) -> Sales:
         sale.save()
         assert_non_negative_bird_balance(batch)
         recalculate_batch_status(batch)
+
+        # Initial cash is written to the append-only receipt ledger. The legacy
+        # amount fields remain synchronized summaries for existing consumers.
+        from apps.finance.services.collections import record_initial_sale_payment
+
+        record_initial_sale_payment(
+            sale=sale,
+            amount=sale.amount_paid,
+            created_by=created_by,
+        )
+
         return sale
+
 
 
 def create_mortality_with_lifecycle(*, batch_id: int, created_by, **data) -> Mortality:

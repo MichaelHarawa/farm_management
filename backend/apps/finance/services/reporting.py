@@ -33,6 +33,8 @@ from ..models import (
     ExpenseRecognitionSchedule,
     ExpenseRecognitionType,
     PayrollEntry,
+    SalePayment,
+    SalePaymentStatus,
     ReplacementReserveTransaction,
     ReserveTransactionType,
     SharedConsumableLot,
@@ -119,8 +121,23 @@ def monthly_profitability_report(period: AccountingPeriod) -> dict:
     egg_sales = revenue_by_product.get(ProductType.EGGS, Decimal("0.00"))
     manure_sales = revenue_by_product.get(ProductType.MANURE, Decimal("0.00"))
     total_revenue = money(sum(revenue_by_product.values(), Decimal("0.00")))
-    cash_received = money(sales.aggregate(total=Sum("amount_paid"))["total"])
-    accounts_receivable = money(sales.aggregate(total=Sum("balance"))["total"])
+    cash_received = money(
+        SalePayment.objects.filter(
+            status=SalePaymentStatus.POSTED,
+            payment_date__date__gte=period.period_start,
+            payment_date__date__lte=period.period_end,
+        )
+        .exclude(sale__payment_status=PaymentStatus.CANCELLED)
+        .aggregate(total=Sum("amount"))["total"]
+    )
+    collected_against_period_sales = money(
+        SalePayment.objects.filter(
+            sale__in=sales,
+            status=SalePaymentStatus.POSTED,
+            payment_date__date__lte=period.period_end,
+        ).aggregate(total=Sum("amount"))["total"]
+    )
+    accounts_receivable = money(max(total_revenue - collected_against_period_sales, Decimal("0.00")))
 
     direct_batch_costs = money(
         InputCosts.objects.filter(
@@ -926,23 +943,88 @@ def dashboard_indicators() -> dict:
     }
 
 
-def receivables_report() -> dict:
-    open_sales = Sales.objects.exclude(payment_status=PaymentStatus.CANCELLED).filter(
-        balance__gt=0
-    )
+def receivables_report(filters=None) -> dict:
+    filters = filters or {}
+    selected_status = filters.get("status", "open") if hasattr(filters, "get") else "open"
+    sales = Sales.objects.all()
+    if selected_status == PaymentStatus.CANCELLED:
+        sales = sales.filter(payment_status=PaymentStatus.CANCELLED)
+    else:
+        sales = sales.exclude(payment_status=PaymentStatus.CANCELLED)
+    batch_ids = filters.getlist("batch") if hasattr(filters, "getlist") else []
+    if batch_ids:
+        sales = sales.filter(batch_id__in=batch_ids)
+    buyer = (filters.get("buyer", "") if hasattr(filters, "get") else "").strip()
+    if buyer:
+        sales = sales.filter(buyer_name__icontains=buyer)
+    date_from = filters.get("date_from") if hasattr(filters, "get") else None
+    date_to = filters.get("date_to") if hasattr(filters, "get") else None
+    if date_from:
+        sales = sales.filter(due_date__gte=date_from)
+    if date_to:
+        sales = sales.filter(due_date__lte=date_to)
+    if selected_status == "paid":
+        sales = sales.filter(balance=0)
+    elif selected_status in {PaymentStatus.PARTIAL, PaymentStatus.UNPAID}:
+        sales = sales.filter(payment_status=selected_status, balance__gt=0)
+    elif selected_status == "overdue":
+        sales = sales.filter(balance__gt=0, due_date__lt=timezone.localdate())
+    elif selected_status == PaymentStatus.CANCELLED:
+        pass
+    elif selected_status != "all":
+        sales = sales.filter(balance__gt=0)
+
+    focus_sale = filters.get("sale") if hasattr(filters, "get") else None
+    if focus_sale:
+        sales = sales.filter(sale_id=focus_sale)
+
+    open_sales = sales
+    today = timezone.localdate()
     rows = [
         {
+            "id": sale.pk,
             "sale_id": sale.sale_id,
             "batch": sale.batch_id,
             "batch_id": sale.batch.batch_id,
             "buyer_name": sale.buyer_name,
             "sale_date": sale.sale_date,
+            "due_date": sale.due_date,
+            "age_days": max((today - sale.sale_date.date()).days, 0),
+            "days_overdue": max((today - sale.due_date).days, 0) if sale.due_date else 0,
             "sale_total": sale.sale_total,
             "amount_paid": sale.amount_paid,
             "balance": sale.balance,
             "payment_status": sale.payment_status,
+            "receivable_status": (
+                "cancelled"
+                if sale.payment_status == PaymentStatus.CANCELLED
+                else "overdue"
+                if sale.due_date and sale.due_date < today and sale.balance > 0
+                else "paid"
+                if sale.balance == 0
+                else "partially_paid"
+                if sale.amount_paid > 0
+                else "unpaid"
+            ),
+            "is_overdue": bool(sale.due_date and sale.due_date < today and sale.balance > 0),
+            "payments": [
+                {
+                    "id": payment.pk,
+                    "payment_reference": payment.payment_reference,
+                    "amount": payment.amount,
+                    "payment_date": payment.payment_date,
+                    "payment_method": payment.payment_method,
+                    "external_reference": payment.external_reference,
+                    "received_by_name": payment.received_by_name,
+                    "notes": payment.notes,
+                    "status": payment.status,
+                    "reversed_at": payment.reversed_at,
+                    "reversal_reason": payment.reversal_reason,
+                }
+                for payment in sale.payments.all()
+            ],
         }
-        for sale in open_sales.select_related("batch").order_by("sale_date")
+        for sale in open_sales.select_related("batch").prefetch_related("payments").order_by("sale_date")
     ]
     return {
         "total_receivable": money(open_sales.aggregate(total=Sum("balance"))["total"]),

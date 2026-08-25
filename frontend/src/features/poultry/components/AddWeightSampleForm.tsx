@@ -7,7 +7,7 @@ import { z } from "zod";
 
 import { getApiErrorMessage } from "@/lib/errors";
 import { createWeightSample } from "../api/weight-sample-mutations";
-import { formatNumber } from "../utils/formatters";
+import type { PoultryWeightSample } from "../types";
 
 const weightSampleSchema = z.object({
   sampled_at: z.string().min(1, "Weigh date/time is required."),
@@ -32,7 +32,7 @@ type WeightSampleFormValues = z.infer<typeof weightSampleSchema>;
 type AddWeightSampleFormProps = {
   batchId: number;
   defaultAge: number;
-  onSuccess?: (created: any) => void;
+  onSuccess?: (created: PoultryWeightSample) => void;
 };
 
 function toDateTimeLocal(date: Date): string {

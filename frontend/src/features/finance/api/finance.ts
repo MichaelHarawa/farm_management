@@ -190,3 +190,31 @@ export async function getReceivables(
     cache: "no-store",
   });
 }
+
+export async function getFinanceExpenditures(
+  returnTo: string
+): Promise<import("../types").Expenditure[]> {
+  return authenticatedBackendFetch<import("../types").Expenditure[]>(
+    financeApiPaths.expenditures,
+    { returnTo, cache: "no-store" }
+  );
+}
+
+export async function getBatchRevenueUtilization(
+  batchId: number,
+  returnTo: string
+): Promise<import("../types").BatchRevenueUtilization> {
+  return authenticatedBackendFetch<import("../types").BatchRevenueUtilization>(
+    financeApiPaths.batchRevenueUtilization(batchId),
+    { returnTo, cache: "no-store" }
+  );
+}
+
+export async function getCrossBatchFinancing(
+  returnTo: string
+): Promise<{ flows: import("../types").CrossBatchFlow[] }> {
+  return authenticatedBackendFetch<{ flows: import("../types").CrossBatchFlow[] }>(
+    financeApiPaths.crossBatchFinancing,
+    { returnTo, cache: "no-store" }
+  );
+}

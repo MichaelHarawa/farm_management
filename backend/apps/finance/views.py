@@ -18,6 +18,7 @@ from apps.poultry.models import Batch, BatchStatus
 from .models import (
     AccountingPeriod,
     AdHocLabourPayment,
+    AllocationSourceType,
     Asset,
     AssetDepreciationEntry,
     AssetMaintenanceRecord,
@@ -32,6 +33,15 @@ from .models import (
     EmployeeBatchWorkLog,
     EmployeeProfile,
     ExpenseRecognitionSchedule,
+    Expenditure,
+    ExpenditureCategory,
+    ExpenditureStatus,
+    FundingSource,
+    FundingAllocation,
+    FundingReceipt,
+    FundingReceiptStatus,
+    FundingSourceType,
+    SalePayment,
     PayrollEntry,
     PeriodStatus,
     ReplacementReserveTransaction,
@@ -59,6 +69,9 @@ from .serializers import (
     ReplacementReserveTransactionSerializer,
     SharedExpenseSerializer,
     SharedConsumableLotSerializer,
+    FundingReceiptSerializer,
+    RecordSalePaymentSerializer,
+    SalePaymentSerializer,
 )
 from .services.allocations import regenerate_allocations_for_period
 from .services.assets import dispose_asset, impair_asset, link_capital_expense_to_asset
@@ -78,6 +91,7 @@ from .services.reporting import (
     monthly_profitability_report,
     receivables_report,
 )
+from .services.collections import record_sale_payment, reverse_sale_payment
 
 
 def json_safe(value):
@@ -725,7 +739,44 @@ class ReceivablesView(APIView):
     permission_classes = (FinancePermission,)
 
     def get(self, request):
-        return Response(json_safe(receivables_report()))
+        return Response(json_safe(receivables_report(request.query_params)))
+
+
+class SalePaymentsView(APIView):
+    permission_classes = (FinancePermission,)
+
+    def get(self, request, sale_id: int):
+        payments = SalePayment.objects.filter(sale_id=sale_id).select_related(
+            "sale__batch"
+        )
+        return Response(SalePaymentSerializer(payments, many=True).data)
+
+    def post(self, request, sale_id: int):
+        serializer = RecordSalePaymentSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        payment, created = record_sale_payment(
+            sale_id=sale_id,
+            created_by=request.user,
+            **serializer.validated_data,
+        )
+        payment = SalePayment.objects.select_related("sale__batch").get(pk=payment.pk)
+        return Response(
+            SalePaymentSerializer(payment).data,
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
+
+
+class SalePaymentReverseView(APIView):
+    permission_classes = (FinancePermission,)
+
+    def post(self, request, payment_id: int):
+        payment = reverse_sale_payment(
+            payment_id=payment_id,
+            reason=request.data.get("reason", ""),
+            reversed_by=request.user,
+        )
+        payment = SalePayment.objects.select_related("sale__batch").get(pk=payment.pk)
+        return Response(SalePaymentSerializer(payment).data)
 
 
 def resolve_period(request) -> AccountingPeriod | None:
@@ -745,3 +796,271 @@ def resolve_period(request) -> AccountingPeriod | None:
         ).first()
 
     return AccountingPeriod.objects.order_by("-period_start").first()
+
+
+# =============================================================================
+# New API: Expenditures + Funding Allocations (batch cash tracking)
+# =============================================================================
+
+from .serializers import (
+    ExpenditureSerializer,
+    FundingSourceSerializer,
+    FundingAllocationSerializer,
+    BatchRevenueUtilizationSerializer,
+)
+from .services.profitability import (
+    batch_revenue_utilization,
+    validate_funding_allocations,
+    available_batch_cash,
+)
+
+
+class ExpenditureViewSet(viewsets.ModelViewSet):
+    """
+    CRUD + Post action for expenditures.
+    Supports the full funding + cost allocation workflow.
+    """
+    queryset = Expenditure.objects.all().prefetch_related("funding_allocations")
+    serializer_class = ExpenditureSerializer
+    permission_classes = (FinancePermission,)
+    filterset_fields = ["status", "accounting_nature", "category", "expenditure_date"]
+    search_fields = ["description", "payee", "expenditure_reference", "external_reference"]
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
+
+    @action(detail=True, methods=["post"])
+    def post(self, request, pk=None):
+        """
+        Post a draft expenditure. This makes funding allocations count against
+        batch available cash. Supports passing funding_allocations in the body.
+        """
+        funding_data = request.data.get("funding_allocations", []) or []
+        cost_data = request.data.get("cost_allocations")
+
+        with transaction.atomic():
+            expenditure = Expenditure.objects.select_for_update().get(pk=pk)
+            if expenditure.status != ExpenditureStatus.DRAFT:
+                return Response({"detail": "Only draft expenditures can be posted."}, status=400)
+
+            if funding_data:
+                expenditure.funding_allocations.all().delete()
+                for alloc in funding_data:
+                    FundingAllocation.objects.create(
+                        expenditure=expenditure,
+                        funding_source_id=alloc.get("funding_source"),
+                        amount=alloc.get("amount"),
+                        allocation_date=expenditure.expenditure_date or timezone.now().date(),
+                        classification=alloc.get("classification", "reinvestment"),
+                        created_by=request.user,
+                    )
+
+            effective_funding = list(
+                expenditure.funding_allocations.values("funding_source", "amount")
+            )
+            source_ids = [row["funding_source"] for row in effective_funding]
+            # Prevent two postings from spending the same available source balance.
+            list(FundingSource.objects.select_for_update().filter(pk__in=source_ids))
+            validate_funding_allocations(expenditure, effective_funding)
+
+            if cost_data is None:
+                cost_data = expenditure.cost_allocation_plan or []
+
+            # Auto create CostAllocations (only if none linked yet)
+            existing_cost = CostAllocation.objects.filter(expenditure=expenditure).exists()
+            if cost_data and not existing_cost:
+                period = expenditure.accounting_period
+                if not period and cost_data:
+                    period = AccountingPeriod.objects.filter(status=PeriodStatus.OPEN).order_by("-period_start").first()
+
+                total_cost = sum(Decimal(str(c.get("amount", 0))) for c in cost_data) or Decimal("1")
+                for c in cost_data:
+                    batch_id = c.get("batch")
+                    amount = Decimal(str(c.get("amount", 0)))
+                    if not batch_id or amount == 0 or not period:
+                        continue
+                    pct = (amount * Decimal("100") / total_cost).quantize(Decimal("0.0001"))
+                    CostAllocation.objects.create(
+                        accounting_period=period,
+                        batch_id=batch_id,
+                        source_type=AllocationSourceType.EXPENDITURE,
+                        expenditure=expenditure,
+                        allocation_method="direct",
+                        driver_quantity=amount,
+                        total_driver_quantity=total_cost,
+                        allocation_percentage=pct,
+                        allocated_amount=amount,
+                        generated_by=request.user,
+                    )
+
+            expenditure.status = ExpenditureStatus.POSTED
+            expenditure.posted_by = request.user
+            expenditure.posted_at = timezone.now()
+            expenditure.save(update_fields=["status", "posted_by", "posted_at", "updated_at"])
+
+        return Response(ExpenditureSerializer(expenditure).data)
+
+    @action(detail=True, methods=["post"])
+    def void(self, request, pk=None):
+        reason = (request.data.get("reason") or "").strip()
+        if not reason:
+            raise ValidationError({"reason": "A reversal reason is required."})
+        with transaction.atomic():
+            expenditure = Expenditure.objects.select_for_update().get(pk=pk)
+            if expenditure.status != ExpenditureStatus.POSTED:
+                return Response({"detail": "Only posted expenditures can be voided."}, status=400)
+            expenditure.status = ExpenditureStatus.VOID
+            expenditure.reversal_reason = reason
+            expenditure.reversed_at = timezone.now()
+            expenditure.reversed_by = request.user
+            expenditure.save(
+                update_fields=[
+                    "status", "reversal_reason", "reversed_at", "reversed_by", "updated_at"
+                ]
+            )
+        return Response(ExpenditureSerializer(expenditure).data)
+
+    @action(detail=True, methods=["post"], url_path="assign-funding")
+    def assign_funding(self, request, pk=None):
+        """Controlled reconciliation for historical posted, wholly unfunded rows."""
+        funding_data = request.data.get("funding_allocations", []) or []
+        with transaction.atomic():
+            expenditure = Expenditure.objects.select_for_update().get(pk=pk)
+            if expenditure.status != ExpenditureStatus.POSTED:
+                raise ValidationError({"detail": "Use the normal post workflow for drafts."})
+            if expenditure.funding_allocations.exists():
+                raise ValidationError(
+                    {"detail": "This reconciliation action is only for wholly unfunded posted expenditures."}
+                )
+            source_ids = [row.get("funding_source") for row in funding_data]
+            list(FundingSource.objects.select_for_update().filter(pk__in=source_ids))
+            validate_funding_allocations(expenditure, funding_data)
+            for alloc in funding_data:
+                FundingAllocation.objects.create(
+                    expenditure=expenditure,
+                    funding_source_id=alloc["funding_source"],
+                    amount=alloc["amount"],
+                    allocation_date=expenditure.expenditure_date,
+                    classification=alloc.get("classification", "reinvestment"),
+                    notes="Historical funding source assigned through controlled reconciliation.",
+                    created_by=request.user,
+                )
+        return Response(ExpenditureSerializer(expenditure).data)
+
+
+class FundingSourceViewSet(viewsets.ModelViewSet):
+    queryset = FundingSource.objects.all()
+    serializer_class = FundingSourceSerializer
+    permission_classes = (FinancePermission,)
+
+    def list(self, request, *args, **kwargs):
+        sources = list(self.get_queryset().select_related("batch"))
+        if request.query_params.get("include_empty") != "1":
+            from .services.profitability import available_funding_source_cash
+
+            sources = [source for source in sources if available_funding_source_cash(source) > 0]
+        return Response(self.get_serializer(sources, many=True).data)
+
+
+class FundingReceiptViewSet(
+    mixins.CreateModelMixin,
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    viewsets.GenericViewSet,
+):
+    queryset = FundingReceipt.objects.all().select_related("funding_source")
+    serializer_class = FundingReceiptSerializer
+    permission_classes = (FinancePermission,)
+    filterset_fields = ["funding_source", "status"]
+
+    def perform_create(self, serializer):
+        source = serializer.validated_data["funding_source"]
+        if source.source_type == FundingSourceType.BATCH_COLLECTION:
+            raise ValidationError(
+                {"funding_source": "Batch collection balances come from sale payments."}
+            )
+        serializer.save(created_by=self.request.user)
+
+    @action(detail=True, methods=["post"])
+    def reverse(self, request, pk=None):
+        reason = (request.data.get("reason") or "").strip()
+        if not reason:
+            raise ValidationError({"reason": "A reversal reason is required."})
+        with transaction.atomic():
+            receipt = FundingReceipt.objects.select_for_update().select_related(
+                "funding_source"
+            ).get(pk=pk)
+            if receipt.status != FundingReceiptStatus.POSTED:
+                raise ValidationError({"detail": "Only posted receipts can be reversed."})
+            source = FundingSource.objects.select_for_update().get(
+                pk=receipt.funding_source_id
+            )
+            from .services.profitability import available_funding_source_cash
+
+            if available_funding_source_cash(source) < receipt.amount:
+                raise ValidationError(
+                    {"detail": "This receipt funds posted expenditures and cannot be reversed."}
+                )
+            receipt.status = FundingReceiptStatus.REVERSED
+            receipt.reversed_at = timezone.now()
+            receipt.reversed_by = request.user
+            receipt.reversal_reason = reason
+            receipt.save(
+                update_fields=[
+                    "status", "reversed_at", "reversed_by", "reversal_reason", "updated_at"
+                ]
+            )
+        return Response(self.get_serializer(receipt).data)
+
+
+class ExpenditureCategoryViewSet(viewsets.ReadOnlyModelViewSet):
+    """Read-only for frontend selectors."""
+    queryset = ExpenditureCategory.objects.filter(is_active=True).order_by("display_order", "name")
+    serializer_class = None  # use simple or add later
+    permission_classes = (FinancePermission,)
+
+    def get_serializer_class(self):
+        from .serializers import ExpenditureCategorySerializer
+        return ExpenditureCategorySerializer
+
+
+class BatchRevenueUtilizationView(APIView):
+    permission_classes = (FinancePermission,)
+
+    def get(self, request, batch_id: int):
+        batch = get_object_or_404(Batch, pk=batch_id)
+        data = batch_revenue_utilization(batch)
+        return Response(json_safe(data))
+
+
+class CrossBatchFinancingReportView(APIView):
+    """Simple cross-batch financing flows: which batch collections funded expenditures allocated to other batches."""
+    permission_classes = (FinancePermission,)
+
+    def get(self, request):
+        posted_fundings = FundingAllocation.objects.filter(
+            expenditure__status=ExpenditureStatus.POSTED,
+            funding_source__source_type=FundingSourceType.BATCH_COLLECTION,
+        ).select_related("funding_source__batch", "expenditure")
+
+        flows = []
+        for fa in posted_fundings:
+            src_batch = fa.funding_source.batch
+            if not src_batch:
+                continue
+            # find cost allocations linked to the expenditure
+            cas = CostAllocation.objects.filter(expenditure=fa.expenditure).select_related("batch")
+            for ca in cas:
+                if ca.batch_id and ca.batch_id != src_batch.pk:
+                    flows.append({
+                        "funding_batch_id": src_batch.pk,
+                        "funding_batch_code": src_batch.batch_id,
+                        "expenditure_id": fa.expenditure_id,
+                        "expenditure_desc": fa.expenditure.description,
+                        "amount_funded": str(fa.amount),
+                        "allocated_to_batch_id": ca.batch_id,
+                        "allocated_amount": str(ca.allocated_amount),
+                        "date": str(fa.allocation_date),
+                    })
+
+        return Response({"flows": flows[:100]})

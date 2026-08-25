@@ -707,6 +707,10 @@ export function BatchDetailView({
             description={pageHeader.description}
             activeTab={activeTab}
             actionLabel={pageHeader.actionLabel}
+            secondaryAction={activeTab === "sales" ? {
+              label: "Manage Receivables",
+              href: `/finance/receivables?batch=${batch.id}`,
+            } : undefined}
             onAction={() => {
               if (activeTab === "costs") {
                 setOpenModal("input-cost-form");
@@ -769,6 +773,7 @@ export function BatchDetailView({
 
           {activeTab === "sales" ? (
             <SalesTab
+              batch={batch}
               sales={sales}
               metrics={metrics}
               followUpSale={followUpSale}
@@ -1063,6 +1068,7 @@ type PageHeaderProps = {
   description: string;
   activeTab: BatchDetailTab;
   actionLabel?: string;
+  secondaryAction?: { label: string; href: string };
   onAction: () => void;
   onTabChange: (tab: BatchDetailTab) => void;
 };
@@ -1072,6 +1078,7 @@ function PageHeader({
   description,
   activeTab,
   actionLabel,
+  secondaryAction,
   onAction,
   onTabChange,
 }: PageHeaderProps) {
@@ -1092,15 +1099,18 @@ function PageHeader({
           <p className="mt-2 text-base leading-7 text-[#747b8d]">{description}</p>
         </div>
 
-        {actionLabel ? (
-          <button
-            type="button"
-            onClick={onAction}
-            className="h-14 rounded-xl bg-[#151f36] px-8 text-base font-bold text-white transition hover:bg-[#22345f]"
-          >
-            {actionLabel}
-          </button>
-        ) : null}
+        <div className="flex flex-wrap gap-3">
+          {secondaryAction ? <Link href={secondaryAction.href} className="flex h-14 items-center rounded-xl bg-[#151f36] px-8 text-base font-bold !text-white transition hover:bg-[#22345f] hover:!text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e1aa3f] focus-visible:ring-offset-2">{secondaryAction.label}</Link> : null}
+          {actionLabel ? (
+            <button
+              type="button"
+              onClick={onAction}
+              className="h-14 rounded-xl bg-[#151f36] px-8 text-base font-bold text-white transition hover:bg-[#22345f]"
+            >
+              {actionLabel}
+            </button>
+          ) : null}
+        </div>
       </div>
 
       <nav className="mt-7 flex flex-wrap gap-5">
@@ -1670,12 +1680,13 @@ function CostsTab({
 }
 
 type SalesTabProps = {
+  batch: PoultryBatch;
   sales: PoultrySale[];
   metrics: Metrics;
   followUpSale?: PoultrySale;
 };
 
-function SalesTab({ sales, metrics, followUpSale }: SalesTabProps) {
+function SalesTab({ batch, sales, metrics, followUpSale }: SalesTabProps) {
   return (
     <div className="mt-8 grid gap-8">
       <div className="grid gap-6 lg:grid-cols-3">
@@ -1721,7 +1732,15 @@ function SalesTab({ sales, metrics, followUpSale }: SalesTabProps) {
       </Card>
 
       <Card>
-        <RegisterHeader title="Sales transactions" />
+        <div className="flex flex-wrap items-center justify-between gap-4 px-6 pt-6 sm:px-10">
+          <RegisterHeader title="Sales transactions" />
+          <Link
+            href={`/finance/receivables?batch=${batch.id}`}
+            className="rounded-lg bg-[#151f36] px-6 py-3 text-center text-sm font-bold !text-white transition hover:bg-[#22345f] hover:!text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e1aa3f] focus-visible:ring-offset-2"
+          >
+            Manage Receivables
+          </Link>
+        </div>
         <SimpleTable
           columns={["Sale ID", "Date", "Qty", "Status", "Amount"]}
           rows={sales.map((sale) => [
@@ -1742,8 +1761,8 @@ function SalesTab({ sales, metrics, followUpSale }: SalesTabProps) {
               {followUpSale.sale_id}.
             </p>
             <Link
-              href="/finance/receivables"
-              className="rounded-lg bg-[#151f36] px-8 py-4 text-center text-base font-bold text-white"
+              href={`/finance/receivables?batch=${batch.id}&sale=${encodeURIComponent(followUpSale.sale_id)}`}
+              className="rounded-lg bg-[#151f36] px-8 py-4 text-center text-base font-bold !text-white transition hover:bg-[#22345f] hover:!text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e1aa3f] focus-visible:ring-offset-2"
             >
               Review receivable
             </Link>

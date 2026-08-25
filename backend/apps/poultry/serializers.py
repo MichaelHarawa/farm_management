@@ -236,6 +236,7 @@ class SalesSerializer(serializers.ModelSerializer):
             "batch",
             "sale_id",
             "sale_date",
+            "due_date",
             "product_type",
             "quantity_sold",
             "unit_price",
@@ -306,6 +307,10 @@ class SalesSerializer(serializers.ModelSerializer):
         )
 
         errors = {}
+        due_date = attrs.get("due_date", getattr(self.instance, "due_date", None))
+        sale_date = attrs.get("sale_date", getattr(self.instance, "sale_date", None))
+        if due_date and sale_date and due_date < sale_date.date():
+            errors["due_date"] = "Payment due date cannot be before the sale date."
         if buyer_type == BuyerType.OTHER and len(buyer_type_other) < 2:
             errors["buyer_type_other"] = (
                 "Other buyer type must contain at least 2 characters."

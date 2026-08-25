@@ -68,6 +68,7 @@ export function AddSaleForm({ batchId }: AddSaleFormProps) {
     resolver: zodResolver(saleSchema),
     defaultValues: {
       sale_date: getDefaultSaleDate(),
+      due_date: "",
       product_type: "live_chicken",
       quantity_sold: 1,
       unit_price: 0,
@@ -132,6 +133,7 @@ export function AddSaleForm({ batchId }: AddSaleFormProps) {
         : values.amount_paid;
     const payload: CreateSalePayload = {
       ...values,
+      due_date: values.due_date || null,
       buyer_type_other:
         values.buyer_type === "other" ? values.buyer_type_other.trim() : "",
       amount_paid: submittedAmountPaid,
@@ -143,6 +145,7 @@ export function AddSaleForm({ batchId }: AddSaleFormProps) {
 
       reset({
         sale_date: getDefaultSaleDate(),
+        due_date: "",
         product_type: "live_chicken",
         quantity_sold: 1,
         unit_price: 0,
@@ -245,6 +248,15 @@ export function AddSaleForm({ batchId }: AddSaleFormProps) {
               </option>
             ))}
           </select>
+        </FormField>
+
+        <FormField label="Payment due date" error={errors.due_date?.message}>
+          <input
+            id="sale-due-date"
+            type="date"
+            {...register("due_date")}
+            className="form-input"
+          />
         </FormField>
 
         {buyerType === "other" ? (

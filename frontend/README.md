@@ -1,36 +1,52 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Farm Management System — Frontend
+
+This is the Next.js (App Router) frontend for the Farm Management System.
+
+## Tech
+
+- Next.js 16 + React 19 + TypeScript
+- Tailwind CSS
+- React Hook Form + Zod
+- Axios / fetch
+- lucide-react icons
 
 ## Getting Started
 
-First, run the development server:
-
 ```bash
+cd frontend
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open http://localhost:3000
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+The frontend expects the backend at the URL configured via `NEXT_PUBLIC_API_BASE_URL` (see root `.env` and root `README.md`).
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Key Routes
 
-## Learn More
+- `/` — Module landing (Poultry, Crops placeholder, Goats placeholder)
+- `/poultry` — Batch register + dashboard
+- `/poultry/batches/[id]` — Full batch detail (overview, flock, costs, sales, mortality, feed, vaccination, growth)
+- `/poultry/dashboard` — Aggregated flock visuals and filters
+- `/poultry/guides` — Operational + Finance help (zero-knowledge guides)
+- `/finance/*` — Employees, Payroll, Labour, Expenses, Consumables, Assets, Monthly, Batch profitability, etc.
 
-To learn more about Next.js, take a look at the following resources:
+## Development
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+npm run lint
+npx tsc --noEmit
+npm run build
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+See the **root `README.md`** for full installation, configuration, architecture, accounting model, and contribution guidelines.
 
-## Deploy on Vercel
+## Authentication
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+The app uses a Next.js auth BFF that sets HttpOnly cookies. Login flow is at `/login`. Session refresh and idle timeout are configurable via environment variables.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Important Notes
+
+- Server Components fetch initial data directly from the Django API (using server-only authenticated fetch).
+- Client components use proxy routes (`/api/poultry/...`, `/api/finance/...`) for mutations and live refresh.
+- All monetary values are handled as `Decimal` on the backend and displayed consistently on the frontend.

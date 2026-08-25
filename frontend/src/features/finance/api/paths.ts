@@ -37,4 +37,9 @@ export const financeApiPaths = {
     return `${FINANCE_ROOT}/reports/batches?${searchParams.toString()}`;
   },
   receivables: `${FINANCE_ROOT}/receivables`,
+  expenditures: `${FINANCE_ROOT}/expenditures`,
+  fundingSources: `${FINANCE_ROOT}/funding-sources`,
+  batchRevenueUtilization: (batchId: number) =>
+    `${FINANCE_ROOT}/reports/batches/${batchId}/revenue-utilization`,
+  crossBatchFinancing: `${FINANCE_ROOT}/reports/cross-batch-financing`,
 } as const;

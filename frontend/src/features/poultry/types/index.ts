@@ -129,6 +129,7 @@ export type PoultrySale = {
   batch: number;
   sale_id: string;
   sale_date: string;
+  due_date: string | null;
   product_type: ProductType;
   quantity_sold: number;
   unit_price: number;
@@ -233,6 +234,7 @@ export type CreateVaccinationPayload = {
 
 export type CreateSalePayload = {
   sale_date: string;
+  due_date: string | null;
   product_type: ProductType;
   quantity_sold: number;
   unit_price: number;

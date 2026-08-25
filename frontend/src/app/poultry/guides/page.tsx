@@ -45,7 +45,7 @@ export default function PoultryGuidesPage() {
             <div className="mt-4 text-[#747b8d] space-y-2">
               <p>The system is split into two main areas: <strong>Poultry</strong> (flock tracking) and <strong>Finance</strong> (money tracking).</p>
               <p>Start at <Link href="/poultry" className="font-bold text-[#151926] hover:underline">/poultry</Link> for the main register. Use the top cards to jump between Flock Dashboard, Finance, and this Guide.</p>
-              <p>All data lives in "batches" (production cycles). You record activities inside each batch's detail view.</p>
+              <p>All data lives in &quot;batches&quot; (production cycles). You record activities inside each batch&apos;s detail view.</p>
             </div>
           </details>
 
@@ -57,9 +57,9 @@ export default function PoultryGuidesPage() {
             </summary>
             <div className="mt-4 text-[#747b8d] space-y-2">
               <ul className="list-disc pl-5 space-y-1">
-                <li>Click yellow "Add batch" button.</li>
+                <li>Click yellow &quot;Add batch&quot; button.</li>
                 <li>Select bird type. For broilers, pick strain (Ross 308 or Cobb 500) — this powers growth targets.</li>
-                <li>Enter dates and quantity. Use "Book chicks" dialog for future placements.</li>
+                <li>Enter dates and quantity. Use &quot;Book chicks&quot; dialog for future placements.</li>
               </ul>
               <p className="text-sm text-[#e1aa3f]">Tip: Confirm delivery on a batch to activate it for recording.</p>
             </div>
@@ -252,7 +252,7 @@ export default function PoultryGuidesPage() {
             <div className="mt-4 text-[#747b8d]">
               <p>From Finance page or batch Costs tab:</p>
               <ol className="list-decimal pl-5 text-sm space-y-1">
-                <li>Click "Add input cost"</li>
+                <li>Click &quot;Add input cost&quot;</li>
                 <li>Choose category (feed, drug, transport...)</li>
                 <li>Enter item, quantity, unit cost, date, and optional notes</li>
                 <li>Save — it automatically updates batch and overall profitability</li>

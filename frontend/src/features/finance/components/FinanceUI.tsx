@@ -60,6 +60,8 @@ export function FinancePageShell({
 export function FinanceNav() {
   const links = [
     ["Dashboard", "/finance"],
+    ["Expenditures", "/finance/expenditures"],
+    ["Revenue Usage", "/finance/revenue-usage"],
     ["Batch Analysis", "/finance/batches"],
     ["Receivables", "/finance/receivables"],
     ["Employees", "/finance/employees"],
@@ -70,6 +72,7 @@ export function FinanceNav() {
     ["Assets", "/finance/assets"],
     ["Monthly", "/finance/monthly"],
   ];
+
 
   return (
     <nav className="flex flex-wrap justify-center gap-2">

@@ -282,3 +282,57 @@ class BatchProfitabilitySnapshotAdmin(admin.ModelAdmin):
     )
     list_filter = ("final", "status", "accounting_period")
     autocomplete_fields = ("batch", "accounting_period", "generated_by")
+
+
+# New models for batch cash funding tracking
+from .models import (
+    Expenditure,
+    FundingSource,
+    FundingAllocation,
+    FundingReceipt,
+    SalePayment,
+)
+
+
+@admin.register(FundingSource)
+class FundingSourceAdmin(admin.ModelAdmin):
+    list_display = ("source_type", "batch", "description")
+    list_filter = ("source_type",)
+    search_fields = ("description", "batch__batch_id")
+    autocomplete_fields = ("batch",)
+
+
+@admin.register(Expenditure)
+class ExpenditureAdmin(admin.ModelAdmin):
+    list_display = ("expenditure_date", "description", "amount", "status", "accounting_nature", "category")
+    list_filter = ("status", "accounting_nature", "farm_module")
+    search_fields = ("description", "payee", "reference_number")
+    autocomplete_fields = ("accounting_period", "created_by", "posted_by", "reversed_by", "reversed_expenditure")
+
+
+@admin.register(FundingAllocation)
+class FundingAllocationAdmin(admin.ModelAdmin):
+    list_display = ("expenditure", "funding_source", "amount", "allocation_date", "classification")
+    list_filter = ("classification",)
+    autocomplete_fields = ("expenditure", "funding_source", "created_by")
+
+
+@admin.register(FundingReceipt)
+class FundingReceiptAdmin(admin.ModelAdmin):
+    list_display = ("funding_source", "receipt_date", "amount", "status", "reference")
+    list_filter = ("status", "funding_source__source_type")
+    search_fields = ("reference", "funding_source__description")
+    readonly_fields = ("status", "reversed_at", "reversed_by", "reversal_reason")
+
+
+@admin.register(SalePayment)
+class SalePaymentAdmin(admin.ModelAdmin):
+    list_display = ("payment_reference", "sale", "payment_date", "amount", "status")
+    list_filter = ("status", "payment_method", "payment_date")
+    search_fields = ("payment_reference", "external_reference", "sale__sale_id", "sale__buyer_name")
+    readonly_fields = (
+        "sale", "payment_reference", "idempotency_key", "amount", "payment_date",
+        "payment_method", "external_reference", "received_by_name", "notes", "status",
+        "created_by", "created_at", "updated_at", "reversed_at", "reversed_by",
+        "reversal_reason",
+    )

@@ -1,711 +1,330 @@
 # Farm Management System
 
-Farm Management System is a Django + Next.js application for tracking farm production by module. The current live module is Poultry, with Crops and Goats represented as planned module workspaces.
+A modern, full-stack farm operations platform for tracking production, costs, revenue, and profitability across farm modules. The system separates **operational tracking** (poultry batches, mortality, feed, vaccinations) from **management accounting** (profitability, allocations, cash flow, depreciation, and period reporting).
+
+Currently, the **Poultry** module is fully operational. A rich **Finance** module provides employee management, payroll, ad-hoc labour, consumables, fixed assets with depreciation, shared expense allocation, and batch-level profitability reporting. Crops and Goats are planned future modules shown as placeholders.
+
+**Live at**:
+- Frontend: http://localhost:3000
+- Backend API: http://localhost:7070/api/v1/
+- API docs: http://localhost:7070/api/v1/docs/
+- Django Admin: http://localhost:7070/admin/
+
+---
+
+## Table of Contents
+
+- [Project Overview](#project-overview)
+- [Key Features](#key-features)
+- [Architecture](#architecture)
+- [Technology Stack](#technology-stack)
+- [Prerequisites & Dependencies](#prerequisites--dependencies)
+- [Getting Started](#getting-started)
+  - [Local Development (Backend)](#local-development-backend)
+  - [Local Development (Frontend)](#local-development-frontend)
+  - [Docker (Recommended for Backend + DB)](#docker-recommended-for-backend--db)
+- [Configuration](#configuration)
+- [Usage Guide](#usage-guide)
+- [API Overview](#api-overview)
+- [Financial & Accounting Model](#financial--accounting-model)
+- [Testing & Quality Checks](#testing--quality-checks)
+- [Project Structure](#project-structure)
+- [Contributing](#contributing)
+- [License](#license)
+
+---
+
+## Project Overview
+
+The Farm Management System enables precise operational control and transparent financial reporting for small-to-medium farms. 
+
+Core principles:
+- **Separation of concerns**: Operational records (sales, mortality, feed, input costs) feed into authoritative accounting calculations performed in the backend.
+- **Provisional vs Final**: Active/selling batches show provisional results; closed batches have immutable final snapshots.
+- **Auditability**: All shared costs, payroll, depreciation, and allocations are stored as explicit rows (`CostAllocation`) rather than ad-hoc redistribution.
+- **Cash vs Profit distinction**: Revenue utilization (where batch cash was spent) is tracked separately from profitability.
+
+The system currently focuses on poultry production with integrated farm-wide finance.
+
+---
+
+## Key Features
+
+### Poultry Module
+- Batch registration, status lifecycle (booked → planned → delivered → active → selling → closed)
+- Input costs, sales (with payment tracking and balances), mortality, feed usage, vaccinations
+- Automatic live-bird reconciliation and closure rules
+- Growth tracking with Ross 308 / Cobb 500 target curves + severity alerts
+- Flock dashboard with filters, status pie, bars for birds by type, sales, mortality, feed
+
+### Finance & Accounting Module
+- Employee profiles linked to system users with salary splits (production / admin / selling)
+- Accounting periods with open/recalculate/close workflow
+- Payroll generation and bird-day allocation
+- Ad-hoc labour, shared expenses, consumable lots + usage recognition
+- Fixed assets, categories, straight-line and units-of-production depreciation
+- Asset maintenance, replacement reserves, impairment, disposal
+- Batch profitability reports (revenue, direct costs, allocated costs, gross/net profit, provisional/final)
+- Monthly farm profitability, receivables, warnings
+- Cost allocation engine using bird-days (or other drivers) with exact reconciliation
+
+### Cross-cutting
+- JWT + cookie-based auth with role-based permissions
+- Decimal-precise money handling (no floats)
+- USD reference capture for inflation/purchasing power analysis
+- Comprehensive OpenAPI docs (drf-spectacular)
+
+---
+
+## Architecture
+
+- **Backend**: Django 6 + Django REST Framework (DRF) + drf-spectacular. Services encapsulate complex calculations (profitability, allocations, depreciation). Models use `Decimal` for all monetary fields.
+- **Frontend**: Next.js 16 (App Router) + React 19 + TypeScript. Server Components fetch initial data; client components handle forms and interactivity via proxy API routes (`/api/...`).
+- **Auth**: Django issues JWTs; Next.js BFF manages secure HttpOnly cookies and session refresh.
+- **Database**: PostgreSQL. Row-level locking + database transactions protect against concurrent overselling / over-allocation.
+- **Deployment**: Docker Compose for backend + Postgres (dev). Frontend runs via `npm run dev` or production build.
+
+Data flows:
+1. Operational events (sales, mortality, feed, costs) recorded via poultry APIs.
+2. Finance services compute direct + allocated costs using stored allocation rows.
+3. Reports and batch detail pages consume authoritative snapshots / live calculations.
+
+---
+
+## Technology Stack
+
+**Backend**
+- Python 3.12+
+- Django 6.0
+- Django REST Framework + drf-spectacular (OpenAPI)
+- PostgreSQL + psycopg2
+- python-decouple, django-environ
+
+**Frontend**
+- Next.js 16 (App Router)
+- React 19, TypeScript
+- Tailwind CSS 4
+- React Hook Form + Zod
+- Axios / fetch
+- lucide-react icons
+- @tanstack/react-table (some tables)
 
-## Current System Scope
+**Dev / Ops**
+- Docker + docker-compose
+- PowerShell / bash scripts for local runs
+- ESLint, TypeScript compiler, Next build
+- Django `check`, `test`, migrations
 
-The system currently supports:
+---
 
-- A module landing workspace at `http://localhost:3000`
-- A poultry batch register at `http://localhost:3000/poultry`
-- A poultry batch detail workspace at `http://localhost:3000/poultry/batches/[id]`
-- Backend API documentation at `http://localhost:7070/api/v1/docs/`
-- Django admin at `http://localhost:7070/admin/`
+## Prerequisites & Dependencies
 
-## Live Modules
+**Backend**
+- Python 3.12+
+- PostgreSQL (local or via Docker)
+- `pip install -r requirements.txt`
 
-### Poultry
+**Frontend**
+- Node.js 20+ (LTS recommended)
+- npm (or yarn/pnpm/bun)
 
-The Poultry module is the active production workspace. It supports:
+**Docker (optional but recommended)**
+- Docker Desktop / Docker Engine + Compose v2
 
-- Batch registration and listing
-- Batch detail review
-- Input cost recording
-- Sales and collection recording
-- Flock movement summaries
-- Cost summaries by category
-- Sales collection summaries
-- Net position and gross position calculations in the frontend
-- Operational readouts for quantity, maturity timing, sales, input costs, mortality, feed usage, and balances
-
-### Planned Modules
-
-The landing page also displays future workspaces:
-
-- Crops: season planning workspace
-- Goats: herd activity workspace
-
-These modules are currently UI placeholders and do not yet have backend models or routes.
-
-## Frontend Operations
-
-The frontend lives in `frontend/` and is built with Next.js, React, TypeScript, Tailwind CSS, React Hook Form, Zod, Axios/fetch, and lucide-react icons.
-
-Current frontend routes:
-
-| Route | Purpose |
-| --- | --- |
-| `/` | Executive module landing page with Poultry, Crops, and Goats module cards |
-| `/poultry` | Poultry production command view and batch portfolio table |
-| `/poultry/batches/[id]` | Batch detail workspace with overview, flock, costs, sales, mortality, and feed usage views |
-| `/api/poultry/batches/[id]/input-costs` | Next.js server route that proxies input cost creation to Django |
-| `/api/poultry/batches/[id]/sales` | Next.js server route that proxies sale creation to Django |
-| `/api/poultry/batches/[id]/mortality` | Next.js server route that proxies mortality creation to Django |
-| `/api/poultry/batches/[id]/feed-usage` | Next.js server route that proxies feed usage creation to Django |
-
-Current frontend poultry features:
-
-- Reads poultry batches from the Django API.
-- Displays a batch portfolio table with flock size, placement date, maturity date, status, and a view icon under `Readout`.
-- Opens detailed batch workspaces from the register.
-- Displays batch production information, current birds, sold birds, mortality, input cost totals, sales totals, feed usage, cash collected, outstanding balances, and net position.
-- Records input costs through a form with purchase date, item, category, package count, package size, unit measurement, and cost per unit.
-- Records sales through a form with sale date, product type, quantity sold, unit price, buyer details, payment status, payment method, amount paid, balance, seller, and notes.
-- Records mortality through a form with mortality date, quantity dead, age in days, suspected cause, description, action taken, and reporter name.
-- Records feed usage through a form with flock age, feeding dates, feed type, source, quantity, unit, current bird count, notes, and reporter name.
-- Records vaccinations and drugs with administration date, vaccine type, conditional other-vaccine name, quantity, notes, reporter name, and an auto-calculated timely status.
-- Recalculates available live birds as initial birds less sold birds and recorded mortality.
-
-### Finance And Profitability
-
-The Finance module adds workforce management, payroll snapshots, cost allocation,
-batch profitability, monthly profitability, receivables, and business-intelligence
-warnings. Backend services perform the authoritative financial calculations with
-`Decimal`; frontend pages format and display returned values.
-
-Current frontend finance routes:
-
-| Route | Purpose |
-| --- | --- |
-| `/finance` | Dashboard for active batch exposure, closed-batch profit, receivables, and warnings |
-| `/finance/employees` | Create linked system users and employee profiles; review salary allocation splits |
-| `/finance/payroll` | Generate payroll snapshots, recalculate allocations, and close periods |
-| `/finance/labour` | Record ad-hoc labour payments by cost scope |
-| `/finance/expenses` | Record shared, admin, selling, finance, capital, tax, and other expenses |
-| `/finance/consumables` | Record shared consumable purchases as inventory and usage as recognized cost |
-| `/finance/assets` | Manage asset categories, fixed assets, depreciation runs, and depreciation allocation |
-| `/finance/monthly` | Monthly farm profitability report |
-| `/finance/batches/[id]` | Batch profitability report |
-
-The frontend expects `NEXT_PUBLIC_API_BASE_URL` to point to the Django API version root. For local development this is typically:
-
-```env
-NEXT_PUBLIC_API_BASE_URL=http://localhost:7070/api/v1
-```
-
-## Backend Operations
-
-The backend lives in `backend/` and is built with Django, Django REST Framework, drf-spectacular, PostgreSQL, and django-environ.
-
-Current backend API root:
-
-```text
-http://localhost:7070/api/v1/
-```
-
-Current poultry API base:
-
-```text
-http://localhost:7070/api/v1/poultry-management
-```
-
-Current backend routes:
-
-| Method | Endpoint | Purpose |
-| --- | --- | --- |
-| `GET` | `/health/` | Health check |
-| `GET` | `/api/v1/docs/` | Swagger API documentation |
-| `GET` | `/api/v1/schema/` | OpenAPI schema |
-| `GET` | `/api/v1/poultry-management` | List poultry batches |
-| `POST` | `/api/v1/poultry-management` | Create a poultry batch |
-| `GET` | `/api/v1/poultry-management/{id}` | Retrieve one poultry batch |
-| `GET` | `/api/v1/poultry-management/{id}/input_costs` | List input costs for a batch |
-| `POST` | `/api/v1/poultry-management/{id}/input_costs` | Create an input cost for a batch |
-| `GET` | `/api/v1/poultry-management/{id}/feed_input_costs` | List feed-related input costs filtered by category |
-| `GET` | `/api/v1/poultry-management/{id}/sales` | List sales for a batch |
-| `POST` | `/api/v1/poultry-management/{id}/sales` | Create a sale for a batch |
-| `GET` | `/api/v1/poultry-management/{id}/mortality` | List mortality records for a batch |
-| `POST` | `/api/v1/poultry-management/{id}/mortality` | Create a mortality record for a batch |
-| `GET` | `/api/v1/poultry-management/{id}/feed_usage` | List feed usage records for a batch |
-| `POST` | `/api/v1/poultry-management/{id}/feed_usage` | Create a feed usage record for a batch |
-| `GET` | `/api/v1/poultry-management/{id}/drugs_vaccine` | List vaccination and drug records for a batch |
-| `POST` | `/api/v1/poultry-management/{id}/drugs_vaccine` | Create a vaccination or drug record for a batch |
-
-Current finance API routes:
-
-| Method | Endpoint | Purpose |
-| --- | --- | --- |
-| `GET/POST` | `/api/v1/finance/employees` | List or create employee profiles and linked system users |
-| `GET/PATCH` | `/api/v1/finance/employees/{id}` | Retrieve or edit employee details |
-| `POST` | `/api/v1/finance/employees/{id}/activate` | Activate employee and linked user |
-| `POST` | `/api/v1/finance/employees/{id}/deactivate` | Deactivate employee and linked user |
-| `GET/POST` | `/api/v1/finance/accounting-periods` | List or create accounting periods |
-| `POST` | `/api/v1/finance/accounting-periods/{id}/generate-payroll` | Generate monthly permanent-employee payroll snapshots |
-| `POST` | `/api/v1/finance/accounting-periods/{id}/recalculate` | Recalculate bird-day snapshots and unlocked allocations |
-| `POST` | `/api/v1/finance/accounting-periods/{id}/close` | Close a period and lock allocations |
-| `GET/POST` | `/api/v1/finance/payroll-entries` | Manage payroll entries |
-| `GET/POST` | `/api/v1/finance/ad-hoc-labour` | Manage temporary and ad-hoc labour payments |
-| `GET/POST` | `/api/v1/finance/expenses` | Manage shared expenses |
-| `GET/POST` | `/api/v1/finance/consumable-lots` | Record shared consumable purchase lots |
-| `GET/POST` | `/api/v1/finance/consumable-usages` | Recognize consumable usage by period, batch, or allocation driver |
-| `GET/POST` | `/api/v1/finance/asset-categories` | Configure asset categories and depreciation defaults |
-| `GET/POST` | `/api/v1/finance/assets` | Manage fixed assets |
-| `POST` | `/api/v1/finance/assets/from-expense` | Create an asset from a capital-expenditure expense |
-| `GET/POST` | `/api/v1/finance/assets/{id}/usage` | Record usage for units-of-production depreciation or allocation |
-| `GET/POST` | `/api/v1/finance/assets/{id}/maintenance` | Record asset maintenance |
-| `GET/POST` | `/api/v1/finance/assets/{id}/replacement-plan` | Record replacement cost and reserve target |
-| `GET/POST` | `/api/v1/finance/assets/{id}/reserve-transactions` | Record replacement reserve contributions, withdrawals, and returns |
-| `POST` | `/api/v1/finance/assets/{id}/impair` | Record an impairment against carrying value |
-| `POST` | `/api/v1/finance/assets/{id}/dispose` | Dispose an asset and calculate gain or loss |
-| `GET` | `/api/v1/finance/assets/{id}/depreciation-schedule` | Review depreciation entries |
-| `GET` | `/api/v1/finance/assets/{id}/recovery` | Review gross cost, accumulated depreciation, reserve balance, and unrecovered amount |
-| `POST` | `/api/v1/finance/accounting-periods/{id}/generate-depreciation` | Generate monthly depreciation entries |
-| `POST` | `/api/v1/finance/accounting-periods/{id}/allocate-depreciation` | Allocate production depreciation through `CostAllocation` |
-| `GET` | `/api/v1/finance/reports/monthly?period=YYYY-MM` | Monthly profitability report |
-| `GET` | `/api/v1/finance/reports/batches/{batch_id}` | Batch profitability report |
-| `GET` | `/api/v1/finance/dashboard` | Dashboard indicators and warnings |
-| `GET` | `/api/v1/finance/receivables` | Open customer receivables |
-
-## Poultry Data Model
-
-### Batch
-
-Tracks a poultry production cycle.
-
-Important fields:
-
-- `batch_id`: generated as `BATCH-YYYYMMDD-0001`
-- `bird_type`: broilers, layers, local, kloilers, or mikolongwe
-- `source`: `proto`, `central_poultry`, or `other`
-- `source_other`: manually entered source name when `source` is `other`
-- `entry_date`
-- `expected_maturity_date`
-- `quantity`
-- `created_at`
-- `updated_at`
-
-### Input Costs
-
-Tracks costs attached to a batch.
-
-Important fields:
-
-- `item`
-- `category`
-- `quantity`
-- `unit`
-- `unit_measurement`
-- `unit_cost`
-- `purchase_date`
-- `notes`
-
-The frontend calculates estimated totals from:
-
-```text
-quantity * unit * unit_cost
-```
-
-The backend exposes the same calculation as `direct_input_total`.
-
-### Sales
-
-Tracks sales and collections attached to a batch.
-
-Important fields:
-
-- `sale_id`: generated as `SALE-YYYYMMDD-0001`
-- `sale_date`
-- `product_type`: live chicken, dressed chicken, eggs, or manure
-- `quantity_sold`
-- `unit_price`
-- `buyer_name`
-- `buyer_type`
-- `payment_status`
-- `payment_method`
-- `amount_paid`
-- `balance`
-- `sold_by_name`
-- `notes`
-
-Sales integrity rules:
-
-- `sale_total = quantity_sold * unit_price`
-- `balance = sale_total - amount_paid`
-- `PAID`, `PARTIAL`, and `UNPAID` are normalized from payment amount and balance
-- `CANCELLED` sales are excluded from revenue, birds sold, cash collected, receivables, and closure
-- only live chicken and dressed chicken reduce the live-bird balance
-- eggs and manure generate revenue without reducing live birds
-
-Batch closure uses:
-
-```text
-remaining_live_birds =
-  initial_batch_quantity
-  - valid_bird_units_sold
-  - recorded_mortality
-```
-
-A batch closes automatically only when `remaining_live_birds == 0`. Sale and
-mortality creation use database transactions and row locking to prevent
-overselling.
-
-## Management Accounting Definitions
-
-Batch revenue is the sum of valid non-cancelled sales linked to the batch,
-including eggs and manure revenue. Customer cash collected is valid sales
-`amount_paid`. Accounts receivable is valid sales `balance`.
-
-Direct batch cost is input costs plus batch-direct temporary labour plus directly
-assigned production expenses. Allocated production cost is permanent production
-payroll, shared production temporary labour, and shared production overhead
-allocated through auditable `CostAllocation` rows.
-
-```text
-total_production_cost = direct_batch_cost + allocated_production_cost
-batch_gross_profit = batch_revenue - total_production_cost
-fully_loaded_batch_profit =
-  batch_gross_profit
-  - directly attributable selling costs
-  - separately disclosed administration allocation
-```
-
-Administration is displayed separately and is not hidden inside production cost.
-Gross margin, fully loaded margin, mortality rate, and collection rate return
-`null` when the denominator is zero.
-
-Active and selling batches are labelled `PROVISIONAL`:
-
-```text
-provisional_saleable_birds =
-  valid_bird_units_already_sold + remaining_live_birds
-
-provisional_cost_per_saleable_bird =
-  accumulated_production_cost / provisional_saleable_birds
-```
-
-Closed batches are labelled `FINAL`; their final profitability snapshot is
-created once and protected from casual overwrite.
-
-Monthly profitability separates profitability, cash movement, receivables, and
-active-batch work in progress. Cash flow is not presented as net profit.
-Monthly cost of goods sold uses the same backend batch profitability service:
-period bird sales are multiplied by final cost per bird for closed batches, or
-provisional saleable-bird cost for active/selling batches.
-
-## Integrated Finance User Manual
-
-### Accounting periods
-
-Create periods from `/finance/payroll` before payroll, labour, consumable usage,
-expense recognition, or depreciation runs. A normal period is one month, for
-example `2026-07-01` to `2026-07-31`.
-
-Open periods can be recalculated. Closing a period locks allocations,
-consumable usage, prepaid recognition, asset usage, and depreciation entries.
-Reopening requires an audit reason and increments the period recalculation
-version. Closed periods are not silently changed.
-
-### Direct, shared, deferred, and capital costs
-
-Direct batch costs are costs traceable to one batch: poultry `InputCosts`,
-batch-direct temporary labour, directly assigned production expenses, and
-batch-direct consumable usage.
-
-Shared production costs are allocated through `CostAllocation`. Payroll,
-shared temporary labour, shared production overhead, shared consumable usage,
-and production depreciation all use the same allocation engine. Bird-days is
-the default driver, but consumable and asset records can carry a more suitable
-driver such as equal share, house occupancy days, revenue share, or manual with
-reason.
-
-Prepaid expenses use recognition schedules. Payment affects cash flow on the
-payment date; recognized expense affects profit in the benefiting period. The
-same cost should not be counted both at payment and through the schedule.
-
-Capital expenditure is isolated from ordinary operating expense. Capital asset
-costs are recovered through depreciation, impairment, and disposal calculations,
-not by charging the whole purchase to one batch.
-
-### Consumables
-
-Use `/finance/consumables` to record a lot when disinfectant, fuel, bedding,
-medication, packaging, or other shared supplies are purchased. A lot stores:
-
-```text
-unit_cost = total_purchase_cost / quantity_purchased
-```
-
-When stock is used, record a consumable usage. Recognized cost is:
-
-```text
-recognized_consumable_cost = quantity_used * lot_unit_cost
-```
-
-Unused quantity remains consumable inventory. The service prevents negative
-stock and usage above available quantity. Expired lots with stock appear as
-warnings.
-
-Worked example: MWK 300,000 of disinfectant bought once and consumed over
-three months stays in inventory until usage is recorded. If MWK 100,000 is used
-in July, only MWK 100,000 affects July profit; the remaining MWK 200,000 stays
-as consumable inventory.
-
-### Assets and depreciation
-
-Use `/finance/assets` to configure asset categories, create assets, and run
-period depreciation. Asset categories provide defaults only; useful lives,
-residual values, and capitalization thresholds are configurable.
-
-Straight-line depreciation:
-
-```text
-depreciable_amount =
-  total_capitalized_cost - residual_value - recognized_impairment_amount
-
-full_month_depreciation =
-  depreciable_amount / useful_life_months
-
-period_depreciation =
-  full_month_depreciation * eligible_depreciation_days / total_days_in_period
-```
-
-Example:
-
-```text
-Capitalized cost: MWK 12,000,000
-Residual value: MWK 1,200,000
-Useful life: 120 months
-Monthly depreciation: MWK 90,000
-```
-
-Units-of-production depreciation:
-
-```text
-unit_depreciation =
-  depreciable_amount / estimated_total_lifetime_units
-
-period_depreciation =
-  actual_period_units * unit_depreciation
-```
-
-Depreciation method and allocation driver are separate. A vehicle can depreciate
-straight-line while allocation uses delivery kilometres; a generator can use
-units-of-production depreciation while allocation is based on batch usage.
-
-Production depreciation allocations reconcile exactly through the same
-deterministic remainder rule used for payroll. Example:
-
-```text
-MWK 90,000 depreciation
-Batch A bird-days: 5,400
-Batch B bird-days: 5,000
-Batch A: MWK 46,730.77
-Batch B: MWK 43,269.23
-```
-
-### Replacement reserves and future value
-
-Replacement reserve contributions affect cash planning but do not reduce profit
-again. Depreciation already records the economic use of the asset; reserve
-contributions are funding movements.
-
-Book value is historical cost less depreciation and impairment. Future
-replacement value estimates what a comparable replacement may cost later:
-
-```text
-future_replacement_cost =
-  current_replacement_cost * (1 + annual_inflation_rate) ^ years
-```
-
-### Dollar reference values
-
-Money-entry records can store `usd_exchange_rate` as MWK per USD at entry time.
-When supplied, the backend stores:
-
-```text
-usd_equivalent = kwacha_amount / usd_exchange_rate
-```
-
-This is for future inflation and purchasing-power reference. It does not change
-the authoritative MWK accounting amount.
-
-### Batch and monthly profit alignment
-
-Poultry operational pages now consume the finance batch profitability report for
-profit, receivable, bird-balance, and provisional/final status cards. React
-still renders operational tables, but authoritative accounting calculations live
-in Django services.
-
-Closed-batch dashboard profit uses the final `BatchProfitabilitySnapshot`.
-Active and selling batches remain provisional and show active-batch work in
-progress rather than a completed loss before sales occur.
-
-## Bird-Day Allocation
-
-Shared production payroll, shared production labour, and shared production
-overhead use bird-days by default. For each day in an accounting period:
-
-```text
-daily_average_live_birds =
-  (opening_live_birds + closing_live_birds) / 2
-
-daily_bird_days = daily_average_live_birds
-```
-
-Mortality and valid bird sales apply to closing balance on their transaction
-date. Cancelled sales are excluded.
-
-Worked example:
-
-| Batch | Average live birds | Active days | Bird-days |
-| --- | ---: | ---: | ---: |
-| A | 180 | 30 | 5,400 |
-| B | 250 | 20 | 5,000 |
-
-For MWK 600,000 of shared production salary:
-
-```text
-Batch A = 600,000 * 5,400 / 10,400 = 311,538.46
-Batch B = 600,000 * 5,000 / 10,400 = 288,461.54
-```
-
-Rounded allocations reconcile exactly to the source amount with a deterministic
-remainder rule.
-
-## Payroll, Labour, Expenses, And Permissions
-
-Permanent employees are represented by `EmployeeProfile`, linked one-to-one to
-the existing `accounts.User`. Roles remain the existing user-role system.
-Employee allocation percentages must total 100%.
-
-Payroll entries are monthly snapshots, so historical reports do not change when
-an employee's current salary changes later.
-
-Ad-hoc labour scopes:
-
-- `BATCH_DIRECT`: assigned fully to one batch
-- `SHARED_PRODUCTION`: allocated by bird-days
-- `FARM_ADMINISTRATION`: monthly operating expense, not batch production cost
-- `SELLING_AND_DISTRIBUTION`: assigned directly when possible, otherwise revenue share
-
-Shared expenses separate production, administration, selling, finance, capital,
-tax, and other scopes. Capital expenditure is isolated from ordinary operating
-expense totals.
-
-Finance permissions use existing roles:
-
-- `admin`, `director`, and `farm_manager`: manage finance data and close periods
-- `farm_supervisor`: record operational finance data but cannot close periods
-- `stake_holder`: read-only report and dashboard access
-
-### Mortality
-
-Tracks bird mortality events.
-
-Important fields:
-
-- `mortality_date`
-- `quantity_dead`
-- `age_in_days`
-- `suspected_cause`
-- `description`
-- `action_taken`
-- `reported_by_name`
-
-### Feed Usage
-
-Tracks feed given to a batch.
-
-Important fields:
-
-- `initial_age`
-- `feeding_start_date`
-- `feeding_end_date`
-- `feed_type`
-- `feed_source`
-- `quantity_given`
-- `unit_of_measurement`
-- `current_number_of_birds`
-- `notes`
-- `reported_by_name`
-
-### Drugs And Vaccination
-
-Tracks vaccine and drug administration against the batch care schedule.
-
-Important fields:
-
-- `vaccination_date`
-- `drug_vaccination_type`: hitchner, gumbolo, lasota, or other
-- `other_drug_vaccination`: only used when type is other
-- `quantity`
-- `description`
-- `timely_status`: calculated by the frontend against the expected schedule
-- `reported_by_name`
-
-Default schedule:
-
-- Hitchner: 7 days after chick arrival
-- Gumbolo: 14 days after chick arrival
-- Lasota: 21 days after chick arrival
-
-## Local Development
-
-### Backend
-
-From the repository root:
+Full pinned dependencies are in:
+- `requirements.txt` (backend)
+- `frontend/package.json` (frontend)
+
+---
+
+## Getting Started
+
+### Local Development (Backend)
 
 ```powershell
+# From repo root
 python -m venv venv
 .\venv\Scripts\Activate.ps1
 pip install -r requirements.txt
+
+# If using host Postgres (Docker exposes on 5437)
+$env:POSTGRES_HOST='localhost'
+$env:POSTGRES_PORT='5437'
+
 python backend/manage.py migrate
 python backend/manage.py runserver 0.0.0.0:7070
 ```
 
-When running Django commands from the Windows host while Docker exposes Postgres
-on `localhost:5437`, override the Docker-only database host:
+API will be available at http://localhost:7070
+
+### Local Development (Frontend)
 
 ```powershell
-$env:POSTGRES_HOST='localhost'
-$env:POSTGRES_PORT='5437'
+cd frontend
+npm install
+npm run dev
 ```
 
-### Frontend
+Open http://localhost:3000
 
-From `frontend/`:
-
-```powershell
-npm.cmd install
-npm.cmd run dev
-```
-
-Open:
-
-```text
-http://localhost:3000
-```
-
-### Docker Backend and Database
-
-The `docker/docker-compose.yml` file can run the Django backend and PostgreSQL database:
+### Docker (Recommended for Backend + DB)
 
 ```powershell
 docker compose -f docker/docker-compose.yml up --build
 ```
 
-This starts:
+Starts:
+- Django on http://localhost:7070 (auto-migrates on start)
+- Postgres on host port 5437
 
-- Django backend on `http://localhost:7070`
-- PostgreSQL exposed on host port `5437`
+Frontend still runs separately with `npm run dev` in `frontend/`.
 
-## Environment Variables
+---
 
-The backend reads environment settings from `.env`.
+## Configuration
 
-Required database variables include:
+Create a `.env` file in the repository root (loaded by both Django and Docker).
 
+**Required (Database)**
 ```env
-POSTGRES_DB=
-POSTGRES_USER=
-POSTGRES_PASSWORD=
-POSTGRES_HOST=
-POSTGRES_PORT=
+POSTGRES_DB=yourdb
+POSTGRES_USER=youruser
+POSTGRES_PASSWORD=yourpassword
+POSTGRES_HOST=db          # or localhost when running outside Docker
+POSTGRES_PORT=5432
 ```
 
-Common Django variables include:
-
+**Django**
 ```env
-DJANGO_SECRET_KEY=
+DJANGO_SECRET_KEY=your-secret-key
 DJANGO_DEBUG=True
 DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0
 ```
 
-The Next.js auth BFF also supports session timeout settings:
+**Frontend**
+```env
+NEXT_PUBLIC_API_BASE_URL=http://localhost:7070/api/v1
+```
 
+**Auth (optional tuning)**
 ```env
 AUTH_IDLE_TIMEOUT_SECONDS=7200
 AUTH_REFRESH_TOKEN_MAX_AGE_SECONDS=43200
 ```
 
-The frontend requires:
+Backend also supports `SECRET_KEY`, `DEBUG`, etc. via `python-decouple`.
 
-```env
-NEXT_PUBLIC_API_BASE_URL=http://localhost:7070/api/v1
-```
+---
 
-## Quality Checks
+## Usage Guide
 
-Frontend checks:
+1. Start backend + frontend (or Docker backend).
+2. Create users/roles via Django admin or the employee creation flow.
+3. Create an **Accounting Period** before recording payroll, labour, consumables, or depreciation.
+4. Use `/poultry` to register batches and record daily operations.
+5. Use `/finance` pages for:
+   - Employees & salary splits
+   - Payroll generation + allocation
+   - Ad-hoc labour, expenses, consumables
+   - Assets + depreciation runs
+   - Batch and monthly profitability reports
 
+See the in-app guides at `/poultry/guides` for step-by-step operational instructions.
+
+---
+
+## API Overview
+
+- Interactive docs: http://localhost:7070/api/v1/docs/
+- OpenAPI schema: http://localhost:7070/api/v1/schema/
+
+Major groups:
+- `poultry-management/` — batches + input_costs, sales, mortality, feed_usage, drugs_vaccine, weight_samples
+- `finance/` — employees, accounting-periods, payroll, ad-hoc-labour, expenses, consumables, assets, reports
+- `auth/` — login, logout, session, refresh
+
+All monetary values use `Decimal` (serialized as strings or numbers with proper precision). Lists are paginated where appropriate.
+
+Proxy routes under `/api/poultry/...` and `/api/finance/...` in the Next.js app forward authenticated requests.
+
+---
+
+## Financial & Accounting Model
+
+The system distinguishes:
+- **Revenue & Cash**: `recognized_revenue`, `cash_collected`, receivables.
+- **Profitability**: Direct costs + allocated operating costs + depreciation → gross and net profit. Active batches are provisional.
+- **Allocation**: Bird-day (or other driver) based `CostAllocation` rows for shared costs. Exact remainder reconciliation is enforced.
+- **Cash vs Accounting**: Consumable lots stay in inventory until usage is recognized. Capital items are capitalized and depreciated.
+
+Full details and worked examples are documented in the current root README (sections on Bird-Day Allocation, Consumables, Assets, Payroll, etc.) and the batch/monthly finance reports.
+
+---
+
+## Testing & Quality Checks
+
+**Frontend**
 ```powershell
 cd frontend
-npm.cmd run lint
-npx.cmd tsc --noEmit
-npm.cmd run build
+npm run lint
+npx tsc --noEmit
+npm run build
 ```
 
-Backend checks:
-
+**Backend**
 ```powershell
 cd backend
 python manage.py check
 python manage.py test
-```
-
-Finance-focused backend tests:
-
-```powershell
-cd backend
 python manage.py test apps.finance.tests
 ```
 
-Manual finance smoke test:
+Always run migrations after model changes and verify that existing batch totals and finance snapshots remain correct.
 
-1. Create an accounting period through Django admin or `POST /api/v1/finance/accounting-periods`.
-2. Open `/finance/employees` and create an employee with salary, allocation split, and role.
-3. Open `/finance/payroll`, generate payroll, recalculate allocations, and close the period when ready.
-4. Record ad-hoc labour in `/finance/labour`.
-5. Record shared expenses in `/finance/expenses`.
-6. Open `/finance/consumables`, record a consumable lot, then record usage against the accounting period.
-7. Recalculate the accounting period and confirm shared usage creates `CostAllocation` rows.
-8. Open `/finance/assets`, confirm default categories exist, create an asset, generate depreciation, and allocate depreciation.
-9. Record asset usage for a units-of-production asset, maintenance due dates, replacement plan values, reserve contributions, impairment, and disposal through the asset API routes.
-10. Create poultry mortality and valid bird sales until a batch reaches zero remaining birds.
-11. Review `/finance/batches/{batch_id}` for provisional or final profitability.
-12. Review `/finance/monthly` for profitability, cash movement, receivables, WIP, deferred balances, asset reporting, reserves, and warnings.
-13. Log out and confirm the avatar clears immediately; leave a tab idle longer than `AUTH_IDLE_TIMEOUT_SECONDS` and confirm it returns to login.
-14. Sign in as a stakeholder and confirm write actions are rejected by the backend.
+---
 
 ## Project Structure
 
-```text
-backend/
-  apps/
-    accounts/
-    inventory/
-    poultry/
-    finance/
-  config/
-  manage.py
-
-frontend/
-  src/
-    app/
-    features/
-      poultry/
-      finance/
-    lib/
-
-docker/
-  docker-compose.yml
-  Dockerfile
+```
+.
+├── backend/
+│   ├── apps/
+│   │   ├── accounts/     # Users, roles, auth
+│   │   ├── poultry/      # Batches, sales, costs, mortality, feed, growth
+│   │   ├── finance/      # Employees, payroll, assets, consumables, allocations, reports
+│   │   └── inventory/
+│   ├── config/           # Django settings, urls
+│   └── manage.py
+├── frontend/
+│   ├── src/app/          # Next.js App Router pages + API routes (BFF)
+│   ├── src/features/     # poultry/ and finance/ domain logic & UI
+│   └── ...
+├── docker/
+│   ├── docker-compose.yml
+│   └── Dockerfile
+├── docs/
+└── requirements.txt
 ```
 
-## Current Notes
+---
 
-- Poultry and Finance are the live operating modules.
-- Crops and Goats are represented on the landing page as future modules.
-- The frontend uses a themed executive layout with cream, navy, and gold styling.
-- The batch detail workspace is designed around summary cards and tabbed operational views rather than placing every form and table into one long page.
-- Input cost, sales, mortality, feed usage, and finance mutations are routed through local Next.js API routes before being forwarded to the Django API.
+## Contributing
+
+1. Fork the repository and create a feature branch.
+2. Follow existing code style and patterns (Django services for calculations, server components for initial data, client-safe mutations via proxy routes).
+3. Add or update tests for any financial or allocation logic.
+4. Run full lint, typecheck, build, and test suites before submitting a PR.
+5. Document new API endpoints in the OpenAPI schema (they appear automatically via drf-spectacular).
+6. For finance changes, include migration notes and example calculations in the PR description.
+
+Please keep profit/cash distinctions clear and preserve backward compatibility for existing batch reports.
+
+---
+
+## License
+
+This project is currently unlicensed / internal. Add an appropriate open-source license if you intend to publish.
+
+---
+
+**For the most up-to-date operational and accounting details, also consult the in-app help (`/poultry/guides`) and the existing detailed sections in this README (Poultry Data Model, Management Accounting Definitions, Integrated Finance User Manual, Bird-Day Allocation, etc.).**

@@ -3,6 +3,9 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Iterable
 
+from rest_framework.exceptions import ValidationError
+
+
 from django.db.models import DecimalField, ExpressionWrapper, F, Q, Sum
 from django.utils import timezone
 
@@ -15,6 +18,16 @@ from apps.poultry.models import (
     ProductType,
     Sales,
 )
+
+from ..models import (
+    FundingSource,
+    FundingSourceType,
+    FundingReceipt,
+    FundingReceiptStatus,
+    SalePayment,
+    SalePaymentStatus,
+)
+
 
 from ..models import (
     AccountingPeriod,
@@ -76,11 +89,22 @@ def sales_revenue(batch: Batch) -> Decimal:
 
 
 def cash_collected(batch: Batch) -> Decimal:
-    return money(valid_sales(batch).aggregate(total=Sum("amount_paid"))["total"])
+    return money(
+        SalePayment.objects.filter(
+            sale__batch=batch,
+            sale__payment_status__in=[
+                PaymentStatus.PAID,
+                PaymentStatus.PARTIAL,
+                PaymentStatus.UNPAID,
+                PaymentStatus.LOAN,
+            ],
+            status=SalePaymentStatus.POSTED,
+        ).aggregate(total=Sum("amount"))["total"]
+    )
 
 
 def receivables(batch: Batch) -> Decimal:
-    return money(valid_sales(batch).aggregate(total=Sum("balance"))["total"])
+    return money(sales_revenue(batch) - cash_collected(batch))
 
 
 def direct_labour_total(batch: Batch) -> Decimal:
@@ -186,7 +210,23 @@ def selling_cost_total(batch: Batch) -> Decimal:
         + money(shared_expenses.aggregate(total=Sum("allocated_amount"))["total"])
         + money(direct_consumables.aggregate(total=Sum("recognized_cost"))["total"])
         + money(shared_consumables.aggregate(total=Sum("allocated_amount"))["total"])
+            )
+
+
+def ensure_batch_funding_source(batch: Batch) -> FundingSource:
+    """
+    Auto create (or get) a BATCH_COLLECTION FundingSource for the batch.
+    Never store manual balance; computed from cash_collected - used.
+    Safe to call multiple times.
+    """
+    fs, created = FundingSource.objects.get_or_create(
+        source_type=FundingSourceType.BATCH_COLLECTION,
+        batch=batch,
+        defaults={
+            "description": f"Batch {batch.batch_id} sales collections",
+        },
     )
+    return fs
 
 
 def _build_batch_profitability(
@@ -356,16 +396,21 @@ def batch_profitability(batch: Batch) -> dict:
         + direct_production_expense_total(batch)
         + direct_consumable_usage_total(batch)
     )
+    collected = cash_collected(batch)
     row = _build_batch_profitability(
         batch,
         balance=calculate_bird_balance(batch),
         revenue=sales_revenue(batch),
-        collected=cash_collected(batch),
+        collected=collected,
         outstanding=receivables(batch),
         direct_cost=direct_cost,
         allocated_cost=allocated_production_total(batch),
         selling_cost=selling_cost_total(batch),
     )
+    # Add new revenue utilization fields
+    row["available_batch_cash"] = str(available_batch_cash(batch))
+    row["cash_used_from_batch"] = str(cash_used_from_batch(batch))
+
     snapshot = None
     if batch.status == BatchStatus.CLOSED:
         snapshot = BatchProfitabilitySnapshot.objects.filter(
@@ -408,8 +453,6 @@ def _portfolio_profitability_rows(batches: list[Batch]) -> list[dict]:
         .values("batch_id")
         .annotate(
             revenue=Sum(sales_expression),
-            collected=Sum("amount_paid"),
-            outstanding=Sum("balance"),
             birds_sold=Sum(
                 "quantity_sold",
                 filter=Q(
@@ -421,11 +464,24 @@ def _portfolio_profitability_rows(batches: list[Batch]) -> list[dict]:
             ),
         )
     )
+    collections_by_batch = {
+        row["sale__batch_id"]: money(row["total"])
+        for row in SalePayment.objects.filter(
+            sale__batch_id__in=batch_ids,
+            status=SalePaymentStatus.POSTED,
+        )
+        .exclude(sale__payment_status=PaymentStatus.CANCELLED)
+        .values("sale__batch_id")
+        .annotate(total=Sum("amount"))
+    }
     sales_by_batch = {
         row["batch_id"]: {
             "revenue": money(row["revenue"]),
-            "collected": money(row["collected"]),
-            "outstanding": money(row["outstanding"]),
+            "collected": collections_by_batch.get(row["batch_id"], ZERO),
+            "outstanding": money(
+                money(row["revenue"])
+                - collections_by_batch.get(row["batch_id"], ZERO)
+            ),
             "birds_sold": int(row["birds_sold"] or 0),
         }
         for row in sales_rows
@@ -809,3 +865,189 @@ def create_final_snapshot(
         batch.profitability_finalized_at = snapshot.finalized_at
         batch.save(update_fields=["profitability_finalized_at", "updated_at"])
     return snapshot
+
+
+# =============================================================================
+# Revenue Utilization / Batch Cash Tracking (Funding dimension)
+# =============================================================================
+
+from ..models import (
+    Expenditure,
+    ExpenditureStatus,
+    FundingAllocation,
+    FundingSource,
+    FundingSourceType,
+)
+
+
+def batch_cash_collected(batch: Batch) -> Decimal:
+    """Cash actually received from this batch's sales (excludes cancelled)."""
+    return cash_collected(batch)
+
+
+def cash_used_from_batch(batch: Batch) -> Decimal:
+    """
+    Total amount of this batch's collected revenue that has been allocated
+    as funding to posted expenditures.
+    """
+    allocations = FundingAllocation.objects.filter(
+        funding_source__source_type=FundingSourceType.BATCH_COLLECTION,
+        funding_source__batch=batch,
+        expenditure__status=ExpenditureStatus.POSTED,
+    )
+    total = allocations.aggregate(total=Sum("amount"))["total"] or ZERO
+    return money(total)
+
+
+def available_batch_cash(batch: Batch) -> Decimal:
+    """
+    How much of the cash collected from this batch is still available
+    (has not been allocated as funding to other expenditures).
+    """
+    collected = batch_cash_collected(batch)
+    used = cash_used_from_batch(batch)
+    return money(collected - used)
+
+
+def available_funding_source_cash(source: FundingSource) -> Decimal:
+    if source.source_type == FundingSourceType.BATCH_COLLECTION:
+        return available_batch_cash(source.batch) if source.batch_id else ZERO
+    received = money(
+        FundingReceipt.objects.filter(
+            funding_source=source,
+            status=FundingReceiptStatus.POSTED,
+        ).aggregate(total=Sum("amount"))["total"]
+    )
+    used = money(
+        FundingAllocation.objects.filter(
+            funding_source=source,
+            expenditure__status=ExpenditureStatus.POSTED,
+        ).aggregate(total=Sum("amount"))["total"]
+    )
+    return money(received - used)
+
+
+def batch_revenue_utilization(batch: Batch) -> dict:
+    """
+    Returns a summary of how a batch's collected revenue has been used.
+    """
+    collected = batch_cash_collected(batch)
+    refunds = money(
+        SalePayment.objects.filter(
+            sale__batch=batch,
+            status=SalePaymentStatus.REVERSED,
+        ).aggregate(total=Sum("amount"))["total"]
+    )
+    gross_collections = money(collected + refunds)
+    used = cash_used_from_batch(batch)
+    available = money(collected - used)
+
+    # Breakdown by category and nature from posted funding allocations
+    posted_allocs = FundingAllocation.objects.filter(
+        funding_source__source_type=FundingSourceType.BATCH_COLLECTION,
+        funding_source__batch=batch,
+        expenditure__status=ExpenditureStatus.POSTED,
+    ).select_related("expenditure", "expenditure__category", "funding_source").order_by(
+        "allocation_date", "created_at", "pk"
+    )
+
+    by_category = {}
+    by_nature = {}
+    beneficiaries = set()
+    transactions = []
+    running_cash = collected
+
+    for alloc in posted_allocs:
+        exp = alloc.expenditure
+        category_label = exp.category.name if exp.category_id else "Uncategorized"
+        by_category[category_label] = by_category.get(category_label, ZERO) + alloc.amount
+        by_nature[exp.accounting_nature] = by_nature.get(exp.accounting_nature, ZERO) + alloc.amount
+        beneficiary = exp.beneficiary_detail or exp.beneficiary_type or exp.farm_module
+        if beneficiary:
+            beneficiaries.add(beneficiary)
+        running_cash = money(running_cash - alloc.amount)
+        transactions.append(
+            {
+                "allocation_id": alloc.pk,
+                "expenditure_id": exp.pk,
+                "expenditure_reference": exp.expenditure_reference,
+                "date": alloc.allocation_date,
+                "description": exp.description,
+                "amount": alloc.amount,
+                "total_expenditure": exp.amount,
+                "category": category_label,
+                "accounting_nature": exp.accounting_nature,
+                "beneficiary": beneficiary or "Not allocated",
+                "funding_source": str(alloc.funding_source),
+                "status": exp.status,
+                "remaining_cash_after": running_cash,
+            }
+        )
+
+    return {
+        "batch_id": batch.pk,
+        "batch_code": batch.batch_id,
+        "cash_collected": collected,
+        "gross_collections": gross_collections,
+        "refunds": refunds,
+        "cash_used": used,
+        "available_cash": available,
+        "utilization_percent": percent(used, collected),
+        "by_category": {k: money(v) for k, v in by_category.items()},
+        "by_accounting_nature": {k: money(v) for k, v in by_nature.items()},
+        "beneficiary_modules": sorted(beneficiaries),
+        "transactions": transactions,
+    }
+
+
+def validate_funding_allocations(expenditure: Expenditure, allocations_data: list[dict]) -> None:
+    """
+    Validates that funding allocations for an expenditure do not overspend
+    any batch's collected cash.
+    Called before posting an expenditure.
+    """
+    from decimal import Decimal as D
+
+    if not allocations_data:
+        raise ValidationError({"funding_allocations": "Full funding is required before posting."})
+
+    source_usage = {}
+    allocation_total = ZERO
+
+    for alloc in allocations_data:
+        fs_id = alloc.get("funding_source")
+        amount = D(str(alloc.get("amount", "0")))
+
+        if amount <= ZERO:
+            raise ValidationError({"funding_allocations": "Every funding amount must be greater than zero."})
+
+        try:
+            fs = FundingSource.objects.get(pk=fs_id)
+        except FundingSource.DoesNotExist:
+            raise ValidationError({"funding_source": f"Funding source {fs_id} not found."})
+
+        source_usage[fs.pk] = source_usage.get(fs.pk, ZERO) + amount
+        allocation_total += amount
+
+    if money(allocation_total) != money(expenditure.amount):
+        raise ValidationError(
+            {
+                "funding_allocations": (
+                    f"Funding must equal the expenditure amount of {money(expenditure.amount)}; "
+                    f"received {money(allocation_total)}."
+                )
+            }
+        )
+
+    for source_id, additional in source_usage.items():
+        source = FundingSource.objects.select_related("batch").get(pk=source_id)
+        available = available_funding_source_cash(source)
+        if additional > available:
+            raise ValidationError(
+                {
+                    "funding_allocations": (
+                        f"Cannot allocate {money(additional)} from {source}. "
+                        f"Available cash is {available}."
+                    )
+                }
+            )
