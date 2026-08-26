@@ -1129,40 +1129,53 @@ class CostAllocation(TimestampedModel):
         constraints = [
             models.CheckConstraint(
                 condition=(
-                    (
-                        Q(payroll_entry__isnull=False)
-                        & Q(ad_hoc_labour_payment__isnull=True)
-                        & Q(shared_expense__isnull=True)
-                        & Q(consumable_usage__isnull=True)
-                        & Q(depreciation_entry__isnull=True)
+                    Q(
+                        payroll_entry__isnull=False,
+                        ad_hoc_labour_payment__isnull=True,
+                        shared_expense__isnull=True,
+                        consumable_usage__isnull=True,
+                        depreciation_entry__isnull=True,
+                        expenditure__isnull=True,
                     )
-                    | (
-                        Q(payroll_entry__isnull=True)
-                        & Q(ad_hoc_labour_payment__isnull=False)
-                        & Q(shared_expense__isnull=True)
-                        & Q(consumable_usage__isnull=True)
-                        & Q(depreciation_entry__isnull=True)
+                    | Q(
+                        payroll_entry__isnull=True,
+                        ad_hoc_labour_payment__isnull=False,
+                        shared_expense__isnull=True,
+                        consumable_usage__isnull=True,
+                        depreciation_entry__isnull=True,
+                        expenditure__isnull=True,
                     )
-                    | (
-                        Q(payroll_entry__isnull=True)
-                        & Q(ad_hoc_labour_payment__isnull=True)
-                        & Q(shared_expense__isnull=False)
-                        & Q(consumable_usage__isnull=True)
-                        & Q(depreciation_entry__isnull=True)
+                    | Q(
+                        payroll_entry__isnull=True,
+                        ad_hoc_labour_payment__isnull=True,
+                        shared_expense__isnull=False,
+                        consumable_usage__isnull=True,
+                        depreciation_entry__isnull=True,
+                        expenditure__isnull=True,
                     )
-                    | (
-                        Q(payroll_entry__isnull=True)
-                        & Q(ad_hoc_labour_payment__isnull=True)
-                        & Q(shared_expense__isnull=True)
-                        & Q(consumable_usage__isnull=False)
-                        & Q(depreciation_entry__isnull=True)
+                    | Q(
+                        payroll_entry__isnull=True,
+                        ad_hoc_labour_payment__isnull=True,
+                        shared_expense__isnull=True,
+                        consumable_usage__isnull=False,
+                        depreciation_entry__isnull=True,
+                        expenditure__isnull=True,
                     )
-                    | (
-                        Q(payroll_entry__isnull=True)
-                        & Q(ad_hoc_labour_payment__isnull=True)
-                        & Q(shared_expense__isnull=True)
-                        & Q(consumable_usage__isnull=True)
-                        & Q(depreciation_entry__isnull=False)
+                    | Q(
+                        payroll_entry__isnull=True,
+                        ad_hoc_labour_payment__isnull=True,
+                        shared_expense__isnull=True,
+                        consumable_usage__isnull=True,
+                        depreciation_entry__isnull=False,
+                        expenditure__isnull=True,
+                    )
+                    | Q(
+                        payroll_entry__isnull=True,
+                        ad_hoc_labour_payment__isnull=True,
+                        shared_expense__isnull=True,
+                        consumable_usage__isnull=True,
+                        depreciation_entry__isnull=True,
+                        expenditure__isnull=False,
                     )
                 ),
                 name="cost_allocation_exactly_one_source",
@@ -1192,6 +1205,11 @@ class CostAllocation(TimestampedModel):
                 condition=Q(depreciation_entry__isnull=False),
                 name="unique_depreciation_allocation_period_batch",
             ),
+            models.UniqueConstraint(
+                fields=["accounting_period", "batch", "expenditure"],
+                condition=Q(expenditure__isnull=False),
+                name="unique_expenditure_allocation_period_batch",
+            ),
         ]
         indexes = [
             models.Index(fields=["accounting_period", "batch"]),
@@ -1212,6 +1230,7 @@ class CostAllocation(TimestampedModel):
                 self.shared_expense_id,
                 self.consumable_usage_id,
                 self.depreciation_entry_id,
+                self.expenditure_id,
             )
         )
         if source_count != 1:
@@ -1978,6 +1997,8 @@ class ExpenditureCategory(models.Model):
     )
     is_active = models.BooleanField(default=True, db_index=True)
     display_order = models.PositiveIntegerField(default=0)
+    requires_item_details = models.BooleanField(default=False)
+    requires_batch_beneficiary = models.BooleanField(default=False)
 
     class Meta:
         ordering = ["display_order", "name"]
@@ -1990,6 +2011,19 @@ class ExpenditureStatus(models.TextChoices):
     DRAFT = "draft", "Draft"
     POSTED = "posted", "Posted"
     VOID = "void", "Void"
+
+
+class ExpenditurePaymentStatus(models.TextChoices):
+    UNPAID = "unpaid", "Unpaid / payable"
+    PARTIAL = "partial", "Partially paid"
+    PAID = "paid", "Paid"
+    HISTORICAL_UNASSIGNED = "historical_unassigned", "Historical funding unassigned"
+
+
+class ExpenditureOrigin(models.TextChoices):
+    BATCH_COST = "batch_cost", "Batch cost form"
+    FINANCE = "finance", "Finance expenditure form"
+    HISTORICAL_INPUT_COST = "historical_input_cost", "Historical input cost migration"
 
 
 class FundingSourceType(models.TextChoices):
@@ -2031,6 +2065,7 @@ class FundingSource(TimestampedModel):
     )
     description = models.CharField(max_length=255, blank=True)
     notes = models.TextField(blank=True, default="")
+    is_active = models.BooleanField(default=True, db_index=True)
 
     class Meta:
         ordering = ["-created_at"]
@@ -2143,6 +2178,25 @@ class Expenditure(DollarReferenceMixin, TimestampedModel):
         default=ExpenditureStatus.DRAFT,
         db_index=True,
     )
+    payment_status = models.CharField(
+        max_length=30,
+        choices=ExpenditurePaymentStatus.choices,
+        default=ExpenditurePaymentStatus.UNPAID,
+        db_index=True,
+    )
+    origin = models.CharField(
+        max_length=30,
+        choices=ExpenditureOrigin.choices,
+        default=ExpenditureOrigin.FINANCE,
+        db_index=True,
+    )
+    idempotency_key = models.CharField(
+        max_length=120,
+        null=True,
+        blank=True,
+        unique=True,
+        help_text="Client-generated key that prevents duplicate expenditure submissions.",
+    )
 
     # Replaced free-text farm_module with structured beneficiary
     farm_module = models.CharField(max_length=50, blank=True, default="")  # legacy
@@ -2221,9 +2275,8 @@ class Expenditure(DollarReferenceMixin, TimestampedModel):
     def save(self, *args, **kwargs):
         self.set_usd_equivalent(self.amount)
         if not self.expenditure_reference:
-            from datetime import date
-            today = date.today()
-            prefix = f"EXP-{today.strftime('%Y%m%d')}"
+            reference_date = self.expenditure_date or timezone.localdate()
+            prefix = f"EXP-{reference_date.strftime('%Y%m%d')}"
             # Simple unique by counting same prefix today (transactional best effort)
             existing = Expenditure.objects.filter(expenditure_reference__startswith=prefix).count() + 1
             self.expenditure_reference = f"{prefix}-{existing:04d}"
@@ -2258,6 +2311,13 @@ class FundingAllocation(TimestampedModel):
         default=FundingClassification.REINVESTMENT,
     )
     notes = models.TextField(blank=True, default="")
+    payment_group_key = models.CharField(
+        max_length=120,
+        blank=True,
+        default="",
+        db_index=True,
+        help_text="Groups split funding rows belonging to one idempotent payment.",
+    )
 
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -2276,6 +2336,40 @@ class FundingAllocation(TimestampedModel):
 
     def __str__(self) -> str:
         return f"{self.amount} from {self.funding_source} to expenditure {self.expenditure_id}"
+
+
+class InputCostReconciliation(TimestampedModel):
+    class ReconciliationStatus(models.TextChoices):
+        MATCHED = "matched", "Matched existing expenditure"
+        MIGRATED = "migrated", "Migrated to new expenditure"
+        UNCERTAIN = "uncertain", "Possible match requires review"
+        UNRESOLVED = "unresolved", "Unresolved"
+
+    input_cost = models.OneToOneField(
+        "poultry.InputCosts",
+        on_delete=models.PROTECT,
+        related_name="financial_reconciliation",
+    )
+    expenditure = models.ForeignKey(
+        Expenditure,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="input_cost_reconciliations",
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=ReconciliationStatus.choices,
+        db_index=True,
+    )
+    match_basis = models.TextField(blank=True, default="")
+    requires_manual_review = models.BooleanField(default=False, db_index=True)
+
+    class Meta:
+        ordering = ["status", "input_cost_id"]
+
+    def __str__(self) -> str:
+        return f"Input cost {self.input_cost_id}: {self.status}"
 
 
 class SalePaymentStatus(models.TextChoices):

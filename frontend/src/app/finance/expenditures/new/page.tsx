@@ -14,6 +14,8 @@ type CostRow = { batch: number | ""; amount: string };
 
 type PoultryBatch = { id: number; batch_id: string; status?: string };
 
+const expenditureKey = () => globalThis.crypto?.randomUUID?.() ?? `expense-${Date.now()}-${Math.random()}`;
+
 const fundingSourceLabel = (source: FundingSource) =>
   `${source.display_name || source.description || source.source_type}${source.batch_code ? ` — ${source.batch_code}` : ""} — MWK ${Number(source.available_balance || 0).toLocaleString()} available`;
 
@@ -35,6 +37,7 @@ export default function NewExpenditurePage() {
     farm_module: "",
     beneficiary_type: "",
     beneficiary_detail: "",
+    idempotency_key: expenditureKey(),
   });
 
   const [fundingRows, setFundingRows] = useState<FundingRow[]>([
@@ -52,9 +55,13 @@ export default function NewExpenditurePage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showFundingReceipt, setShowFundingReceipt] = useState(false);
+  const [paymentTiming, setPaymentTiming] = useState<"paid" | "credit">("paid");
   const [newFunds, setNewFunds] = useState({ source_type: "owner_capital", description: "", amount: "", reference: "" });
 
   const totalAmount = Number(form.amount) || 0;
+  const assignsSingleBatch = form.beneficiary_type === "one_poultry_batch";
+  const assignsMultipleBatches = form.beneficiary_type === "multiple_poultry_batches";
+  const assignsBatchCosts = assignsSingleBatch || assignsMultipleBatches;
 
   // Live totals
   const fundingTotal = useMemo(() => {
@@ -62,16 +69,22 @@ export default function NewExpenditurePage() {
   }, [fundingRows]);
 
   const costTotal = useMemo(() => {
+    if (form.beneficiary_type === "one_poultry_batch") {
+      return costRows[0]?.batch ? totalAmount : 0;
+    }
+    if (form.beneficiary_type !== "multiple_poultry_batches") return 0;
     return costRows.reduce((sum, r) => sum + (parseFloat(r.amount) || 0), 0);
-  }, [costRows]);
+  }, [costRows, form.beneficiary_type, totalAmount]);
 
   const fundingDiff = (totalAmount - fundingTotal).toFixed(2);
   const costDiff = (totalAmount - costTotal).toFixed(2);
 
-  const isValidSplits =
+  const fundingComplete = totalAmount > 0 && Math.abs(totalAmount - fundingTotal) < 0.01;
+  const costAssignmentComplete = !assignsBatchCosts || (
     totalAmount > 0 &&
-    Math.abs(totalAmount - fundingTotal) < 0.01 &&
-    Math.abs(totalAmount - costTotal) < 0.01;
+    costRows.some((row) => Boolean(row.batch)) &&
+    Math.abs(totalAmount - costTotal) < 0.01
+  );
 
   // Fetch sources and batches
   useEffect(() => {
@@ -155,6 +168,23 @@ export default function NewExpenditurePage() {
     });
   };
 
+  const handleCostAssignmentChange = (beneficiaryType: string) => {
+    setForm((current) => ({
+      ...current,
+      beneficiary_type: beneficiaryType,
+      beneficiary_detail: beneficiaryType === "one_poultry_batch" || beneficiaryType === "multiple_poultry_batches"
+        ? ""
+        : current.beneficiary_detail,
+    }));
+    if (beneficiaryType === "one_poultry_batch") {
+      setCostRows((current) => [{ batch: current[0]?.batch || "", amount: "" }]);
+    } else if (beneficiaryType === "multiple_poultry_batches") {
+      setCostRows((current) => current.length ? current : [{ batch: "", amount: "" }]);
+    } else {
+      setCostRows([{ batch: "", amount: "" }]);
+    }
+  };
+
   const handleCategoryChange = (catId: string) => {
     const cat = categories.find((c: any) => String(c.id) === catId);
     const nextNature = cat?.default_accounting_nature || form.accounting_nature || "";
@@ -188,34 +218,49 @@ export default function NewExpenditurePage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isValidSplits && (fundingRows.some(f => f.amount) || costRows.some(c => c.amount))) {
-      setError("Funding total and Cost allocation total must exactly match the Expenditure Amount.");
+    if (paymentTiming === "paid" && fundingRows.some((row) => row.amount) && !fundingComplete) {
+      setError("Payment sources entered must add up to the expenditure amount.");
+      return;
+    }
+    if (assignsBatchCosts && !costAssignmentComplete) {
+      setError("Complete the batch cost assignment so it adds up to the expenditure amount.");
       return;
     }
     setSubmitting(true);
     setError(null);
 
     try {
-      const cleanFunding = fundingRows
+      const cleanFunding = paymentTiming === "paid" ? fundingRows
         .filter((f) => f.funding_source && f.amount)
         .map((f) => ({
           funding_source: Number(f.funding_source),
           amount: parseFloat(f.amount),
           classification: f.classification,
-        }));
+        })) : [];
 
-      const cleanCost = costRows
-        .filter((c) => c.batch && c.amount)
-        .map((c) => ({
-          batch: Number(c.batch),
-          amount: parseFloat(c.amount),
-        }));
+      const cleanCost = assignsSingleBatch && costRows[0]?.batch
+        ? [{ batch: Number(costRows[0].batch), amount: totalAmount }]
+        : assignsMultipleBatches
+          ? costRows
+              .filter((c) => c.batch && c.amount)
+              .map((c) => ({
+                batch: Number(c.batch),
+                amount: parseFloat(c.amount),
+              }))
+          : [];
+
+      const beneficiaryDetail = assignsBatchCosts
+        ? cleanCost
+            .map((allocation) => batches.find((batch) => batch.id === allocation.batch)?.batch_id || `#${allocation.batch}`)
+            .join(", ")
+        : form.beneficiary_detail;
 
       const payload: any = {
         ...form,
         category: form.category ? Number(form.category) : null,
         amount: totalAmount,
         status: "draft",
+        beneficiary_detail: beneficiaryDetail,
         funding_allocations_input: cleanFunding,
         cost_allocations_input: cleanCost,
       };
@@ -239,7 +284,7 @@ export default function NewExpenditurePage() {
       <Link href="/finance/expenditures" className="mb-5 inline-block text-sm font-bold underline">← Expenditures</Link>
       <h1 className="text-2xl font-bold mb-2">Record New Expenditure</h1>
       <p className="text-sm text-[var(--navy-muted)] mb-6">
-        Specify full funding sources (where money came from) and cost allocations (which batches/activities bear the cost). Totals must match.
+        Record the purchase first, then separately identify the cash used and the operation that should carry the cost.
       </p>
 
       <form onSubmit={handleSubmit} className="space-y-8">
@@ -360,38 +405,28 @@ export default function NewExpenditurePage() {
         </div>
 
         {/* Reference will be generated server-side as EXP-YYYYMMDD-#### and shown after save */}
-        <label className="block">
-          <span className="text-sm font-bold">Who benefits from this expenditure? (Beneficiary)</span>
-          <select value={form.beneficiary_type} onChange={(e) => setForm({ ...form, beneficiary_type: e.target.value })} className="form-input w-full">
-            <option value="">Select beneficiary type…</option>
-            <option value="one_poultry_batch">One poultry batch</option>
-            <option value="multiple_poultry_batches">Multiple poultry batches</option>
-            <option value="whole_poultry">Whole poultry operation</option>
-            <option value="crops">Crops</option>
-            <option value="general_admin">General farm administration</option>
-            <option value="capital_asset">Capital asset or construction project</option>
-            <option value="other">Other farm activity</option>
-          </select>
-          {form.beneficiary_type && (
-            <input
-              className="form-input w-full mt-2"
-              placeholder="Detail (batch id(s), description, asset...)"
-              value={form.beneficiary_detail}
-              onChange={(e) => setForm({ ...form, beneficiary_detail: e.target.value })}
-            />
-          )}
-        </label>
-
-        {/* FUNDING ALLOCATIONS - full multi + live validation + better picker */}
-        <div className="border rounded-xl p-4">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-sm font-bold">Funding Sources (where the money came from)</span>
-            <span className={`text-sm font-mono ${totalAmount > 0 && Math.abs(fundingTotal - totalAmount) < 0.01 ? "text-green-700" : "text-amber-600"}`}>
-              Total funded: {fundingTotal.toFixed(2)} / {totalAmount.toFixed(2)} {totalAmount > 0 && Math.abs(fundingTotal - totalAmount) < 0.01 ? "✓" : `(diff ${fundingDiff})`}
-            </span>
+        <section className="rounded-xl border border-[#d9d1bd] bg-white p-5">
+          <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="finance-eyebrow">Step 1 · Cash ledger</p>
+              <h2 className="mt-1 text-xl font-extrabold">Payment source</h2>
+              <p className="mt-1 max-w-2xl text-sm text-[var(--navy-muted)]">
+                Choose the cash balance used to pay. This reduces available cash only; it does not charge a batch with the cost.
+              </p>
+            </div>
+            {paymentTiming === "paid" ? <span className={`text-sm font-mono ${fundingComplete ? "text-green-700" : "text-amber-600"}`}>
+              Payment total: {fundingTotal.toFixed(2)} / {totalAmount.toFixed(2)} {fundingComplete ? "✓" : `(remaining ${fundingDiff})`}
+            </span> : null}
           </div>
 
-          <div className="mb-2 flex justify-end gap-2">
+          <label className="mb-4 block text-sm font-bold">Payment status
+            <select value={paymentTiming} onChange={(event) => setPaymentTiming(event.target.value as "paid" | "credit")} className="form-input mt-2 w-full">
+              <option value="paid">Paid now</option>
+              <option value="credit">Bought on credit / payment still due</option>
+            </select>
+          </label>
+
+          {paymentTiming === "paid" ? <><div className="mb-2 flex justify-end gap-2">
             <button type="button" onClick={() => setShowFundingReceipt(true)} className="text-sm px-3 py-1 border rounded">+ Add owner, farm, or loan funds</button>
             <button type="button" onClick={addFundingRow} className="text-sm px-3 py-1 border rounded">Split funding</button>
           </div>
@@ -441,63 +476,129 @@ export default function NewExpenditurePage() {
             </div>
           ))}
 
-          {fundingSources.length === 0 && <div className="rounded-lg bg-amber-50 p-4 text-sm text-amber-900"><p>No collected or contributed cash is currently available.</p><div className="mt-3 flex flex-wrap gap-3"><Link href="/finance/receivables" className="font-bold underline">Record sales payment</Link><button type="button" onClick={() => setShowFundingReceipt(true)} className="font-bold underline">Add owner or farm funds</button></div></div>}
-        </div>
+          {fundingSources.length === 0 && <div className="rounded-lg bg-amber-50 p-4 text-sm text-amber-900"><p>No collected or contributed cash is currently available.</p><div className="mt-3 flex flex-wrap gap-3"><Link href="/finance/receivables" className="font-bold underline">Record sales payment</Link><button type="button" onClick={() => setShowFundingReceipt(true)} className="font-bold underline">Add owner or farm funds</button></div></div>}</> : <p className="rounded-lg bg-amber-50 p-4 text-sm text-amber-900">The cost will be posted as a payable. Add the actual payment source later without creating another expenditure.</p>}
+        </section>
 
-        {/* COST ALLOCATIONS - full multi + live */}
-        <div className="border rounded-xl p-4">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-sm font-bold">Cost Allocations (which batches bear the cost)</span>
-            <span className={`text-sm font-mono ${totalAmount > 0 && Math.abs(costTotal - totalAmount) < 0.01 ? "text-green-700" : "text-amber-600"}`}>
-              Total allocated: {costTotal.toFixed(2)} / {totalAmount.toFixed(2)} {totalAmount > 0 && Math.abs(costTotal - totalAmount) < 0.01 ? "✓" : `(diff ${costDiff})`}
-            </span>
-          </div>
-
-          <div className="mb-2 flex gap-2">
-            <input
-              placeholder="Search batches..."
-              value={batchSearch}
-              onChange={(e) => setBatchSearch(e.target.value)}
-              className="form-input flex-1 text-sm"
-            />
-            <button type="button" onClick={addCostRow} className="text-sm px-3 py-1 border rounded">+ Add cost split</button>
-          </div>
-
-          {costRows.map((row, idx) => (
-            <div key={idx} className="flex flex-wrap gap-2 mb-2 items-end">
-              <select
-                value={row.batch}
-                onChange={(e) => updateCost(idx, "batch", e.target.value ? Number(e.target.value) : "")}
-                className="form-input w-72 text-sm"
-              >
-                <option value="">Select batch…</option>
-                {filteredBatches.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.batch_id} (#{b.id})
-                  </option>
-                ))}
-              </select>
-              <input
-                placeholder="Allocated amount"
-                type="number"
-                step="0.01"
-                value={row.amount}
-                onChange={(e) => updateCost(idx, "amount", e.target.value)}
-                className="form-input w-28 text-sm"
-              />
-              <button type="button" onClick={() => removeCostRow(idx)} className="text-red-600 text-xs px-2">×</button>
+        <section className="rounded-xl border border-[#d9d1bd] bg-white p-5">
+          <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="finance-eyebrow">Step 2 · Profitability ledger</p>
+              <h2 className="mt-1 text-xl font-extrabold">Cost assignment</h2>
+              <p className="mt-1 max-w-2xl text-sm text-[var(--navy-muted)]">
+                Choose who used the goods or service. This affects profitability only; it does not withdraw cash from that batch.
+              </p>
             </div>
-          ))}
+            {assignsBatchCosts ? (
+              <span className={`text-sm font-mono ${costAssignmentComplete ? "text-green-700" : "text-amber-600"}`}>
+                Assigned: {costTotal.toFixed(2)} / {totalAmount.toFixed(2)} {costAssignmentComplete ? "✓" : `(remaining ${costDiff})`}
+              </span>
+            ) : null}
+          </div>
 
-          <p className="text-xs text-[var(--navy-muted)]">Cost allocations will be automatically recorded as CostAllocation rows (source=expenditure) when you Post the expenditure.</p>
-        </div>
+          <label className="block">
+            <span className="text-sm font-bold">Cost treatment</span>
+            <select
+              value={form.beneficiary_type}
+              onChange={(event) => handleCostAssignmentChange(event.target.value)}
+              className="form-input mt-2 w-full"
+            >
+              <option value="">Select how this cost should be reported…</option>
+              <option value="one_poultry_batch">Charge one poultry batch</option>
+              <option value="multiple_poultry_batches">Split between poultry batches</option>
+              <option value="whole_poultry">Whole poultry operation — no batch split</option>
+              <option value="crops">Crops — no poultry batch cost</option>
+              <option value="general_admin">General farm administration — no batch split</option>
+              <option value="capital_asset">Capital asset or construction project</option>
+              <option value="other">Other farm activity</option>
+            </select>
+          </label>
+
+          {assignsSingleBatch ? (
+            <div className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+              <label className="block">
+                <span className="text-sm font-bold">Batch bearing the cost</span>
+                <select
+                  value={costRows[0]?.batch || ""}
+                  onChange={(event) => updateCost(0, "batch", event.target.value ? Number(event.target.value) : "")}
+                  className="form-input mt-2 w-full"
+                >
+                  <option value="">Select batch…</option>
+                  {batches.map((batch) => (
+                    <option key={batch.id} value={batch.id}>{batch.batch_id} (#{batch.id})</option>
+                  ))}
+                </select>
+              </label>
+              <p className="rounded-lg bg-[#f7f2e4] px-4 py-3 text-sm font-bold">
+                Full cost: MWK {totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </p>
+            </div>
+          ) : null}
+
+          {assignsMultipleBatches ? (
+            <div className="mt-4">
+              <div className="mb-3 flex flex-wrap gap-2">
+                <input
+                  placeholder="Search batches…"
+                  value={batchSearch}
+                  onChange={(event) => setBatchSearch(event.target.value)}
+                  className="form-input min-w-56 flex-1 text-sm"
+                />
+                <button type="button" onClick={addCostRow} className="rounded border px-3 py-1 text-sm font-bold">+ Add batch</button>
+              </div>
+              {costRows.map((row, idx) => (
+                <div key={idx} className="mb-2 flex flex-wrap items-end gap-2">
+                  <select
+                    aria-label={`Cost-bearing batch ${idx + 1}`}
+                    value={row.batch}
+                    onChange={(event) => updateCost(idx, "batch", event.target.value ? Number(event.target.value) : "")}
+                    className="form-input w-72 text-sm"
+                  >
+                    <option value="">Select batch…</option>
+                    {filteredBatches.map((batch) => (
+                      <option key={batch.id} value={batch.id}>{batch.batch_id} (#{batch.id})</option>
+                    ))}
+                  </select>
+                  <input
+                    aria-label={`Cost amount for batch ${idx + 1}`}
+                    placeholder="Assigned amount"
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    value={row.amount}
+                    onChange={(event) => updateCost(idx, "amount", event.target.value)}
+                    className="form-input w-40 text-sm"
+                  />
+                  {costRows.length > 1 ? (
+                    <button type="button" onClick={() => removeCostRow(idx)} className="px-2 text-xs font-bold text-red-700">Remove</button>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          {form.beneficiary_type && !assignsBatchCosts ? (
+            <label className="mt-4 block">
+              <span className="text-sm font-bold">Cost purpose or beneficiary</span>
+              <input
+                className="form-input mt-2 w-full"
+                placeholder="Describe the operation, asset, project, or activity"
+                value={form.beneficiary_detail}
+                onChange={(event) => setForm({ ...form, beneficiary_detail: event.target.value })}
+              />
+            </label>
+          ) : null}
+
+          <p className="mt-4 rounded-lg bg-[#f7f2e4] p-3 text-xs text-[var(--navy-muted)]">
+            Batch assignments are locked when the expenditure is posted. Payment sources remain a separate cash audit trail.
+          </p>
+        </section>
 
         {error && <p className="text-red-600 text-sm">{error}</p>}
 
         <div className="flex gap-3">
           <button
             type="submit"
-            disabled={submitting || (totalAmount > 0 && !isValidSplits && (fundingRows.length > 1 || costRows.length > 1))}
+            disabled={submitting}
             className="finance-button"
           >
             {submitting ? "Saving..." : "Save Draft (balances unchanged until Post)"}
@@ -508,7 +609,7 @@ export default function NewExpenditurePage() {
         </div>
 
         <p className="text-xs text-[var(--navy-muted)]">
-          Drafts do not affect balances. Use the Expenditures list to Review &amp; Post after confirming funding sources and beneficiaries.
+          Drafts do not affect balances. Use the Expenditures list to Review &amp; Post after confirming the payment source and cost treatment.
         </p>
       </form>
       {showFundingReceipt ? <div role="dialog" aria-modal="true" aria-labelledby="funding-receipt-title" className="fixed inset-0 z-50 grid place-items-center bg-[#151f36]/45 p-4"><form onSubmit={addNonSalesFunds} className="w-full max-w-xl rounded-2xl bg-white p-6 shadow-2xl"><div className="flex justify-between"><h2 id="funding-receipt-title" className="text-2xl font-extrabold">Add available funds</h2><button type="button" onClick={() => setShowFundingReceipt(false)} aria-label="Close funding form" className="text-2xl">×</button></div><p className="mt-2 text-sm text-[var(--navy-muted)]">This records a receipt. The available balance is always calculated from receipts minus posted spending.</p><div className="mt-5 grid gap-4 sm:grid-cols-2"><label className="text-sm font-bold">Source type<select value={newFunds.source_type} onChange={(event) => setNewFunds({ ...newFunds, source_type: event.target.value })} className="form-input mt-2 w-full"><option value="owner_capital">Owner capital</option><option value="general_farm_cash">General farm cash</option><option value="loan">Loan funding</option><option value="grant">Grant / subsidy</option><option value="other_income">Other income</option></select></label><label className="text-sm font-bold">Description<input required value={newFunds.description} onChange={(event) => setNewFunds({ ...newFunds, description: event.target.value })} className="form-input mt-2 w-full" /></label><label className="text-sm font-bold">Amount received<input required min="0.01" step="0.01" type="number" value={newFunds.amount} onChange={(event) => setNewFunds({ ...newFunds, amount: event.target.value })} className="form-input mt-2 w-full" /></label><label className="text-sm font-bold">Receipt reference<input value={newFunds.reference} onChange={(event) => setNewFunds({ ...newFunds, reference: event.target.value })} className="form-input mt-2 w-full" /></label></div><div className="mt-6 flex justify-end gap-3"><button type="button" onClick={() => setShowFundingReceipt(false)} className="rounded-lg border px-5 py-3 font-bold">Cancel</button><button disabled={submitting} className="finance-button">Record funds</button></div></form></div> : null}

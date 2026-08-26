@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
 import { useMemo, useState, type ReactNode } from "react";
 import { X } from "lucide-react";
@@ -16,7 +15,6 @@ import type {
   PoultryMortality,
   PoultrySale,
   PoultryVaccination,
-  WeightSamplesResponse,
 } from "../types";
 import {
   formatCurrency,
@@ -106,6 +104,9 @@ const tabs: Array<{
 const dayInMs = 24 * 60 * 60 * 1000;
 
 function calculateInputCostTotal(cost: InputCost): number {
+  if (cost.direct_input_total !== undefined && cost.direct_input_total !== null) {
+    return Number(cost.direct_input_total);
+  }
   const unitMultiplier = cost.unit ?? 1;
 
   return cost.quantity * unitMultiplier * cost.unit_cost;
@@ -346,6 +347,10 @@ function costDetail(cost: InputCost): TableRowDetail {
       { label: "Quantity", value: getCostQuantity(cost) },
       { label: "Unit Cost", value: formatCurrency(cost.unit_cost) },
       { label: "Total", value: formatCurrency(calculateInputCostTotal(cost)) },
+      { label: "Expenditure Reference", value: cost.expenditure_reference || "Not linked" },
+      { label: "Payment Status", value: formatLabel(cost.expenditure_payment_status || "historical_unassigned") },
+      { label: "Paid From", value: cost.funding_sources?.join(", ") || "Not paid / source unassigned" },
+      { label: "Balance Due", value: formatCurrency(Number(cost.balance_due || 0)) },
       { label: "Notes", value: cost.notes },
     ],
   };
@@ -834,7 +839,10 @@ export function BatchDetailView({
         title="Record input cost"
         onClose={() => setOpenModal(null)}
       >
-        <AddInputCostForm batchId={batch.id} />
+        <AddInputCostForm
+          batchId={batch.id}
+          onSuccess={() => setOpenModal(null)}
+        />
       </DetailModal>
 
       <DetailModal
@@ -899,7 +907,7 @@ export function BatchDetailView({
         <AddWeightSampleForm
           batchId={batch.id}
           defaultAge={metrics.dayOfCycle}
-          onSuccess={async (created) => {
+          onSuccess={async () => {
             setOpenModal(null);
             try {
               const mod = await import("../api/weight-sample-mutations");
@@ -1637,13 +1645,13 @@ function CostsTab({
         <Card>
           <RegisterHeader title="Feed cost components" />
           <SimpleTable
-            columns={["Date", "Item", "Category", "Quantity", "Notes", "Total"]}
+            columns={["Date", "Item", "Category", "Payment", "Funding Source", "Total"]}
             rows={feedInputCosts.map((cost) => [
               formatDisplayDate(cost.purchase_date),
               cost.item,
               cost.category,
-              getCostQuantity(cost),
-              cost.notes,
+              formatLabel(cost.expenditure_payment_status || "historical_unassigned"),
+              cost.funding_sources?.join(", ") || "Not paid / unassigned",
               formatCurrency(calculateInputCostTotal(cost)),
             ])}
             rowDetails={feedInputCosts.map(costDetail)}
@@ -1660,7 +1668,9 @@ function CostsTab({
             "Cost Item",
             "Category",
             "Quantity",
-            "Notes",
+            "Payment Status",
+            "Funding Source",
+            "Expenditure",
             "Total",
           ]}
           rows={inputCosts.map((cost) => [
@@ -1668,7 +1678,11 @@ function CostsTab({
             cost.item,
             formatCostCategory(cost.category),
             getCostQuantity(cost),
-            cost.notes,
+            formatLabel(cost.expenditure_payment_status || "historical_unassigned"),
+            cost.funding_sources?.join(", ") || "Not paid / unassigned",
+            cost.expenditure
+              ? { text: cost.expenditure_reference, href: `/finance/expenditures/${cost.expenditure}` }
+              : cost.expenditure_reference,
             formatCurrency(calculateInputCostTotal(cost)),
           ])}
           rowDetails={inputCosts.map(costDetail)}
@@ -2241,12 +2255,18 @@ function SectionLabel({ children, className = "" }: SectionLabelProps) {
 
 type SimpleTableProps = {
   columns: string[];
-  rows: string[][];
+  rows: TableCell[][];
   emptyMessage: string;
   pageSize?: number;
   exportFileName?: string;
   rowDetails?: TableRowDetail[];
 };
+
+type TableCell = string | { text: string; href: string };
+
+function tableCellText(cell: TableCell): string {
+  return typeof cell === "string" ? cell : cell.text;
+}
 
 type TableRowDetail = {
   title: string;
@@ -2277,7 +2297,7 @@ function SimpleTable({
   const filteredRows = normalizedFilter
     ? keyedRows.filter(({ row, detail }) =>
         [
-          ...row,
+          ...row.map(tableCellText),
           ...(detail?.fields.map((field) => field.value) ?? []),
         ].some((cell) => cell.toLowerCase().includes(normalizedFilter))
       )
@@ -2290,7 +2310,7 @@ function SimpleTable({
   function exportRows() {
     const csvRows = [columns, ...filteredRows.map(({ row }) => row)].map((row) =>
       row
-        .map((cell) => `"${cell.replace(/"/g, '""')}"`)
+        .map((cell) => `"${tableCellText(cell).replace(/"/g, '""')}"`)
         .join(",")
     );
     const blob = new Blob([csvRows.join("\n")], {
@@ -2388,14 +2408,22 @@ function SimpleTable({
                 >
                   {row.map((cell, cellIndex) => (
                     <td
-                      key={`${cell}-${cellIndex}`}
+                      key={`${tableCellText(cell)}-${cellIndex}`}
                       className={`px-5 py-5 text-base ${
                         cellIndex === 0
                           ? "font-extrabold text-[#151926]"
                           : "text-[#747b8d]"
                       }`}
                     >
-                      {cell}
+                      {typeof cell === "string" ? cell : (
+                        <Link
+                          href={cell.href}
+                          onClick={(event) => event.stopPropagation()}
+                          className="font-bold text-[#151f36] underline"
+                        >
+                          {cell.text}
+                        </Link>
+                      )}
                     </td>
                   ))}
                 </tr>

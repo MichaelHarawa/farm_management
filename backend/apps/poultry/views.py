@@ -10,6 +10,10 @@ from rest_framework.response import Response
 from django.utils import timezone
 
 from apps.finance.models import AccountingPeriod, PeriodStatus
+from apps.finance.services.expenditures import (
+    batch_cost_records,
+    create_batch_cost_transaction,
+)
 from apps.poultry.services.batch_lifecycle import (
     assert_batch_in_production,
     create_mortality_with_lifecycle,
@@ -162,12 +166,7 @@ class BatchViewset(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retrie
         poultry_batch = self.get_object()
 
         if request.method == "GET":
-            input_costs = poultry_batch.input_costs.all().order_by(
-                "-purchase_date",
-                "-created_at",
-            )
-            serializer = self.get_serializer(input_costs, many=True)
-            return Response(serializer.data, status=status.HTTP_200_OK)
+            return Response(batch_cost_records(poultry_batch), status=status.HTTP_200_OK)
 
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -186,9 +185,10 @@ class BatchViewset(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retrie
         except ValueError as error:
             raise ValidationError({"batch": str(error)}) from error
 
-        input_cost = self.save_with_current_user(
-            serializer,
+        input_cost = create_batch_cost_transaction(
             batch=poultry_batch,
+            data=dict(serializer.validated_data),
+            user=request.user,
         )
 
         return Response(
@@ -199,15 +199,11 @@ class BatchViewset(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retrie
     @action(detail=True, methods=["get"], url_path="feed_input_costs")
     def feed_input_costs(self, request, pk=None):
         poultry_batch = self.get_object()
-        input_costs = poultry_batch.input_costs.filter(
-            category__icontains="feed",
-        ).order_by(
-            "-purchase_date",
-            "-created_at",
-        )
-        serializer = self.get_serializer(input_costs, many=True)
-
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        input_costs = [
+            row for row in batch_cost_records(poultry_batch)
+            if "feed" in row["category"].lower()
+        ]
+        return Response(input_costs, status=status.HTTP_200_OK)
 
 
     @action(detail=True, methods=["get", "post"], url_path="sales")

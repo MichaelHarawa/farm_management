@@ -58,8 +58,12 @@ export type ConfirmBatchDeliveryPayload = {
 };
 
 export type InputCost = {
-  id: number;
+  id: number | string;
   batch: number;
+  expenditure: number | null;
+  expenditure_reference: string;
+  expenditure_payment_status: "unpaid" | "partial" | "paid" | "historical_unassigned";
+  expenditure_origin: "batch_cost" | "finance" | "historical_input_cost";
   item: string;
   category: string;
   quantity: number;
@@ -74,6 +78,10 @@ export type InputCost = {
   updated_at: string;
   created_by: string | null;
   created_by_name: string;
+  direct_input_total: number;
+  amount_paid: number;
+  balance_due: number;
+  funding_sources: string[];
 };
 
 export type DrugVaccinationType =
@@ -212,13 +220,21 @@ export type PaginatedResponse<T> = {
 
 export type CreateInputCostPayload = {
   item: string;
-  category: string;
+  category_id: number;
   quantity: number;
   unit: number;
   unit_measurement: string;
   unit_cost: number;
   purchase_date: string;
   notes: string;
+  payment_status: "paid" | "credit";
+  funding_allocations: Array<{
+    funding_source: number;
+    source_query?: string;
+    amount: number;
+    classification: string;
+  }>;
+  idempotency_key: string;
 };
 
 export type CreateVaccinationPayload = {

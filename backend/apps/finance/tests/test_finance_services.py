@@ -1015,7 +1015,11 @@ class FinanceServiceTests(TestCase):
             },
             format="json",
         )
-        self.assertEqual(poultry_input_correction.status_code, 201)
+        self.assertEqual(
+            poultry_input_correction.status_code,
+            201,
+            poultry_input_correction.data,
+        )
 
         reclosed = client.post(
             f"/api/v1/finance/accounting-periods/{period.id}/close"

@@ -578,7 +578,7 @@ class FundingSourceSerializer(serializers.ModelSerializer):
     class Meta:
         model = FundingSource
         fields = [
-            "id", "source_type", "batch", "description", "notes",
+            "id", "source_type", "batch", "description", "notes", "is_active",
             "created_at", "updated_at", "available_balance", "display_name", "batch_code",
         ]
         read_only_fields = ["created_at", "updated_at", "available_balance"]
@@ -626,6 +626,9 @@ class ExpenditureSerializer(serializers.ModelSerializer):
     )
     category_detail = serializers.SerializerMethodField(read_only=True)
     funding_status = serializers.SerializerMethodField(read_only=True)
+    amount_paid = serializers.SerializerMethodField(read_only=True)
+    balance_due = serializers.SerializerMethodField(read_only=True)
+    beneficiary_batches = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Expenditure
@@ -646,6 +649,9 @@ class ExpenditureSerializer(serializers.ModelSerializer):
             "external_reference",
             "expenditure_reference",
             "status",
+            "payment_status",
+            "origin",
+            "idempotency_key",
             "farm_module",
             "beneficiary_type",
             "beneficiary_detail",
@@ -662,6 +668,9 @@ class ExpenditureSerializer(serializers.ModelSerializer):
             "funding_allocations",
             "total_funded",
             "funding_status",
+            "amount_paid",
+            "balance_due",
+            "beneficiary_batches",
             "funding_allocations_input",
             "cost_allocations_input",
         ]
@@ -670,6 +679,7 @@ class ExpenditureSerializer(serializers.ModelSerializer):
             "reversed_at", "reversed_by", "reversal_reason",
             "funding_allocations", "total_funded", "category_detail",
             "funding_status", "cost_allocation_plan",
+            "payment_status", "amount_paid", "balance_due", "beneficiary_batches",
         ]
 
     def get_funding_allocations(self, obj):
@@ -691,6 +701,22 @@ class ExpenditureSerializer(serializers.ModelSerializer):
             return "partially_funded"
         return "unfunded"
 
+    def get_amount_paid(self, obj):
+        return self.get_total_funded(obj)
+
+    def get_balance_due(self, obj):
+        return str(max(obj.amount - Decimal(self.get_total_funded(obj)), Decimal("0.00")))
+
+    def get_beneficiary_batches(self, obj):
+        return [
+            {
+                "id": allocation.batch_id,
+                "batch_id": allocation.batch.batch_id,
+                "amount": str(allocation.allocated_amount),
+            }
+            for allocation in obj.cost_allocations.select_related("batch").all()
+        ]
+
     def get_category_detail(self, obj):
         if obj.category:
             return {
@@ -698,6 +724,8 @@ class ExpenditureSerializer(serializers.ModelSerializer):
                 "name": obj.category.name,
                 "code": obj.category.code,
                 "default_accounting_nature": obj.category.default_accounting_nature,
+                "requires_item_details": obj.category.requires_item_details,
+                "requires_batch_beneficiary": obj.category.requires_batch_beneficiary,
             }
         return None
 
@@ -771,11 +799,15 @@ class ExpenditureSerializer(serializers.ModelSerializer):
 
 
 class FundingAllocationSerializer(serializers.ModelSerializer):
+    funding_source_display = serializers.CharField(source="funding_source.__str__", read_only=True)
+    funding_batch = serializers.IntegerField(source="funding_source.batch_id", read_only=True, allow_null=True)
+
     class Meta:
         model = FundingAllocation
         fields = [
             "id", "expenditure", "funding_source", "amount",
             "allocation_date", "classification", "notes", "created_by",
+            "funding_source_display", "funding_batch",
         ]
         read_only_fields = ["created_by"]
 
@@ -813,7 +845,10 @@ class RecordSalePaymentSerializer(serializers.Serializer):
 class ExpenditureCategorySerializer(serializers.ModelSerializer):
     class Meta:
         model = ExpenditureCategory
-        fields = ["id", "name", "code", "default_accounting_nature", "is_active", "display_order"]
+        fields = [
+            "id", "name", "code", "default_accounting_nature", "is_active",
+            "display_order", "requires_item_details", "requires_batch_beneficiary",
+        ]
 
 
 class BatchRevenueUtilizationSerializer(serializers.Serializer):

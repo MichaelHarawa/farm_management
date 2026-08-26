@@ -19,6 +19,7 @@ from apps.poultry.models import (
 )
 
 from ..models import (
+    AccountingNature,
     AccountingPeriod,
     AdHocLabourPayment,
     AllocationSourceType,
@@ -32,6 +33,7 @@ from ..models import (
     CostScope,
     ExpenseRecognitionSchedule,
     ExpenseRecognitionType,
+    ExpenditureStatus,
     PayrollEntry,
     SalePayment,
     SalePaymentStatus,
@@ -140,7 +142,15 @@ def monthly_profitability_report(period: AccountingPeriod) -> dict:
     accounts_receivable = money(max(total_revenue - collected_against_period_sales, Decimal("0.00")))
 
     direct_batch_costs = money(
+        CostAllocation.objects.filter(
+            accounting_period=period,
+            source_type=AllocationSourceType.EXPENDITURE,
+            expenditure__status=ExpenditureStatus.POSTED,
+            expenditure__accounting_nature=AccountingNature.DIRECT_COST,
+        ).aggregate(total=Sum("allocated_amount"))["total"]
+    ) + money(
         InputCosts.objects.filter(
+            expenditure__isnull=True,
             purchase_date__date__gte=period.period_start,
             purchase_date__date__lte=period.period_end,
         )

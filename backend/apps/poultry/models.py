@@ -236,6 +236,14 @@ class InputCosts(models.Model):
     Batch,
     on_delete=models.CASCADE,
     related_name="input_costs",)
+    expenditure = models.OneToOneField(
+        "finance.Expenditure",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="input_cost_detail",
+        help_text="Authoritative financial transaction represented by this operational detail.",
+    )
     item = models.CharField(max_length=200)
     category = models.CharField(max_length=200)
     quantity = models.PositiveIntegerField()

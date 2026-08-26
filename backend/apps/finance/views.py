@@ -92,6 +92,12 @@ from .services.reporting import (
     receivables_report,
 )
 from .services.collections import record_sale_payment, reverse_sale_payment
+from .services.expenditures import (
+    post_expenditure,
+    record_expenditure_payment,
+    reconciliation_summary,
+    reverse_expenditure,
+)
 
 
 def json_safe(value):
@@ -820,14 +826,34 @@ class ExpenditureViewSet(viewsets.ModelViewSet):
     CRUD + Post action for expenditures.
     Supports the full funding + cost allocation workflow.
     """
-    queryset = Expenditure.objects.all().prefetch_related("funding_allocations")
+    queryset = Expenditure.objects.all().select_related("category").prefetch_related(
+        "funding_allocations__funding_source",
+        "cost_allocations__batch",
+    )
     serializer_class = ExpenditureSerializer
     permission_classes = (FinancePermission,)
-    filterset_fields = ["status", "accounting_nature", "category", "expenditure_date"]
+    filterset_fields = [
+        "status", "payment_status", "origin", "accounting_nature", "category",
+        "expenditure_date",
+    ]
     search_fields = ["description", "payee", "expenditure_reference", "external_reference"]
 
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
+
+    def perform_update(self, serializer):
+        if serializer.instance.status != ExpenditureStatus.DRAFT:
+            raise ValidationError(
+                {"detail": "Posted expenditures are immutable; reverse and replace the transaction."}
+            )
+        serializer.save()
+
+    def destroy(self, request, *args, **kwargs):
+        if self.get_object().status != ExpenditureStatus.DRAFT:
+            raise ValidationError(
+                {"detail": "Posted expenditures cannot be deleted; use reversal."}
+            )
+        return super().destroy(request, *args, **kwargs)
 
     @action(detail=True, methods=["post"])
     def post(self, request, pk=None):
@@ -835,117 +861,61 @@ class ExpenditureViewSet(viewsets.ModelViewSet):
         Post a draft expenditure. This makes funding allocations count against
         batch available cash. Supports passing funding_allocations in the body.
         """
-        funding_data = request.data.get("funding_allocations", []) or []
+        funding_data = request.data.get("funding_allocations") if "funding_allocations" in request.data else None
         cost_data = request.data.get("cost_allocations")
-
-        with transaction.atomic():
-            expenditure = Expenditure.objects.select_for_update().get(pk=pk)
-            if expenditure.status != ExpenditureStatus.DRAFT:
-                return Response({"detail": "Only draft expenditures can be posted."}, status=400)
-
-            if funding_data:
-                expenditure.funding_allocations.all().delete()
-                for alloc in funding_data:
-                    FundingAllocation.objects.create(
-                        expenditure=expenditure,
-                        funding_source_id=alloc.get("funding_source"),
-                        amount=alloc.get("amount"),
-                        allocation_date=expenditure.expenditure_date or timezone.now().date(),
-                        classification=alloc.get("classification", "reinvestment"),
-                        created_by=request.user,
-                    )
-
-            effective_funding = list(
-                expenditure.funding_allocations.values("funding_source", "amount")
-            )
-            source_ids = [row["funding_source"] for row in effective_funding]
-            # Prevent two postings from spending the same available source balance.
-            list(FundingSource.objects.select_for_update().filter(pk__in=source_ids))
-            validate_funding_allocations(expenditure, effective_funding)
-
-            if cost_data is None:
-                cost_data = expenditure.cost_allocation_plan or []
-
-            # Auto create CostAllocations (only if none linked yet)
-            existing_cost = CostAllocation.objects.filter(expenditure=expenditure).exists()
-            if cost_data and not existing_cost:
-                period = expenditure.accounting_period
-                if not period and cost_data:
-                    period = AccountingPeriod.objects.filter(status=PeriodStatus.OPEN).order_by("-period_start").first()
-
-                total_cost = sum(Decimal(str(c.get("amount", 0))) for c in cost_data) or Decimal("1")
-                for c in cost_data:
-                    batch_id = c.get("batch")
-                    amount = Decimal(str(c.get("amount", 0)))
-                    if not batch_id or amount == 0 or not period:
-                        continue
-                    pct = (amount * Decimal("100") / total_cost).quantize(Decimal("0.0001"))
-                    CostAllocation.objects.create(
-                        accounting_period=period,
-                        batch_id=batch_id,
-                        source_type=AllocationSourceType.EXPENDITURE,
-                        expenditure=expenditure,
-                        allocation_method="direct",
-                        driver_quantity=amount,
-                        total_driver_quantity=total_cost,
-                        allocation_percentage=pct,
-                        allocated_amount=amount,
-                        generated_by=request.user,
-                    )
-
-            expenditure.status = ExpenditureStatus.POSTED
-            expenditure.posted_by = request.user
-            expenditure.posted_at = timezone.now()
-            expenditure.save(update_fields=["status", "posted_by", "posted_at", "updated_at"])
-
+        allow_unpaid = request.data.get("payment_status") in {"credit", "unpaid", "partial"}
+        expenditure = post_expenditure(
+            expenditure_id=pk,
+            user=request.user,
+            funding_rows=funding_data,
+            cost_rows=cost_data,
+            allow_unpaid=allow_unpaid,
+        )
         return Response(ExpenditureSerializer(expenditure).data)
 
     @action(detail=True, methods=["post"])
     def void(self, request, pk=None):
-        reason = (request.data.get("reason") or "").strip()
-        if not reason:
-            raise ValidationError({"reason": "A reversal reason is required."})
-        with transaction.atomic():
-            expenditure = Expenditure.objects.select_for_update().get(pk=pk)
-            if expenditure.status != ExpenditureStatus.POSTED:
-                return Response({"detail": "Only posted expenditures can be voided."}, status=400)
-            expenditure.status = ExpenditureStatus.VOID
-            expenditure.reversal_reason = reason
-            expenditure.reversed_at = timezone.now()
-            expenditure.reversed_by = request.user
-            expenditure.save(
-                update_fields=[
-                    "status", "reversal_reason", "reversed_at", "reversed_by", "updated_at"
-                ]
-            )
+        expenditure = reverse_expenditure(
+            expenditure_id=pk,
+            reason=request.data.get("reason"),
+            user=request.user,
+        )
         return Response(ExpenditureSerializer(expenditure).data)
 
     @action(detail=True, methods=["post"], url_path="assign-funding")
     def assign_funding(self, request, pk=None):
         """Controlled reconciliation for historical posted, wholly unfunded rows."""
-        funding_data = request.data.get("funding_allocations", []) or []
-        with transaction.atomic():
-            expenditure = Expenditure.objects.select_for_update().get(pk=pk)
-            if expenditure.status != ExpenditureStatus.POSTED:
-                raise ValidationError({"detail": "Use the normal post workflow for drafts."})
-            if expenditure.funding_allocations.exists():
-                raise ValidationError(
-                    {"detail": "This reconciliation action is only for wholly unfunded posted expenditures."}
-                )
-            source_ids = [row.get("funding_source") for row in funding_data]
-            list(FundingSource.objects.select_for_update().filter(pk__in=source_ids))
-            validate_funding_allocations(expenditure, funding_data)
-            for alloc in funding_data:
-                FundingAllocation.objects.create(
-                    expenditure=expenditure,
-                    funding_source_id=alloc["funding_source"],
-                    amount=alloc["amount"],
-                    allocation_date=expenditure.expenditure_date,
-                    classification=alloc.get("classification", "reinvestment"),
-                    notes="Historical funding source assigned through controlled reconciliation.",
-                    created_by=request.user,
-                )
+        expenditure = record_expenditure_payment(
+            expenditure_id=pk,
+            funding_rows=request.data.get("funding_allocations", []) or [],
+            payment_group_key=request.data.get("idempotency_key") or f"historical-{pk}",
+            payment_date=request.data.get("payment_date"),
+            user=request.user,
+        )
         return Response(ExpenditureSerializer(expenditure).data)
+
+    @action(detail=True, methods=["post"], url_path="record-payment")
+    def record_payment(self, request, pk=None):
+        expenditure = record_expenditure_payment(
+            expenditure_id=pk,
+            funding_rows=request.data.get("funding_allocations", []) or [],
+            payment_group_key=request.data.get("idempotency_key"),
+            payment_date=request.data.get("payment_date"),
+            user=request.user,
+        )
+        return Response(ExpenditureSerializer(expenditure).data)
+
+    @action(detail=False, methods=["get"], url_path="reconciliation-report")
+    def reconciliation_report(self, request):
+        return Response(reconciliation_summary())
+
+    @action(detail=False, methods=["get"])
+    def payables(self, request):
+        queryset = self.get_queryset().filter(
+            status=ExpenditureStatus.POSTED,
+            payment_status__in=["unpaid", "partial", "historical_unassigned"],
+        )
+        return Response(self.get_serializer(queryset, many=True).data)
 
 
 class FundingSourceViewSet(viewsets.ModelViewSet):
@@ -954,7 +924,7 @@ class FundingSourceViewSet(viewsets.ModelViewSet):
     permission_classes = (FinancePermission,)
 
     def list(self, request, *args, **kwargs):
-        sources = list(self.get_queryset().select_related("batch"))
+        sources = list(self.get_queryset().filter(is_active=True).select_related("batch"))
         if request.query_params.get("include_empty") != "1":
             from .services.profitability import available_funding_source_cash
 

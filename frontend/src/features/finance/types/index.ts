@@ -368,6 +368,9 @@ export type Expenditure = {
   expenditure_reference?: string;
   external_reference?: string;
   status: "draft" | "posted" | "void";
+  payment_status?: "unpaid" | "partial" | "paid" | "historical_unassigned";
+  origin?: "batch_cost" | "finance" | "historical_input_cost";
+  idempotency_key?: string | null;
   farm_module?: string;
   notes?: string;
   created_at: string;
@@ -375,14 +378,23 @@ export type Expenditure = {
   funding_allocations?: Array<{
     id?: number;
     funding_source: number;
+    funding_source_display?: string;
+    funding_batch?: number | null;
     amount: DecimalString;
     classification?: string;
   }>;
   total_funded?: DecimalString;
+  amount_paid?: DecimalString;
+  balance_due?: DecimalString;
   funding_status?: "funded" | "partially_funded" | "unfunded" | "reversed";
   beneficiary_type?: string;
   beneficiary_detail?: string;
   cost_allocation_plan?: CostAllocationInput[];
+  beneficiary_batches?: Array<{
+    id: number;
+    batch_id: string;
+    amount: DecimalString;
+  }>;
 };
 
 export type BatchRevenueUtilization = {
@@ -420,6 +432,7 @@ export type FundingSource = {
   batch: number | null;
   description: string;
   notes?: string;
+  is_active?: boolean;
   available_balance?: DecimalString | null;
   display_name: string;
   batch_code: string | null;

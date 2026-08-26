@@ -10,7 +10,9 @@ from rest_framework.test import APIClient
 from rest_framework.exceptions import ValidationError
 
 from apps.finance.models import (
+    AccountingPeriod,
     AccountingNature,
+    CostAllocation,
     Expenditure,
     ExpenditureCategory,
     FundingReceipt,
@@ -228,6 +230,91 @@ class CashLedgerTests(TestCase):
         self.assertEqual(response.status_code, 200, response.data)
         self.assertEqual(available_funding_source_cash(source), Decimal("200.00"))
         self.assertEqual(cash_used_from_batch(self.batch), Decimal("0.00"))
+
+    def test_posting_creates_expenditure_cost_allocation_source(self):
+        self.make_sale(total=Decimal("300.00"), paid=Decimal("300.00"))
+        source = FundingSource.objects.get(
+            source_type=FundingSourceType.BATCH_COLLECTION,
+            batch=self.batch,
+        )
+        period = AccountingPeriod.objects.create(
+            period_start=date(2026, 1, 1),
+            period_end=date(2026, 1, 31),
+        )
+        category = ExpenditureCategory.objects.create(
+            name="Allocated feed",
+            code="allocated_feed",
+            default_accounting_nature=AccountingNature.DIRECT_COST,
+        )
+        expenditure = Expenditure.objects.create(
+            expenditure_date=date(2026, 1, 26),
+            accounting_period=period,
+            amount=Decimal("300.00"),
+            category=category,
+            accounting_nature=AccountingNature.DIRECT_COST,
+            description="Feed assigned to one batch",
+            beneficiary_type="one_poultry_batch",
+            beneficiary_detail=self.batch.batch_id,
+            cost_allocation_plan=[{"batch": self.batch.pk, "amount": "300.00"}],
+            created_by=self.user,
+        )
+
+        client = APIClient()
+        client.force_authenticate(self.user)
+        response = client.post(
+            f"/api/v1/finance/expenditures/{expenditure.pk}/post",
+            {
+                "funding_allocations": [
+                    {"funding_source": source.pk, "amount": "300.00"}
+                ]
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        allocation = CostAllocation.objects.get(expenditure=expenditure)
+        self.assertEqual(allocation.batch, self.batch)
+        self.assertEqual(allocation.allocated_amount, Decimal("300.00"))
+        allocation.full_clean()
+
+    def test_posting_rejects_incomplete_batch_cost_assignment(self):
+        self.make_sale(total=Decimal("300.00"), paid=Decimal("300.00"))
+        source = FundingSource.objects.get(
+            source_type=FundingSourceType.BATCH_COLLECTION,
+            batch=self.batch,
+        )
+        period = AccountingPeriod.objects.create(
+            period_start=date(2026, 1, 1),
+            period_end=date(2026, 1, 31),
+        )
+        expenditure = Expenditure.objects.create(
+            expenditure_date=date(2026, 1, 26),
+            accounting_period=period,
+            amount=Decimal("300.00"),
+            accounting_nature=AccountingNature.DIRECT_COST,
+            other_nature_detail="Test direct batch cost",
+            description="Incomplete allocation",
+            cost_allocation_plan=[{"batch": self.batch.pk, "amount": "200.00"}],
+            created_by=self.user,
+        )
+
+        client = APIClient()
+        client.force_authenticate(self.user)
+        response = client.post(
+            f"/api/v1/finance/expenditures/{expenditure.pk}/post",
+            {
+                "funding_allocations": [
+                    {"funding_source": source.pk, "amount": "300.00"}
+                ]
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("cost_allocations", response.data)
+        expenditure.refresh_from_db()
+        self.assertEqual(expenditure.status, "draft")
+        self.assertFalse(expenditure.funding_allocations.exists())
 
 
 class ConcurrentPaymentTests(TransactionTestCase):

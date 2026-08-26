@@ -294,7 +294,13 @@ def regenerate_allocations_for_period(
         raise ValueError("Closed accounting periods cannot be recalculated.")
 
     recalculate_bird_day_snapshots(period)
-    CostAllocation.objects.filter(accounting_period=period, locked=False).delete()
+    # Expenditure allocations are the beneficiary ledger for authoritative
+    # transactions. They are created when an expenditure is posted and must
+    # survive period recalculation; only derived operational allocations are
+    # regenerated here.
+    CostAllocation.objects.filter(accounting_period=period, locked=False).exclude(
+        source_type=AllocationSourceType.EXPENDITURE
+    ).delete()
 
     allocations: list[CostAllocation] = []
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 from decimal import Decimal
+import uuid
 
 from rest_framework import serializers
 
@@ -162,14 +163,47 @@ class InputCostsSerializer(serializers.ModelSerializer):
         decimal_places=2,
         read_only=True,
     )
+    category = serializers.CharField(required=False, allow_blank=True)
+    category_id = serializers.IntegerField(write_only=True, min_value=1, required=False)
+    payment_status = serializers.ChoiceField(
+        choices=[("paid", "Paid now"), ("credit", "Bought on credit")],
+        write_only=True,
+        default="credit",
+    )
+    funding_allocations = serializers.ListField(
+        child=serializers.DictField(),
+        write_only=True,
+        required=False,
+        default=list,
+    )
+    idempotency_key = serializers.CharField(
+        write_only=True,
+        max_length=120,
+        default=lambda: str(uuid.uuid4()),
+    )
+    expenditure_reference = serializers.CharField(
+        source="expenditure.expenditure_reference", read_only=True
+    )
+    expenditure_payment_status = serializers.CharField(
+        source="expenditure.payment_status", read_only=True
+    )
+    expenditure_origin = serializers.CharField(source="expenditure.origin", read_only=True)
+    amount_paid = serializers.SerializerMethodField()
+    balance_due = serializers.SerializerMethodField()
+    funding_sources = serializers.SerializerMethodField()
 
     class Meta:
         model = InputCosts
         fields = (
             "id",
             "batch",
+            "expenditure",
+            "expenditure_reference",
+            "expenditure_payment_status",
+            "expenditure_origin",
             "item",
             "category",
+            "category_id",
             "quantity",
             "unit_measurement",
             "unit",
@@ -183,16 +217,29 @@ class InputCostsSerializer(serializers.ModelSerializer):
             "updated_at",
             "created_by",
             "created_by_name",
+            "amount_paid",
+            "balance_due",
+            "funding_sources",
+            "payment_status",
+            "funding_allocations",
+            "idempotency_key",
         )
         read_only_fields = (
             "id",
             "batch",
+            "expenditure",
             "created_at",
             "updated_at",
             "created_by",
             "created_by_name",
             "usd_equivalent",
             "direct_input_total",
+            "expenditure_reference",
+            "expenditure_payment_status",
+            "expenditure_origin",
+            "amount_paid",
+            "balance_due",
+            "funding_sources",
         )
 
     def validate(self, attrs):
@@ -210,6 +257,30 @@ class InputCostsSerializer(serializers.ModelSerializer):
             errors["unit"] = "Unit must be greater than zero."
         if unit_cost < Decimal("0.00"):
             errors["unit_cost"] = "Unit cost cannot be negative."
+        if not attrs.get("category_id"):
+            from apps.finance.models import ExpenditureCategory
+
+            category_name = (attrs.get("category") or "").strip()
+            category = ExpenditureCategory.objects.filter(
+                name__iexact=category_name,
+                is_active=True,
+            ).first()
+            if category is None and "feed" in category_name.lower():
+                category, _ = ExpenditureCategory.objects.get_or_create(
+                    code="feed",
+                    defaults={
+                        "name": "Feed",
+                        "default_accounting_nature": "direct_cost",
+                        "requires_item_details": True,
+                        "requires_batch_beneficiary": True,
+                        "is_active": True,
+                        "display_order": 20,
+                    },
+                )
+            if category is None:
+                errors["category_id"] = "Select a shared finance category."
+            else:
+                attrs["category_id"] = category.pk
         if errors:
             raise serializers.ValidationError(errors)
 
@@ -220,6 +291,22 @@ class InputCostsSerializer(serializers.ModelSerializer):
             return ""
 
         return obj.created_by.get_full_name() or obj.created_by.username
+
+    def get_amount_paid(self, obj):
+        if not obj.expenditure_id:
+            return "0.00"
+        from django.db.models import Sum
+        return str(obj.expenditure.funding_allocations.aggregate(total=Sum("amount"))["total"] or Decimal("0.00"))
+
+    def get_balance_due(self, obj):
+        if not obj.expenditure_id:
+            return str(obj.direct_input_total)
+        return str(max(obj.expenditure.amount - Decimal(self.get_amount_paid(obj)), Decimal("0.00")))
+
+    def get_funding_sources(self, obj):
+        if not obj.expenditure_id:
+            return []
+        return [str(row.funding_source) for row in obj.expenditure.funding_allocations.select_related("funding_source")]
 
 class SalesSerializer(serializers.ModelSerializer):
     created_by_name = serializers.SerializerMethodField()

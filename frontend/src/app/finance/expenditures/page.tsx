@@ -19,6 +19,12 @@ type Expenditure = {
   category?: any;
   external_reference?: string;
   funding_status?: string;
+  payment_status?: string;
+  origin?: string;
+  beneficiary_detail?: string;
+  beneficiary_batches?: Array<{ id: number; batch_id: string; amount: string }>;
+  funding_allocations?: Array<{ funding_source: number; funding_source_display?: string; amount: string }>;
+  balance_due?: string;
 };
 
 export default function FinanceExpendituresClient() {
@@ -26,6 +32,7 @@ export default function FinanceExpendituresClient() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [paymentFilter, setPaymentFilter] = useState("");
 
   const load = async () => {
     try {
@@ -41,16 +48,6 @@ export default function FinanceExpendituresClient() {
   useEffect(() => {
     load();
   }, []);
-
-  const postExpenditure = async (id: number) => {
-    try {
-      await clientApiFetch(`/api/finance/expenditures/${id}/post`, { method: "POST" });
-      await load();
-      alert("Expenditure posted. Batch available cash updated.");
-    } catch (e: any) {
-      alert("Failed to post: " + (e?.message || e));
-    }
-  };
 
   const voidExpenditure = async (id: number) => {
     const reason = prompt("Reversal reason?") || "Correction";
@@ -70,7 +67,8 @@ export default function FinanceExpendituresClient() {
     const q = search.toLowerCase();
     const matchesSearch = !q || (e.description || "").toLowerCase().includes(q) || (e.expenditure_reference || "").toLowerCase().includes(q);
     const matchesStatus = !statusFilter || e.status === statusFilter;
-    return matchesSearch && matchesStatus;
+    const matchesPayment = !paymentFilter || e.payment_status === paymentFilter;
+    return matchesSearch && matchesStatus && matchesPayment;
   });
 
   if (loading) return <div className="p-8">Loading...</div>;
@@ -91,6 +89,13 @@ export default function FinanceExpendituresClient() {
           <option value="posted">Posted</option>
           <option value="void">Void</option>
         </select>
+        <select value={paymentFilter} onChange={e => setPaymentFilter(e.target.value)} className="form-input">
+          <option value="">All payment states</option>
+          <option value="paid">Paid</option>
+          <option value="partial">Partially paid</option>
+          <option value="unpaid">Outstanding payable</option>
+          <option value="historical_unassigned">Historical source unassigned</option>
+        </select>
       </div>
 
       <div className="bg-white border border-[#ddd7c9] rounded-xl overflow-hidden">
@@ -101,15 +106,17 @@ export default function FinanceExpendituresClient() {
               <th className="p-3 text-left">Date</th>
               <th className="p-3 text-left">Description</th>
               <th className="p-3 text-right">Amount</th>
-              <th className="p-3">Nature</th>
+              <th className="p-3">Cost beneficiary</th>
+              <th className="p-3">Payment source</th>
+              <th className="p-3">Payment</th>
+              <th className="p-3">Origin</th>
               <th className="p-3">Status</th>
-              <th className="p-3">Funding</th>
               <th className="p-3">Actions</th>
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 && (
-              <tr><td colSpan={8} className="p-6 text-center text-[#747b8d]">No expenditures match filters.</td></tr>
+              <tr><td colSpan={10} className="p-6 text-center text-[#747b8d]">No expenditures match filters.</td></tr>
             )}
             {filtered.map((exp) => (
               <tr key={exp.id} className="border-t">
@@ -117,18 +124,17 @@ export default function FinanceExpendituresClient() {
                 <td className="p-3">{formatDate(exp.expenditure_date)}</td>
                 <td className="p-3 font-medium">{exp.description}{exp.external_reference ? ` (Ref: ${exp.external_reference})` : ""}</td>
                 <td className="p-3 text-right font-mono">{formatCurrency(exp.amount)}</td>
-                <td className="p-3 text-center">{formatLabel(exp.accounting_nature)}</td>
+                <td className="p-3 text-center">{exp.beneficiary_batches?.length ? exp.beneficiary_batches.map((batch) => <Link key={batch.id} href={`/poultry/batches/${batch.id}?tab=costs`} className="block font-bold underline">{batch.batch_id}</Link>) : exp.beneficiary_detail || "Non-batch"}</td>
+                <td className="p-3 text-center">{exp.funding_allocations?.length ? exp.funding_allocations.map((row) => row.funding_source_display || `Source #${row.funding_source}`).join(", ") : "Not paid / unassigned"}</td>
+                <td className="p-3 text-center"><span className={`rounded px-2 py-0.5 text-xs font-bold ${exp.payment_status === "paid" ? "bg-green-100 text-green-800" : "bg-amber-100 text-amber-900"}`}>{formatLabel(exp.payment_status || "unpaid")}</span>{Number(exp.balance_due || 0) > 0 ? <span className="mt-1 block text-xs">Due {formatCurrency(exp.balance_due || 0)}</span> : null}</td>
+                <td className="p-3 text-center">{formatLabel(exp.origin || "finance")}</td>
                 <td className="p-3 text-center">
                   <span className={`text-xs px-2 py-0.5 rounded ${exp.status === "posted" ? "bg-green-100" : exp.status === "void" ? "bg-gray-200" : "bg-amber-100"}`}>
                     {exp.status}
                   </span>
                 </td>
-                <td className="p-3 text-center font-bold">{formatLabel(exp.funding_status || "unfunded")}</td>
                 <td className="p-3 flex gap-1">
-                  <Link href={`/finance/expenditures/${exp.id}`} className="text-xs border border-[#151f36] px-3 py-1 rounded">Review</Link>
-                  {exp.status === "draft" && (
-                    <button onClick={() => postExpenditure(exp.id)} className="text-xs bg-[#151f36] text-white px-3 py-1 rounded">Post</button>
-                  )}
+                  <Link href={`/finance/expenditures/${exp.id}`} className="rounded border border-[#151f36] px-3 py-1 text-xs font-bold">{exp.status === "posted" && exp.payment_status !== "paid" ? "Record payment" : "Review"}</Link>
                   {exp.status === "posted" && (
                     <button onClick={() => voidExpenditure(exp.id)} className="text-xs bg-red-600 text-white px-2 py-1 rounded">Reverse</button>
                   )}
@@ -140,7 +146,7 @@ export default function FinanceExpendituresClient() {
       </div>
 
       <p className="mt-4 text-sm text-[#747b8d]">
-        Full multi funding + cost splits supported in the new form. Post to apply funding (reduces batch cash) and auto-create CostAllocations.
+        Each row is one authoritative transaction. Beneficiaries affect profitability; payment sources affect cash and Revenue Usage.
       </p>
       <div className="mt-2">
         <Link href="/finance/revenue-usage" className="text-sm underline">View Revenue Usage + Cross-Batch Report →</Link>

@@ -290,22 +290,23 @@ from .models import (
     FundingSource,
     FundingAllocation,
     FundingReceipt,
+    InputCostReconciliation,
     SalePayment,
 )
 
 
 @admin.register(FundingSource)
 class FundingSourceAdmin(admin.ModelAdmin):
-    list_display = ("source_type", "batch", "description")
-    list_filter = ("source_type",)
+    list_display = ("source_type", "batch", "description", "is_active")
+    list_filter = ("source_type", "is_active")
     search_fields = ("description", "batch__batch_id")
     autocomplete_fields = ("batch",)
 
 
 @admin.register(Expenditure)
 class ExpenditureAdmin(admin.ModelAdmin):
-    list_display = ("expenditure_date", "description", "amount", "status", "accounting_nature", "category")
-    list_filter = ("status", "accounting_nature", "farm_module")
+    list_display = ("expenditure_reference", "expenditure_date", "description", "amount", "status", "payment_status", "origin")
+    list_filter = ("status", "payment_status", "origin", "accounting_nature", "farm_module")
     search_fields = ("description", "payee", "reference_number")
     autocomplete_fields = ("accounting_period", "created_by", "posted_by", "reversed_by", "reversed_expenditure")
 
@@ -315,6 +316,14 @@ class FundingAllocationAdmin(admin.ModelAdmin):
     list_display = ("expenditure", "funding_source", "amount", "allocation_date", "classification")
     list_filter = ("classification",)
     autocomplete_fields = ("expenditure", "funding_source", "created_by")
+
+
+@admin.register(InputCostReconciliation)
+class InputCostReconciliationAdmin(admin.ModelAdmin):
+    list_display = ("input_cost", "expenditure", "status", "requires_manual_review")
+    list_filter = ("status", "requires_manual_review")
+    search_fields = ("input_cost__item", "input_cost__batch__batch_id", "expenditure__expenditure_reference")
+    autocomplete_fields = ("input_cost", "expenditure")
 
 
 @admin.register(FundingReceipt)

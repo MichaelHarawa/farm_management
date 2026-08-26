@@ -71,7 +71,19 @@ def input_cost_total(batch: Batch) -> Decimal:
         F("quantity") * F("unit") * F("unit_cost"),
         output_field=DecimalField(max_digits=14, decimal_places=2),
     )
-    return _sum_decimal(InputCosts.objects.filter(batch=batch), expression)
+    authoritative = money(
+        CostAllocation.objects.filter(
+            batch=batch,
+            source_type=AllocationSourceType.EXPENDITURE,
+            expenditure__status=ExpenditureStatus.POSTED,
+            expenditure__accounting_nature=AccountingNature.DIRECT_COST,
+        ).aggregate(total=Sum("allocated_amount"))["total"]
+    )
+    transitional_legacy = _sum_decimal(
+        InputCosts.objects.filter(batch=batch, expenditure__isnull=True),
+        expression,
+    )
+    return money(authoritative + transitional_legacy)
 
 
 def valid_sales(batch: Batch):
@@ -159,6 +171,12 @@ def allocated_production_total(batch: Batch) -> Decimal:
         batch=batch,
         source_type=AllocationSourceType.DEPRECIATION,
     )
+    indirect_expenditures = CostAllocation.objects.filter(
+        batch=batch,
+        source_type=AllocationSourceType.EXPENDITURE,
+        expenditure__status=ExpenditureStatus.POSTED,
+        expenditure__accounting_nature=AccountingNature.INDIRECT_OPERATING_EXPENSE,
+    )
     return money(
         payroll.aggregate(total=Sum("allocated_amount"))["total"]
     ) + money(shared_labour.aggregate(total=Sum("allocated_amount"))["total"]) + money(
@@ -167,6 +185,8 @@ def allocated_production_total(batch: Batch) -> Decimal:
         consumables.aggregate(total=Sum("allocated_amount"))["total"]
     ) + money(
         depreciation.aggregate(total=Sum("allocated_amount"))["total"]
+    ) + money(
+        indirect_expenditures.aggregate(total=Sum("allocated_amount"))["total"]
     )
 
 
@@ -872,6 +892,7 @@ def create_final_snapshot(
 # =============================================================================
 
 from ..models import (
+    AccountingNature,
     Expenditure,
     ExpenditureStatus,
     FundingAllocation,
