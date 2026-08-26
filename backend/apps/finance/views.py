@@ -10,6 +10,7 @@ from django.utils import timezone
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -821,6 +822,12 @@ from .services.profitability import (
 )
 
 
+class ExpenditurePagination(PageNumberPagination):
+    page_size = 10
+    page_size_query_param = "page_size"
+    max_page_size = 100
+
+
 class ExpenditureViewSet(viewsets.ModelViewSet):
     """
     CRUD + Post action for expenditures.
@@ -837,6 +844,26 @@ class ExpenditureViewSet(viewsets.ModelViewSet):
         "expenditure_date",
     ]
     search_fields = ["description", "payee", "expenditure_reference", "external_reference"]
+    pagination_class = ExpenditurePagination
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        search = self.request.query_params.get("search", "").strip()
+        expenditure_status = self.request.query_params.get("status", "").strip()
+        payment_status = self.request.query_params.get("payment_status", "").strip()
+
+        if search:
+            queryset = queryset.filter(
+                Q(description__icontains=search)
+                | Q(payee__icontains=search)
+                | Q(expenditure_reference__icontains=search)
+                | Q(external_reference__icontains=search)
+            )
+        if expenditure_status:
+            queryset = queryset.filter(status=expenditure_status)
+        if payment_status:
+            queryset = queryset.filter(payment_status=payment_status)
+        return queryset
 
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)

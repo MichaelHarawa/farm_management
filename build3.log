@@ -1,0 +1,54 @@
+
+> frontend@0.1.0 build
+> next build
+
+▲ Next.js 16.2.10 (Turbopack)
+- Environments: .env.local
+
+  Creating an optimized production build ...
+✓ Compiled successfully in 6.5s
+  Running TypeScript ...
+  Finished TypeScript in 7.9s ...
+  Collecting page data using 23 workers ...
+  Generating static pages using 23 workers (0/25) ...
+  Generating static pages using 23 workers (6/25) 
+  Generating static pages using 23 workers (12/25) 
+  Generating static pages using 23 workers (18/25) 
+✓ Generating static pages using 23 workers (25/25) in 486ms
+  Finalizing page optimization ...
+
+Route (app)
+┌ ƒ /
+├ ƒ /_not-found
+├ ƒ /api/auth/login
+├ ƒ /api/auth/logout
+├ ƒ /api/auth/session
+├ ƒ /api/finance/[...path]
+├ ƒ /api/poultry/[...path]
+├ ƒ /auth/refresh
+├ ƒ /finance
+├ ƒ /finance/assets
+├ ƒ /finance/batches
+├ ƒ /finance/batches/[id]
+├ ƒ /finance/consumables
+├ ƒ /finance/employees
+├ ƒ /finance/expenditures
+├ ƒ /finance/expenditures/[id]
+├ ƒ /finance/expenditures/new
+├ ƒ /finance/expenses
+├ ƒ /finance/labour
+├ ƒ /finance/monthly
+├ ƒ /finance/payroll
+├ ƒ /finance/receivables
+├ ƒ /finance/revenue-usage
+├ ƒ /finance/revenue-usage/[id]
+├ ƒ /login
+├ ƒ /poultry
+├ ƒ /poultry/batches/[id]
+├ ƒ /poultry/batches/[id]/input-costs
+├ ƒ /poultry/dashboard
+└ ƒ /poultry/guides
+
+
+ƒ  (Dynamic)  server-rendered on demand
+

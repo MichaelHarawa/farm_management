@@ -323,3 +323,67 @@ class UnifiedExpenditureWorkflowTests(TestCase):
             format="json",
         )
         self.assertIn(response.status_code, {401, 403})
+
+    def test_historical_payment_accepts_batch_sales_and_other_funds(self):
+        expenditure = Expenditure.objects.create(
+            expenditure_date=date(2026, 1, 12),
+            accounting_period=self.period,
+            amount=Decimal("100.00"),
+            category=self.feed,
+            accounting_nature=AccountingNature.DIRECT_COST,
+            description="Historical feed payment",
+            status="posted",
+            payment_status=ExpenditurePaymentStatus.HISTORICAL_UNASSIGNED,
+            origin=ExpenditureOrigin.HISTORICAL_INPUT_COST,
+            created_by=self.user,
+            posted_by=self.user,
+        )
+        client = APIClient()
+        client.force_authenticate(self.user)
+
+        response = client.post(
+            f"/api/v1/finance/expenditures/{expenditure.pk}/assign-funding",
+            {
+                "idempotency_key": "historical-split-funding",
+                "payment_date": "2026-01-12",
+                "funding_allocations": [
+                    {"funding_source": self.batch_a_source.pk, "amount": "40.00"},
+                    {"funding_source": self.equity.pk, "amount": "60.00"},
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        expenditure.refresh_from_db()
+        self.assertEqual(expenditure.payment_status, ExpenditurePaymentStatus.PAID)
+        self.assertEqual(expenditure.funding_allocations.count(), 2)
+        self.assertEqual(cash_used_from_batch(self.batch_a), Decimal("40.00"))
+        self.assertEqual(available_funding_source_cash(self.equity), Decimal("940.00"))
+
+    def test_expenditure_register_is_paginated_and_filterable(self):
+        for index in range(13):
+            Expenditure.objects.create(
+                expenditure_date=date(2026, 1, 20),
+                accounting_period=self.period,
+                amount=Decimal("10.00") + index,
+                category=self.feed,
+                accounting_nature=AccountingNature.DIRECT_COST,
+                description=f"Pagination item {index:02d}",
+                created_by=self.user,
+            )
+
+        client = APIClient()
+        client.force_authenticate(self.user)
+        first_page = client.get("/api/v1/finance/expenditures?page=1&page_size=10")
+        second_page = client.get("/api/v1/finance/expenditures?page=2&page_size=10")
+        filtered = client.get(
+            "/api/v1/finance/expenditures?search=Pagination%20item%2001&status=draft"
+        )
+
+        self.assertEqual(first_page.status_code, 200, first_page.data)
+        self.assertEqual(first_page.data["count"], 13)
+        self.assertEqual(len(first_page.data["results"]), 10)
+        self.assertEqual(len(second_page.data["results"]), 3)
+        self.assertEqual(filtered.data["count"], 1)
+        self.assertEqual(filtered.data["results"][0]["description"], "Pagination item 01")

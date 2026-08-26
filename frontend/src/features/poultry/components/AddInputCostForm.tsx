@@ -77,6 +77,10 @@ export function AddInputCostForm({ batchId, onSuccess }: AddInputCostFormProps) 
   const [categories, setCategories] = useState<FinanceCategory[]>([]);
   const [fundingSources, setFundingSources] = useState<FundingSource[]>([]);
   const [serverError, setServerError] = useState<string | null>(null);
+  const [showAddFunds, setShowAddFunds] = useState(false);
+  const [addFundsData, setAddFundsData] = useState({ source_type: "owner_capital", description: "", amount: "", reference: "" });
+  const [addFundsError, setAddFundsError] = useState<string | null>(null);
+  const [addFundsBusy, setAddFundsBusy] = useState(false);
 
   const {
     register,
@@ -84,6 +88,7 @@ export function AddInputCostForm({ batchId, onSuccess }: AddInputCostFormProps) 
     reset,
     control,
     setValue,
+    getValues,
     formState: { errors, isSubmitting },
   } = useForm<InputCostFormValues>({
     resolver: zodResolver(inputCostSchema),
@@ -132,6 +137,48 @@ export function AddInputCostForm({ batchId, onSuccess }: AddInputCostFormProps) 
       onSuccess?.();
     } catch (error) {
       setServerError(getApiErrorMessage(error));
+    }
+  };
+
+  const addAdditionalIncomeSource = async () => {
+    setAddFundsError(null);
+    setAddFundsBusy(true);
+    try {
+      const created = await clientApiFetch<FundingSource>("/api/finance/funding-sources", {
+        method: "POST",
+        body: JSON.stringify({ source_type: addFundsData.source_type, description: addFundsData.description }),
+      });
+      await clientApiFetch("/api/finance/funding-receipts", {
+        method: "POST",
+        body: JSON.stringify({ funding_source: created.id, amount: addFundsData.amount, reference: addFundsData.reference }),
+      });
+      const refreshed = await clientApiFetch<FundingSource[]>("/api/finance/funding-sources");
+      setFundingSources(refreshed);
+      const fresh = refreshed.find((s) => s.id === created.id);
+      if (fresh) {
+        const label = fundingSourceLabel(fresh);
+        // Compute live total from current form values (avoid stale closures)
+        const vals = getValues();
+        const qty = Number(vals.quantity) || 0;
+        const u = Number(vals.unit) || 0;
+        const uc = Number(vals.unit_cost) || 0;
+        const liveTotal = qty * u * uc;
+        const targetAmount = liveTotal > 0 ? liveTotal : Number(addFundsData.amount) || 0;
+        // Always set/replace the primary funding allocation with the newly added source.
+        // This ensures the data flows into the main form's react-hook-form state.
+        replace([{
+          funding_source: fresh.id,
+          source_query: label,
+          amount: targetAmount,
+          classification: "reinvestment",
+        }]);
+      }
+      setShowAddFunds(false);
+      setAddFundsData({ source_type: "owner_capital", description: "", amount: "", reference: "" });
+    } catch (err) {
+      setAddFundsError(getApiErrorMessage(err));
+    } finally {
+      setAddFundsBusy(false);
     }
   };
 
@@ -198,7 +245,7 @@ export function AddInputCostForm({ batchId, onSuccess }: AddInputCostFormProps) 
             <p className="text-label text-[var(--navy-muted)]">Cash ledger</p>
             <h4 className="mt-1 text-xl font-extrabold text-[var(--navy)]">How was this cost paid?</h4>
             <p className="mt-1 text-sm text-[var(--navy-muted)]">
-              The payment source can belong to a different batch. It never changes which batch bears this cost.
+              The payment source can belong to a different batch or be owner capital, loans, grants, farm cash or other income. It never changes which batch bears this cost.
             </p>
           </div>
           <p className="font-display text-2xl font-bold text-[var(--navy)]">{formatCurrency(estimatedTotal)}</p>
@@ -226,16 +273,25 @@ export function AddInputCostForm({ batchId, onSuccess }: AddInputCostFormProps) 
           <div className="mt-5 grid gap-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h5 className="font-bold">Paid from</h5>
-              <span className={Math.abs(fundingTotal - estimatedTotal) < 0.01 ? "text-sm font-bold text-green-700" : "text-sm font-bold text-amber-700"}>
-                {formatCurrency(fundingTotal)} / {formatCurrency(estimatedTotal)}
-              </span>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => { setAddFundsError(null); setShowAddFunds(true); }}
+                  className="text-sm font-bold underline"
+                >
+                  + Add owner, farm, loan, grant or other funds
+                </button>
+                <span className={Math.abs(fundingTotal - estimatedTotal) < 0.01 ? "text-sm font-bold text-green-700" : "text-sm font-bold text-amber-700"}>
+                  {formatCurrency(fundingTotal)} / {formatCurrency(estimatedTotal)}
+                </span>
+              </div>
             </div>
             {fields.map((field, index) => (
               <div key={field.id} className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_10rem_auto] sm:items-center">
                 <input
                   aria-label={`Funding source ${index + 1}`}
                   list={`input-cost-funding-${index}`}
-                  placeholder="Search batch revenue, equity, farm cash, or loan…"
+                  placeholder="Search batch revenue, owner capital, farm cash, loan, grant or other…"
                   {...register(`funding_allocations.${index}.source_query`)}
                   onChange={(event) => {
                     const selected = fundingSources.find((source) => fundingSourceLabel(source) === event.target.value);
@@ -273,7 +329,9 @@ export function AddInputCostForm({ batchId, onSuccess }: AddInputCostFormProps) 
             ) : null}
             {fundingSources.length === 0 ? (
               <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
-                No active source has available cash. Record a sale payment or add owner, farm, loan, or grant funds in Finance.
+                No active source has available cash. Record a sale payment or
+                <button type="button" onClick={() => { setAddFundsError(null); setShowAddFunds(true); }} className="font-bold underline mx-1">add owner/farm/loan/grant funds</button>
+                now.
               </p>
             ) : null}
           </div>
@@ -283,6 +341,43 @@ export function AddInputCostForm({ batchId, onSuccess }: AddInputCostFormProps) 
           </p>
         )}
       </section>
+
+      {showAddFunds ? (
+        <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 grid place-items-center bg-[#151f36]/45 p-4">
+          <div className="w-full max-w-xl rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="flex justify-between">
+              <h2 className="text-2xl font-extrabold">Add available funds</h2>
+              <button type="button" onClick={() => setShowAddFunds(false)} aria-label="Close" className="text-2xl">×</button>
+            </div>
+            <p className="mt-2 text-sm text-[var(--navy-muted)]">Record a receipt into owner capital, loans, grants, farm cash or other income. Balance becomes available for this and future costs.</p>
+            <div className="mt-5 grid gap-4 sm:grid-cols-2">
+              <label className="text-sm font-bold">Source type
+                <select value={addFundsData.source_type} onChange={(e) => setAddFundsData({ ...addFundsData, source_type: e.target.value })} className="form-input mt-2 w-full">
+                  <option value="owner_capital">Owner capital / equity</option>
+                  <option value="general_farm_cash">General farm cash</option>
+                  <option value="loan">Loan funding</option>
+                  <option value="grant">Grant / subsidy</option>
+                  <option value="other_income">Other income</option>
+                </select>
+              </label>
+              <label className="text-sm font-bold">Description
+                <input required value={addFundsData.description} onChange={(e) => setAddFundsData({ ...addFundsData, description: e.target.value })} className="form-input mt-2 w-full" placeholder="e.g. Owner injection August" />
+              </label>
+              <label className="text-sm font-bold">Amount received
+                <input required min="0.01" step="0.01" type="number" value={addFundsData.amount} onChange={(e) => setAddFundsData({ ...addFundsData, amount: e.target.value })} className="form-input mt-2 w-full" />
+              </label>
+              <label className="text-sm font-bold">Receipt reference
+                <input value={addFundsData.reference} onChange={(e) => setAddFundsData({ ...addFundsData, reference: e.target.value })} className="form-input mt-2 w-full" />
+              </label>
+            </div>
+            {addFundsError ? <p className="mt-3 text-sm text-red-700">{addFundsError}</p> : null}
+            <div className="mt-6 flex justify-end gap-3">
+              <button type="button" onClick={() => setShowAddFunds(false)} className="rounded-lg px-4 py-2 text-sm font-bold text-[var(--navy-muted)]">Cancel</button>
+              <button type="button" onClick={addAdditionalIncomeSource} disabled={addFundsBusy} className="rounded-lg bg-[var(--gold)] px-5 py-2 text-sm font-bold disabled:opacity-60">{addFundsBusy ? "Adding…" : "Add funds & use for this cost"}</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <div className="flex flex-col gap-4 border-t border-[var(--line)] pt-5 sm:flex-row sm:items-center sm:justify-between">
         <div>
