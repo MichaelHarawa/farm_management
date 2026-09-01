@@ -112,8 +112,9 @@ export function AddFeedUsageForm({
       name: "unit_of_measurement",
     }) ?? "kg";
 
+  const quantityKg = unitOfMeasurement === "g" ? quantityGiven / 1000 : quantityGiven;
   const feedPerBird =
-    currentNumberOfBirds > 0 ? quantityGiven / currentNumberOfBirds : 0;
+    currentNumberOfBirds > 0 ? quantityKg / currentNumberOfBirds : 0;
 
   const onSubmit: SubmitHandler<FeedUsageFormValues> = async (values) => {
     setServerError(null);
@@ -260,7 +261,7 @@ export function AddFeedUsageForm({
         </FormField>
 
         <FormField
-          label="Current birds"
+          label="Current birds preview"
           error={errors.current_number_of_birds?.message}
         >
           <input
@@ -271,8 +272,10 @@ export function AddFeedUsageForm({
             {...register("current_number_of_birds", {
               valueAsNumber: true,
             })}
-            className="form-input"
+            readOnly
+            className="form-input bg-[var(--surface-cream-soft)]"
           />
+          <span className="text-xs text-[var(--navy-muted)]">The saved value is recalculated from arrival, mortality, sales, and approved adjustments at the feeding start time.</span>
         </FormField>
 
         <FormField
@@ -308,7 +311,7 @@ export function AddFeedUsageForm({
           />
           <SummaryFigure
             label="Feed Per Bird"
-            value={`${formatNumber(feedPerBird)} ${unitOfMeasurement}`}
+            value={`${formatNumber(feedPerBird)} kg`}
           />
         </div>
 

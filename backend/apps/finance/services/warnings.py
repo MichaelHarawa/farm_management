@@ -42,7 +42,7 @@ WARNING_GUIDANCE: dict[str, dict[str, str]] = {
             "recalculate the open period under Payroll."
         ),
         "action_label": "Review shared expenses",
-        "action_href": "/finance/expenses#expense-ledger",
+        "action_href": "/finance/expenditures",
     },
     "unallocated_payroll": {
         "solution": (
@@ -87,7 +87,7 @@ WARNING_GUIDANCE: dict[str, dict[str, str]] = {
             "open period under Payroll."
         ),
         "action_label": "Review selling expenses",
-        "action_href": "/finance/expenses#expense-ledger",
+        "action_href": "/finance/expenditures",
     },
     "unallocated_selling_consumables": {
         "solution": (

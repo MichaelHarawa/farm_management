@@ -44,6 +44,7 @@ from .models import (
     FundingSourceType,
     SalePayment,
     PayrollEntry,
+    PayrollPayment,
     PeriodStatus,
     ReplacementReserveTransaction,
     SharedExpense,
@@ -67,6 +68,7 @@ from .serializers import (
     EmployeeProfileSerializer,
     ExpenseRecognitionScheduleSerializer,
     PayrollEntrySerializer,
+    PayrollPaymentSerializer,
     ReplacementReserveTransactionSerializer,
     SharedExpenseSerializer,
     SharedConsumableLotSerializer,
@@ -82,6 +84,13 @@ from .services.depreciation import (
     generate_depreciation_for_period,
 )
 from .services.payroll import generate_payroll_for_period
+from .services.salary_payments import (
+    create_deduction_liability,
+    ensure_salary_expense,
+    record_salary_payment,
+    reverse_salary_payment,
+    set_salary_cost_allocations,
+)
 from .services.profitability import (
     batch_portfolio_report,
     batch_profitability,
@@ -97,6 +106,7 @@ from .services.expenditures import (
     post_expenditure,
     record_expenditure_payment,
     reconciliation_summary,
+    project_shared_expense,
     reverse_expenditure,
 )
 
@@ -130,6 +140,9 @@ class EmployeeProfileViewSet(
 
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
+
+    def perform_update(self, serializer):
+        serializer.save()
 
     @action(detail=True, methods=["post"], url_path="activate")
     def activate(self, request, pk=None):
@@ -343,10 +356,54 @@ class PayrollEntryViewSet(viewsets.ModelViewSet):
         "employee",
         "employee__user",
         "created_by",
-    )
+    ).prefetch_related("payments__funding_allocations__funding_source")
 
     def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user)
+        entry = serializer.save(created_by=self.request.user)
+        create_deduction_liability(entry)
+        ensure_salary_expense(entry, user=self.request.user)
+
+    def perform_update(self, serializer):
+        entry = serializer.save()
+        create_deduction_liability(entry)
+        ensure_salary_expense(entry, user=self.request.user)
+
+    @action(detail=True, methods=["post"], url_path="allocate-costs")
+    def allocate_costs(self, request, pk=None):
+        entry = set_salary_cost_allocations(
+            payroll_entry_id=self.get_object().pk,
+            rows=request.data.get("cost_allocations"),
+            user=request.user,
+        )
+        return Response(self.get_serializer(entry).data)
+
+    @action(detail=True, methods=["post"], url_path="record-payment")
+    def record_payment(self, request, pk=None):
+        payment = record_salary_payment(
+            payroll_entry_id=self.get_object().pk,
+            amount=request.data.get("amount"),
+            payment_date=request.data.get("payment_date"),
+            payment_method=str(request.data.get("payment_method", "")),
+            funding_rows=request.data.get("funding_allocations"),
+            idempotency_key=str(request.data.get("idempotency_key", "")),
+            external_reference=str(request.data.get("external_reference", "")),
+            user=request.user,
+        )
+        return Response(PayrollPaymentSerializer(payment).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["post"], url_path="reverse-payment")
+    def reverse_payment(self, request, pk=None):
+        payment = get_object_or_404(
+            PayrollPayment,
+            pk=request.data.get("payment_id"),
+            payroll_entry=self.get_object(),
+        )
+        payment = reverse_salary_payment(
+            payment_id=payment.pk,
+            reason=str(request.data.get("reason", "")),
+            user=request.user,
+        )
+        return Response(PayrollPaymentSerializer(payment).data)
 
 
 class AdHocLabourPaymentViewSet(viewsets.ModelViewSet):
@@ -373,7 +430,12 @@ class SharedExpenseViewSet(viewsets.ModelViewSet):
     )
 
     def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user)
+        expense = serializer.save(created_by=self.request.user)
+        project_shared_expense(expense, user=self.request.user)
+
+    def perform_update(self, serializer):
+        expense = serializer.save()
+        project_shared_expense(expense, user=self.request.user)
 
 
 class SharedConsumableLotViewSet(viewsets.ModelViewSet):

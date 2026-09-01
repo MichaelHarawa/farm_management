@@ -2,6 +2,8 @@ import {
   getAccountingPeriods,
   getPayrollEntries,
 } from "@/features/finance/api/finance";
+import { getPoultryBatches } from "@/features/poultry/api/batches";
+import { PayrollLedgerManager } from "@/features/finance/components/PayrollLedgerManager";
 import {
   AccountingPeriodCreateDialog,
   PeriodActionButtons,
@@ -13,14 +15,14 @@ import {
   Panel,
 } from "@/features/finance/components/FinanceUI";
 import {
-  formatCurrency,
   formatDate,
 } from "@/features/finance/utils/formatters";
 
 export default async function FinancePayrollPage() {
-  const [periods, entries] = await Promise.all([
+  const [periods, entries, batches] = await Promise.all([
     getAccountingPeriods("/finance/payroll"),
     getPayrollEntries("/finance/payroll"),
+    getPoultryBatches("/finance/payroll"),
   ]);
   return (
     <FinancePageShell
@@ -62,32 +64,7 @@ export default async function FinancePayrollPage() {
 
       <Panel title="Payroll Entries">
         {entries.length ? (
-          <div className="overflow-x-auto">
-            <table className="min-w-full border-collapse text-sm">
-              <thead>
-                <tr className="border-b border-[var(--line)] text-left text-[var(--navy-muted)]">
-                  <th className="py-3 pr-4">Employee</th>
-                  <th className="py-3 pr-4">Gross</th>
-                  <th className="py-3 pr-4">Production</th>
-                  <th className="py-3 pr-4">Admin</th>
-                  <th className="py-3 pr-4">Selling</th>
-                  <th className="py-3 pr-4">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {entries.map((entry) => (
-                  <tr key={entry.id} className="border-b border-[var(--line)]">
-                    <td className="py-4 pr-4 font-bold">{entry.employee_name}</td>
-                    <td className="py-4 pr-4">{formatCurrency(entry.gross_salary)}</td>
-                    <td className="py-4 pr-4">{formatCurrency(entry.production_amount)}</td>
-                    <td className="py-4 pr-4">{formatCurrency(entry.administration_amount)}</td>
-                    <td className="py-4 pr-4">{formatCurrency(entry.selling_amount)}</td>
-                    <td className="py-4 pr-4">{entry.payment_status}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <PayrollLedgerManager entries={entries} batches={batches} />
         ) : (
           <EmptyState message="No payroll entries have been generated." />
         )}

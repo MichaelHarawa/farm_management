@@ -100,6 +100,8 @@ function getDefaultBookingValues(): BookingFormValues {
     bird_type: "broilers",
     source: "proto",
     source_other: "",
+    supplier_name: "",
+    booking_reference: "",
     booking_date: bookingDate,
     estimated_chick_arrival_date: addDaysToDateInput(
       bookingDate,
@@ -186,6 +188,8 @@ export function BookChicksDialog({ buttonClassName }: AddBatchDialogProps) {
       source: values.source,
       source_other:
         values.source === "other" ? values.source_other?.trim() ?? "" : "",
+      supplier_name: values.supplier_name,
+      booking_reference: values.booking_reference || "",
       booking_date: values.booking_date,
       estimated_chick_arrival_date: values.estimated_chick_arrival_date,
       entry_date: arrivalDateTime,
@@ -302,6 +306,26 @@ export function BookChicksDialog({ buttonClassName }: AddBatchDialogProps) {
                       </option>
                     ))}
                   </select>
+                </FormField>
+
+                <FormField label="Supplier" error={errors.supplier_name?.message}>
+                  <input
+                    id="booking-supplier"
+                    type="text"
+                    placeholder="Chick supplier"
+                    {...register("supplier_name")}
+                    className="form-input"
+                  />
+                </FormField>
+
+                <FormField label="Booking reference" error={errors.booking_reference?.message}>
+                  <input
+                    id="booking-reference"
+                    type="text"
+                    placeholder="Optional supplier reference"
+                    {...register("booking_reference")}
+                    className="form-input"
+                  />
                 </FormField>
 
                 {selectedSource === "other" ? (

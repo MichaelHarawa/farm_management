@@ -16,6 +16,7 @@ from .models import(
     Sales,
     Mortality,
     FeedUsage,
+    FlockAdjustment,
     DrugsVaccination,
 )
 
@@ -38,6 +39,10 @@ class BatchSerializer(serializers.ModelSerializer):
             "source_other",
             "booking_date",
             "estimated_chick_arrival_date",
+            "supplier_name",
+            "booking_reference",
+            "expected_quantity",
+            "actual_quantity_received",
             "delivery_confirmed_at",
             "entry_date",
             "expected_maturity_date",
@@ -469,6 +474,13 @@ class MortalitySerializer(serializers.ModelSerializer):
 
 class FeedUsageSerializer(serializers.ModelSerializer):
     created_by_name = serializers.SerializerMethodField()
+    feed_quantity_kg = serializers.DecimalField(
+        source="quantity_kg", max_digits=14, decimal_places=3, read_only=True
+    )
+    feed_per_live_bird_at_event = serializers.DecimalField(
+        max_digits=14, decimal_places=4, read_only=True, allow_null=True
+    )
+    population_ordering_rule = serializers.SerializerMethodField()
 
     class Meta:
         model = FeedUsage
@@ -483,6 +495,11 @@ class FeedUsageSerializer(serializers.ModelSerializer):
                 "quantity_given",
                 "unit_of_measurement",
                 "current_number_of_birds",
+                "feed_quantity_kg",
+                "feed_per_live_bird_at_event",
+                "population_calculation_version",
+                "population_calculated_at",
+                "population_ordering_rule",
                 "notes",
                 "reported_by_name",
                 "created_at",
@@ -498,13 +515,46 @@ class FeedUsageSerializer(serializers.ModelSerializer):
             "updated_at",
             "created_by",
             "created_by_name",
+            "current_number_of_birds",
+            "population_calculation_version",
+            "population_calculated_at",
         )
+
+    def validate(self, attrs):
+        start = attrs.get("feeding_start_date")
+        end = attrs.get("feeding_end_date")
+        if start and end and end < start:
+            raise serializers.ValidationError(
+                {"feeding_end_date": "Feeding end cannot be before feeding start."}
+            )
+        return attrs
+
+    def get_population_ordering_rule(self, obj):
+        from apps.poultry.services.feed_metrics import SAME_TIMESTAMP_ORDERING
+
+        return SAME_TIMESTAMP_ORDERING
 
     def get_created_by_name(self, obj):
         if obj.created_by_id is None:
             return ""
 
         return obj.created_by.get_full_name() or obj.created_by.username
+
+
+class FlockAdjustmentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = FlockAdjustment
+        fields = (
+            "id",
+            "batch",
+            "effective_at",
+            "quantity_change",
+            "reason",
+            "status",
+            "approved_by",
+            "created_at",
+        )
+        read_only_fields = ("id", "batch", "status", "approved_by", "created_at")
 
 class DrugsVaccinationSerializer(serializers.ModelSerializer):
     created_by_name = serializers.SerializerMethodField()

@@ -467,6 +467,36 @@ def batch_cost_records(batch: Batch) -> list[dict]:
                 "origin": ExpenditureOrigin.HISTORICAL_INPUT_COST,
             }
         )
+    projected_ids = {record["expenditure"] for record in records if record["expenditure"]}
+    for legacy in batch.shared_expenses.select_related("expenditure").filter(
+        expenditure__isnull=False
+    ).exclude(expenditure_id__in=projected_ids):
+        records.append(
+            {
+                "id": f"legacy-expense-{legacy.pk}",
+                "batch": batch.pk,
+                "item": legacy.description,
+                "category": legacy.category,
+                "quantity": 1,
+                "unit_measurement": "expense",
+                "unit": 1,
+                "unit_cost": legacy.amount,
+                "direct_input_total": legacy.amount,
+                "purchase_date": legacy.expense_date,
+                "notes": legacy.notes,
+                "created_at": legacy.created_at,
+                "updated_at": legacy.updated_at,
+                "created_by": legacy.created_by_id,
+                "created_by_name": legacy.created_by.get_username() if legacy.created_by_id else "",
+                "expenditure": legacy.expenditure_id,
+                "expenditure_reference": legacy.expenditure.expenditure_reference,
+                "payment_status": legacy.expenditure.payment_status,
+                "amount_paid": ZERO,
+                "balance_due": legacy.amount,
+                "funding_sources": [],
+                "origin": ExpenditureOrigin.FINANCE,
+            }
+        )
     return sorted(records, key=lambda row: str(row["purchase_date"]), reverse=True)
 
 
@@ -484,3 +514,52 @@ def reconciliation_summary() -> dict:
             requires_manual_review=True
         ).count(),
     }
+
+
+def project_shared_expense(shared_expense, *, user=None) -> Expenditure:
+    """Expose still-consumed legacy expense records in the authoritative register."""
+    if shared_expense.expenditure_id:
+        expenditure = shared_expense.expenditure
+        expenditure.expenditure_date = shared_expense.expense_date
+        expenditure.accounting_period = shared_expense.accounting_period
+        expenditure.amount = shared_expense.amount
+        expenditure.description = shared_expense.description
+        expenditure.payee = shared_expense.supplier
+        expenditure.external_reference = shared_expense.reference_number
+        expenditure.notes = shared_expense.notes
+        expenditure.save()
+        return expenditure
+    category, _ = ExpenditureCategory.objects.get_or_create(
+        code="legacy_shared_expense",
+        defaults={
+            "name": "Legacy finance expense",
+            "default_accounting_nature": "indirect_operating_expense",
+            "display_order": 900,
+        },
+    )
+    expenditure = Expenditure.objects.create(
+        expenditure_date=shared_expense.expense_date,
+        accounting_period=shared_expense.accounting_period,
+        amount=shared_expense.amount,
+        category=category,
+        accounting_nature="indirect_operating_expense",
+        description=shared_expense.description,
+        payee=shared_expense.supplier,
+        external_reference=shared_expense.reference_number,
+        status=ExpenditureStatus.POSTED,
+        payment_status=(
+            ExpenditurePaymentStatus.HISTORICAL_UNASSIGNED
+            if shared_expense.payment_status in {"paid", "partial"}
+            else ExpenditurePaymentStatus.UNPAID
+        ),
+        origin=ExpenditureOrigin.FINANCE,
+        beneficiary_type=("one_poultry_batch" if shared_expense.directly_assigned_batch_id else "legacy_scope"),
+        beneficiary_detail=str(shared_expense.directly_assigned_batch_id or shared_expense.scope),
+        notes=shared_expense.notes,
+        created_by=user or shared_expense.created_by,
+        posted_by=user,
+        posted_at=timezone.now(),
+    )
+    shared_expense.expenditure = expenditure
+    shared_expense.save(update_fields=["expenditure", "updated_at"])
+    return expenditure

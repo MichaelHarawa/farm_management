@@ -11,6 +11,7 @@ import type {
 import type {
   InputCost,
   PoultryBatch,
+  PoultryFeedMetrics,
   PoultryFeedUsage,
   PoultryMortality,
   PoultrySale,
@@ -37,6 +38,7 @@ type BatchDetailViewProps = {
   sales: PoultrySale[];
   mortalities: PoultryMortality[];
   feedUsages: PoultryFeedUsage[];
+  feedMetrics: PoultryFeedMetrics;
   vaccinations: PoultryVaccination[];
   weightSamplesResponse?: import("../types").WeightSamplesResponse | null;
   initialTab?: BatchDetailTab;
@@ -459,12 +461,17 @@ export function BatchDetailView({
   sales,
   mortalities,
   feedUsages,
+  feedMetrics,
   vaccinations,
   weightSamplesResponse,
   initialTab = "overview",
 }: BatchDetailViewProps) {
   const [activeTab, setActiveTab] = useState<BatchDetailTab>(initialTab);
   const [openModal, setOpenModal] = useState<ModalKind>(null);
+  const operationalBlocked = ["booked", "planned", "delivered"].includes(batch.status);
+  const openOperationalModal = (modal: Exclude<ModalKind, "input-cost-form" | null>) => {
+    if (!operationalBlocked) setOpenModal(modal);
+  };
   const [weightSamplesResp, setWeightSamplesResp] = useState<import("../types").WeightSamplesResponse | null>(
     weightSamplesResponse ?? null
   );
@@ -528,12 +535,9 @@ export function BatchDetailView({
       decimalToNumber(profitabilityReport?.provisional_cost_per_saleable_bird);
     const profitabilityStatus: Metrics["profitabilityStatus"] =
       profitabilityReport?.profitability_status ?? "local";
-    const totalFeedKg = feedUsages.reduce(
-      (total, feedUsage) => total + getFeedQuantityInKg(feedUsage),
-      0
-    );
-    const feedPerLiveBird =
-      currentBirds > 0 ? totalFeedKg / currentBirds : 0;
+    const totalFeedKg = Number(feedMetrics.total_feed_kg) || 0;
+    const feedPerBirdStarted = Number(feedMetrics.feed_per_bird_started_kg) || 0;
+    const feedPerBirdDay = Number(feedMetrics.feed_per_bird_day_kg) || 0;
     const cycleLength = getDaysBetween(
       batch.entry_date,
       batch.expected_maturity_date
@@ -559,11 +563,13 @@ export function BatchDetailView({
         (batch.quantity > 0 ? totalInputCosts / batch.quantity : 0),
       profitabilityStatus,
       totalFeedKg,
-      feedPerLiveBird,
+      feedPerBirdStarted,
+      feedPerBirdDay,
+      birdDays: Number(feedMetrics.bird_days) || 0,
       dayOfCycle,
       cycleLength,
     };
-  }, [batch, inputCosts, sales, mortalities, feedUsages, profitabilityReport]);
+  }, [batch, inputCosts, sales, mortalities, feedMetrics, profitabilityReport]);
 
   const costBreakdown = useMemo(
     () =>
@@ -711,7 +717,7 @@ export function BatchDetailView({
             title={pageHeader.title}
             description={pageHeader.description}
             activeTab={activeTab}
-            actionLabel={pageHeader.actionLabel}
+            actionLabel={activeTab === "costs" || !operationalBlocked ? pageHeader.actionLabel : undefined}
             secondaryAction={activeTab === "sales" ? {
               label: "Manage Receivables",
               href: `/finance/receivables?batch=${batch.id}`,
@@ -723,22 +729,22 @@ export function BatchDetailView({
               }
 
               if (activeTab === "sales") {
-                setOpenModal("sale-form");
+                openOperationalModal("sale-form");
                 return;
               }
 
               if (activeTab === "mortality") {
-                setOpenModal("mortality-form");
+                openOperationalModal("mortality-form");
                 return;
               }
 
               if (activeTab === "feed") {
-                setOpenModal("feed-usage-form");
+                openOperationalModal("feed-usage-form");
                 return;
               }
 
               if (activeTab === "vaccination") {
-                setOpenModal("vaccination-form");
+                openOperationalModal("vaccination-form");
               }
             }}
             onTabChange={setActiveTab}
@@ -790,17 +796,18 @@ export function BatchDetailView({
               batch={batch}
               mortalities={mortalities}
               metrics={metrics}
-              onAddMortality={() => setOpenModal("mortality-form")}
+              onAddMortality={() => openOperationalModal("mortality-form")}
             />
           ) : null}
 
           {activeTab === "feed" ? (
             <FeedUsageTab
               feedUsages={feedUsages}
+              feedMetrics={feedMetrics}
               metrics={metrics}
               feedTypeBreakdown={feedTypeBreakdown}
               feedSourceBreakdown={feedSourceBreakdown}
-              onAddFeedUsage={() => setOpenModal("feed-usage-form")}
+              onAddFeedUsage={() => openOperationalModal("feed-usage-form")}
             />
           ) : null}
 
@@ -809,7 +816,7 @@ export function BatchDetailView({
               batch={batch}
               vaccinations={vaccinations}
               vaccinationSchedule={vaccinationSchedule}
-              onAddVaccination={() => setOpenModal("vaccination-form")}
+              onAddVaccination={() => openOperationalModal("vaccination-form")}
             />
           ) : null}
 
@@ -817,7 +824,7 @@ export function BatchDetailView({
             <GrowthTab
               batch={batch}
               weightSamplesResp={weightSamplesResp}
-              onWeighIn={() => setOpenModal("weight-sample-form")}
+              onWeighIn={() => openOperationalModal("weight-sample-form")}
               refreshSamples={async () => {
                 // lightweight client refresh - must use client-safe module
                 try {
@@ -1012,7 +1019,9 @@ type Metrics = {
     | "final"
     | "local";
   totalFeedKg: number;
-  feedPerLiveBird: number;
+  feedPerBirdStarted: number;
+  feedPerBirdDay: number;
+  birdDays: number;
   dayOfCycle: number;
   cycleLength: number;
 };
@@ -1913,6 +1922,7 @@ function MortalityTab({
 
 type FeedUsageTabProps = {
   feedUsages: PoultryFeedUsage[];
+  feedMetrics: PoultryFeedMetrics;
   metrics: Metrics;
   feedTypeBreakdown: BreakdownItem[];
   feedSourceBreakdown: BreakdownItem[];
@@ -1921,36 +1931,39 @@ type FeedUsageTabProps = {
 
 function FeedUsageTab({
   feedUsages,
+  feedMetrics,
   metrics,
   feedTypeBreakdown,
   feedSourceBreakdown,
   onAddFeedUsage,
 }: FeedUsageTabProps) {
-  const latestFeedUsage = feedUsages[0];
-
   return (
     <div className="mt-8 grid gap-8">
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-5">
         <KpiCard
           label="Total Feed Issued"
           value={`${formatNumber(metrics.totalFeedKg)} kg`}
           detail={formatRecordCount(feedUsages.length)}
         />
         <KpiCard
-          label="Feed Per Live Bird"
-          value={`${formatNumber(metrics.feedPerLiveBird)} kg`}
-          detail={`Based on ${formatNumber(metrics.currentBirds)} current birds`}
+          label="Birds Received"
+          value={formatNumber(feedMetrics.initial_birds)}
+          detail="Actual flock placed"
         />
         <KpiCard
-          label="Latest Feed"
-          value={
-            latestFeedUsage ? formatFeedType(latestFeedUsage.feed_type) : "None"
-          }
-          detail={
-            latestFeedUsage
-              ? `${formatFeedQuantity(latestFeedUsage)} issued`
-              : "No feed issued yet"
-          }
+          label="Current Live Birds"
+          value={formatNumber(feedMetrics.current_live_birds)}
+          detail="After dated sales, mortality, and adjustments"
+        />
+        <KpiCard
+          label="Feed Per Bird Started"
+          value={`${formatNumber(metrics.feedPerBirdStarted)} kg`}
+          detail={`Total feed ÷ ${formatNumber(feedMetrics.initial_birds)} birds received`}
+        />
+        <KpiCard
+          label="Feed Per Bird-Day"
+          value={`${formatNumber(metrics.feedPerBirdDay)} kg`}
+          detail={`${formatNumber(metrics.birdDays)} bird-days through the last feed interval`}
         />
       </div>
 
@@ -2005,13 +2018,16 @@ function FeedUsageTab({
           onAction={onAddFeedUsage}
         />
         <SimpleTable
-          columns={["Date", "Feed", "Source", "Quantity", "Birds", "Reported By"]}
+          columns={["Feed Date", "Feed", "Source", "Quantity", "Live Birds Then", "Feed / Live Bird", "Reported By"]}
           rows={feedUsages.map((feedUsage) => [
-            formatDisplayDate(feedUsage.created_at),
+            formatDisplayDate(feedUsage.feeding_start_date),
             formatFeedType(feedUsage.feed_type),
             formatFeedSource(feedUsage.feed_source),
             formatFeedQuantity(feedUsage),
             formatNumber(feedUsage.current_number_of_birds),
+            feedUsage.feed_per_live_bird_at_event === null
+              ? "Unavailable"
+              : `${formatNumber(feedUsage.feed_per_live_bird_at_event)} kg`,
             feedUsage.reported_by_name,
           ])}
           rowDetails={feedUsages.map(feedUsageDetail)}

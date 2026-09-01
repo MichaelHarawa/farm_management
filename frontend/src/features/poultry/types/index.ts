@@ -19,6 +19,10 @@ export type PoultryBatch = {
   booking_date: string | null;
   estimated_chick_arrival_date: string | null;
   delivery_confirmed_at: string | null;
+  supplier_name?: string;
+  booking_reference?: string;
+  expected_quantity?: number | null;
+  actual_quantity_received?: number | null;
   entry_date: string;
   expected_maturity_date: string;
   quantity: number;
@@ -46,6 +50,8 @@ export type CreatePoultryBatchPayload = {
   source_other: string;
   booking_date?: string;
   estimated_chick_arrival_date?: string;
+  supplier_name?: string;
+  booking_reference?: string;
   entry_date: string;
   expected_maturity_date: string;
   quantity: number;
@@ -203,12 +209,29 @@ export type PoultryFeedUsage = {
   quantity_given: number;
   unit_of_measurement: FeedUnitMeasurement;
   current_number_of_birds: number;
+  feed_quantity_kg: number;
+  feed_per_live_bird_at_event: number | null;
+  population_calculation_version: string;
+  population_calculated_at: string | null;
+  population_ordering_rule: string;
   notes: string;
   reported_by_name: string;
   created_at: string;
   updated_at: string;
   created_by: string | null;
   created_by_name: string;
+};
+
+export type PoultryFeedMetrics = {
+  total_feed_kg: string;
+  initial_birds: number;
+  current_live_birds: number;
+  feed_per_bird_started_kg: string | null;
+  bird_days: string;
+  feed_per_bird_day_kg: string | null;
+  stage_feed_kg: Record<string, string>;
+  same_timestamp_ordering: string;
+  calculation_version: string;
 };
 
 export type PaginatedResponse<T> = {

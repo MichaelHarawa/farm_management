@@ -133,7 +133,7 @@ export default function PoultryGuidesPage() {
                 <li><strong>Profitability</strong> = Revenue − Costs (calculated automatically per batch or overall)</li>
                 <li><strong>Accounting Periods</strong> = time windows (e.g. monthly) used for payroll, depreciation, and expense recognition.</li>
               </ul>
-              <p>Go to <Link href="/finance" className="font-bold text-[#151926] hover:underline">/finance</Link> to see the workspace. Use the nav bar at top to switch between Employees, Assets, Consumables, Labour, Payroll, Expenses, etc.</p>
+              <p>Go to <Link href="/finance" className="font-bold text-[#151926] hover:underline">/finance</Link> to see the workspace. Use the nav bar at top to switch between Employees, Assets, Consumables, Labour, Payroll, and Expenditures.</p>
               <p className="text-sm">Everything is allocated either directly to a poultry batch or shared (then split by rules like bird-days or salary percentages).</p>
             </div>
           </details>

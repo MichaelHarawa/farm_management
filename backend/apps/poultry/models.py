@@ -156,6 +156,10 @@ class Batch(models.Model):
     source_other = models.CharField(max_length=200, blank=True, default="")
     booking_date = models.DateField(null=True, blank=True)
     estimated_chick_arrival_date = models.DateField(null=True, blank=True)
+    supplier_name = models.CharField(max_length=200, blank=True, default="")
+    booking_reference = models.CharField(max_length=120, blank=True, default="")
+    expected_quantity = models.PositiveIntegerField(null=True, blank=True)
+    actual_quantity_received = models.PositiveIntegerField(null=True, blank=True)
     delivery_confirmed_at = models.DateTimeField(null=True, blank=True)
     entry_date = models.DateTimeField()
     expected_maturity_date = models.DateTimeField()
@@ -211,6 +215,12 @@ class Batch(models.Model):
     def save(self, *args, **kwargs):
         if not self.batch_id:
             self.batch_id = self.next_batch_id()
+        if self._state.adding and not self.booking_date and self.status == BatchStatus.PLANNED:
+            self.status = BatchStatus.ACTIVE
+        if self.booking_date and self.expected_quantity is None:
+            self.expected_quantity = self.quantity
+        if not self.booking_date and self.actual_quantity_received is None:
+            self.actual_quantity_received = self.quantity
         if self.booking_date and not self.estimated_chick_arrival_date:
             self.estimated_chick_arrival_date = self.booking_date + timedelta(days=10)
         super().save(*args, **kwargs)
@@ -551,6 +561,11 @@ class FeedUsage(models.Model):
         choices = UnitMeasurement.choices,
         )    
     current_number_of_birds = models.PositiveIntegerField()
+    population_calculation_version = models.CharField(
+        max_length=40,
+        default="dated-flock-events-v1",
+    )
+    population_calculated_at = models.DateTimeField(null=True, blank=True)
     notes = models.TextField()
     reported_by_name = models.CharField(max_length=200)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -565,6 +580,62 @@ class FeedUsage(models.Model):
 
     def __str__(self) -> str:
         return f"{self.batch} consumed {self.quantity_given} {self.unit_of_measurement}"
+
+    @property
+    def quantity_kg(self) -> Decimal:
+        quantity = Decimal(self.quantity_given)
+        if self.unit_of_measurement == UnitMeasurement.GMS:
+            quantity /= Decimal("1000")
+        return quantity.quantize(Decimal("0.001"))
+
+    @property
+    def feed_per_live_bird_at_event(self) -> Decimal | None:
+        if not self.current_number_of_birds:
+            return None
+        return (self.quantity_kg / Decimal(self.current_number_of_birds)).quantize(
+            Decimal("0.0001")
+        )
+
+
+class FlockAdjustmentStatus(models.TextChoices):
+    APPROVED = "approved", "Approved"
+    REVERSED = "reversed", "Reversed"
+
+
+class FlockAdjustment(models.Model):
+    batch = models.ForeignKey(
+        Batch,
+        on_delete=models.PROTECT,
+        related_name="flock_adjustments",
+    )
+    effective_at = models.DateTimeField(db_index=True)
+    quantity_change = models.IntegerField(
+        help_text="Signed correction to the live-bird cohort.",
+    )
+    reason = models.CharField(max_length=255)
+    status = models.CharField(
+        max_length=20,
+        choices=FlockAdjustmentStatus.choices,
+        default=FlockAdjustmentStatus.APPROVED,
+        db_index=True,
+    )
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="approved_flock_adjustments",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["effective_at", "pk"]
+
+    def clean(self):
+        super().clean()
+        if self.quantity_change == 0:
+            raise ValidationError({"quantity_change": "Adjustment cannot be zero."})
+
+    def __str__(self) -> str:
+        return f"{self.batch.batch_id}: {self.quantity_change:+d} on {self.effective_at}"
 
 
 class DrugsVaccination(models.Model):

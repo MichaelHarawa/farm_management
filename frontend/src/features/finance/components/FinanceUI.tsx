@@ -67,7 +67,6 @@ export function FinanceNav() {
     ["Employees", "/finance/employees"],
     ["Payroll", "/finance/payroll"],
     ["Labour", "/finance/labour"],
-    ["Expenses", "/finance/expenses"],
     ["Consumables", "/finance/consumables"],
     ["Assets", "/finance/assets"],
     ["Monthly", "/finance/monthly"],

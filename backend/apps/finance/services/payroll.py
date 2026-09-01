@@ -48,6 +48,10 @@ def generate_payroll_for_period(
                 "created_by": created_by,
             },
         )
+        from .salary_payments import create_deduction_liability, ensure_salary_expense
+
+        create_deduction_liability(entry)
+        ensure_salary_expense(entry, user=created_by)
         entries.append(entry)
 
     return entries

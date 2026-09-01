@@ -11,6 +11,8 @@ from apps.poultry.models import (
     Batch,
     BatchStatus,
     Mortality,
+    FlockAdjustment,
+    FlockAdjustmentStatus,
     PaymentStatus,
     ProductType,
     Sales,
@@ -24,6 +26,7 @@ BIRD_PRODUCT_TYPES = {
 PRE_PRODUCTION_STATUSES = {
     BatchStatus.BOOKED,
     BatchStatus.DELIVERED,
+    BatchStatus.PLANNED,
 }
 
 
@@ -73,10 +76,18 @@ def calculate_bird_balance(batch: Batch | int) -> BirdBalance:
     batch_obj = Batch.objects.get(pk=batch) if isinstance(batch, int) else batch
     sold = valid_bird_units_sold(batch_obj)
     mortality = recorded_mortality(batch_obj)
-    remaining = batch_obj.quantity - sold - mortality
+    adjustments = (
+        FlockAdjustment.objects.filter(
+            batch=batch_obj,
+            status=FlockAdjustmentStatus.APPROVED,
+        ).aggregate(total=Sum("quantity_change"))["total"]
+        or 0
+    )
+    initial = batch_obj.actual_quantity_received or batch_obj.quantity
+    remaining = initial + adjustments - sold - mortality
 
     return BirdBalance(
-        initial_birds=batch_obj.quantity,
+        initial_birds=initial,
         valid_bird_units_sold=sold,
         mortality=mortality,
         remaining_live_birds=remaining,
@@ -163,6 +174,19 @@ def assert_batch_in_production(
         )
 
 
+def assert_batch_accepts_cost(
+    batch: Batch,
+    *,
+    allow_closed_cost_correction: bool = False,
+) -> None:
+    if batch.status != BatchStatus.CLOSED:
+        return
+    assert_batch_in_production(
+        batch,
+        allow_closed_cost_correction=allow_closed_cost_correction,
+    )
+
+
 def create_sale_with_lifecycle(*, batch_id: int, created_by, **data) -> Sales:
     with transaction.atomic():
         batch = Batch.objects.select_for_update().get(pk=batch_id)
@@ -186,6 +210,10 @@ def create_sale_with_lifecycle(*, batch_id: int, created_by, **data) -> Sales:
             created_by=created_by,
         )
 
+        from .feed_metrics import recalculate_feed_event_populations
+
+        recalculate_feed_event_populations(batch)
+
         return sale
 
 
@@ -199,6 +227,9 @@ def create_mortality_with_lifecycle(*, batch_id: int, created_by, **data) -> Mor
         mortality.save()
         assert_non_negative_bird_balance(batch)
         recalculate_batch_status(batch)
+        from .feed_metrics import recalculate_feed_event_populations
+
+        recalculate_feed_event_populations(batch)
         return mortality
 
 

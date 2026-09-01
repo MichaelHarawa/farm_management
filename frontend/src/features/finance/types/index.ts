@@ -70,6 +70,30 @@ export type PayrollEntry = {
   selling_amount: DecimalString;
   payment_status: string;
   payment_date: string | null;
+  net_salary_payable: DecimalString;
+  amount_paid: DecimalString;
+  outstanding_salary: DecimalString;
+  cost_allocation_plan: Array<{
+    beneficiary_type: "batch" | "administration";
+    batch: number | null;
+    amount: DecimalString;
+  }>;
+  payments: PayrollPayment[];
+};
+
+export type PayrollPayment = {
+  id: number;
+  amount: DecimalString;
+  payment_date: string;
+  payment_method: string;
+  external_reference: string;
+  status: "posted" | "reversed";
+  funding_allocations: Array<{
+    id: number;
+    funding_source: number;
+    funding_source_name: string;
+    amount: DecimalString;
+  }>;
 };
 
 export type AdHocLabourPayment = {

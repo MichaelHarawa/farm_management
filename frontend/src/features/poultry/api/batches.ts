@@ -9,6 +9,7 @@ import type {
   InputCost,
   PaginatedResponse,
   PoultryBatch,
+  PoultryFeedMetrics,
   PoultryFeedUsage,
   PoultryMortality,
   PoultrySale,
@@ -147,6 +148,16 @@ export async function getBatchFeedUsage(
   );
 
   return normalizeList(data);
+}
+
+export async function getBatchFeedMetrics(
+  id: number,
+  returnTo: string
+): Promise<PoultryFeedMetrics> {
+  return authenticatedBackendFetch<PoultryFeedMetrics>(
+    poultryApiPaths.feedMetrics(id),
+    { returnTo, cache: "no-store" }
+  );
 }
 
 export async function getBatchVaccinations(

@@ -300,12 +300,18 @@ def regenerate_allocations_for_period(
     # regenerated here.
     CostAllocation.objects.filter(accounting_period=period, locked=False).exclude(
         source_type=AllocationSourceType.EXPENDITURE
+    ).exclude(
+        source_type=AllocationSourceType.PAYROLL,
+        manual_reason__gt="",
     ).delete()
 
     allocations: list[CostAllocation] = []
 
     for payroll_entry in PayrollEntry.objects.filter(accounting_period=period):
         if _source_locked({"payroll_entry": payroll_entry}):
+            continue
+        if payroll_entry.cost_allocation_plan:
+            allocations.extend(payroll_entry.cost_allocations.all())
             continue
         production_amount = payroll_entry.production_amount
         allocations.extend(

@@ -36,6 +36,8 @@ from .models import (
     ExpenditureStatus,
     FundingAllocation,
     PayrollEntry,
+    PayrollPayment,
+    PayrollPaymentFunding,
     PeriodStatus,
     ReplacementReserveTransaction,
     SharedExpense,
@@ -237,12 +239,19 @@ class PayrollEntrySerializer(serializers.ModelSerializer):
         decimal_places=2,
         read_only=True,
     )
+    net_salary_payable = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    amount_paid = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    outstanding_salary = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    payments = serializers.SerializerMethodField()
 
     class Meta:
         model = PayrollEntry
         fields = "__all__"
         read_only_fields = (
             "total_employer_cost",
+            "payment_status",
+            "payment_date",
+            "expenditure",
             "created_by",
             "created_at",
             "updated_at",
@@ -251,7 +260,20 @@ class PayrollEntrySerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         period = attrs.get("accounting_period", getattr(self.instance, "accounting_period", None))
         ensure_period_open(period)
+        gross = attrs.get("gross_salary", getattr(self.instance, "gross_salary", Decimal("0")))
+        deductions = attrs.get("deductions", getattr(self.instance, "deductions", Decimal("0")))
+        if deductions > gross:
+            raise serializers.ValidationError({"deductions": "Deductions cannot exceed gross salary."})
+        if self.instance and self.instance.payments.filter(status="posted").exists():
+            protected = {"gross_salary", "deductions", "employer_costs", "accounting_period", "employee"}
+            if protected.intersection(attrs):
+                raise serializers.ValidationError(
+                    {"detail": "Posted payroll payments make salary amounts immutable; reverse the payment first."}
+                )
         return attrs
+
+    def get_payments(self, obj):
+        return PayrollPaymentSerializer(obj.payments.all(), many=True).data
 
 
 class AdHocLabourPaymentSerializer(serializers.ModelSerializer):
@@ -289,7 +311,7 @@ class SharedExpenseSerializer(serializers.ModelSerializer):
     class Meta:
         model = SharedExpense
         fields = "__all__"
-        read_only_fields = ("created_by", "created_at", "updated_at")
+        read_only_fields = ("expenditure", "created_by", "created_at", "updated_at")
 
     def validate(self, attrs):
         period = attrs.get("accounting_period", getattr(self.instance, "accounting_period", None))
@@ -402,6 +424,23 @@ class ExpenseRecognitionScheduleSerializer(serializers.ModelSerializer):
         period = attrs.get("accounting_period", getattr(self.instance, "accounting_period", None))
         ensure_period_open(period)
         return attrs
+
+
+class PayrollPaymentFundingSerializer(serializers.ModelSerializer):
+    funding_source_name = serializers.CharField(source="funding_source.__str__", read_only=True)
+
+    class Meta:
+        model = PayrollPaymentFunding
+        fields = ("id", "funding_source", "funding_source_name", "amount")
+
+
+class PayrollPaymentSerializer(serializers.ModelSerializer):
+    funding_allocations = PayrollPaymentFundingSerializer(many=True, read_only=True)
+    posted_by_name = serializers.CharField(source="posted_by.get_username", read_only=True)
+
+    class Meta:
+        model = PayrollPayment
+        fields = "__all__"
 
 
 class EmployeeBatchWorkLogSerializer(serializers.ModelSerializer):

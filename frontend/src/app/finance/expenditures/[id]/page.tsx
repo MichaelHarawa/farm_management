@@ -123,7 +123,7 @@ export default function ExpenditureDetailPage() {
             Number(newSource.amount) || 0,
             Math.max(target - amountAlreadyAssigned, 0),
           );
-          let fundedRow = {
+          const fundedRow = {
             funding_source: fundedSource.id,
             source_query: sourceLabel(fundedSource),
             amount: suggestedAmount > 0 ? String(suggestedAmount) : "",
@@ -133,7 +133,7 @@ export default function ExpenditureDetailPage() {
           }
           // Append case: if suggested is 0 (e.g. was already at target), carve a positive amount from an existing row
           // so that the newly added source of funds gets a positive allocation and the form remains submittable.
-          let newRows = [...current, fundedRow];
+          const newRows = [...current, fundedRow];
           const appendedIdx = newRows.length - 1;
           const fundedAmtNum = Number(fundedRow.amount) || 0;
           if (fundedAmtNum <= 0) {

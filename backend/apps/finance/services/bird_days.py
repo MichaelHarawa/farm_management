@@ -8,14 +8,23 @@ from django.db import models
 from django.db.models import Sum
 from django.utils import timezone
 
-from apps.poultry.models import Batch, BatchStatus, Mortality, PaymentStatus, ProductType, Sales
+from apps.poultry.models import (
+    Batch,
+    BatchStatus,
+    FlockAdjustment,
+    FlockAdjustmentStatus,
+    Mortality,
+    PaymentStatus,
+    ProductType,
+    Sales,
+)
 
 from ..models import AccountingPeriod, BirdDaySnapshot, PeriodStatus
 
 
 CALCULATION_VERSION = "bird-days-v1"
 BIRD_PRODUCTS = {ProductType.LIVE_CHICKEN, ProductType.DRESSED_CHICKEN}
-PRE_PRODUCTION_STATUSES = [BatchStatus.BOOKED, BatchStatus.DELIVERED]
+PRE_PRODUCTION_STATUSES = [BatchStatus.BOOKED, BatchStatus.DELIVERED, BatchStatus.PLANNED]
 
 
 def _date_range(start: date, end: date):
@@ -78,7 +87,15 @@ def calculate_batch_bird_days(
         )["total"]
         or 0
     )
-    opening = batch.quantity - prior_sales - prior_mortality
+    prior_adjustments = (
+        FlockAdjustment.objects.filter(
+            batch=batch,
+            effective_at__date__lt=start,
+            status=FlockAdjustmentStatus.APPROVED,
+        ).aggregate(total=Sum("quantity_change"))["total"]
+        or 0
+    )
+    opening = (batch.actual_quantity_received or batch.quantity) + prior_adjustments - prior_sales - prior_mortality
     if opening < 0:
         raise ValueError(f"{batch} has a negative opening live-bird balance.")
 
@@ -118,6 +135,17 @@ def calculate_batch_bird_days(
             "mortality_date__date__lte": end,
         },
     )
+    daily_adjustments = _event_totals_by_date(
+        FlockAdjustment,
+        "effective_at",
+        "quantity_change",
+        {
+            "batch": batch,
+            "status": FlockAdjustmentStatus.APPROVED,
+            "effective_at__date__gte": start,
+            "effective_at__date__lte": end,
+        },
+    )
 
     bird_days = Decimal("0.0000")
     active_days = 0
@@ -128,7 +156,7 @@ def calculate_batch_bird_days(
     for day in _date_range(start, end):
         sold_today = daily_sales[day]
         mortality_today = daily_mortality[day]
-        closing = current_opening - sold_today - mortality_today
+        closing = current_opening + daily_adjustments[day] - sold_today - mortality_today
         if closing < 0:
             raise ValueError(f"{batch} has a negative live-bird balance on {day}.")
 

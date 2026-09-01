@@ -6,6 +6,7 @@ import {
 import {
   getBatchFeedInputCosts,
   getBatchFeedUsage,
+  getBatchFeedMetrics,
   getBatchInputCosts,
   getBatchMortality,
   getBatchSales,
@@ -26,10 +27,6 @@ import {
   BatchDetailView,
   type BatchDetailTab,
 } from "@/features/poultry/components/BatchDetailView";
-
-import type {
-  WeightSamplesResponse,
-} from "@/features/poultry/types";
 
 import type {
   PoultryBatch,
@@ -104,6 +101,7 @@ export default async function BatchDetailPage({
     sales,
     mortalities,
     feedUsages,
+    feedMetrics,
     vaccinations,
   ] = await Promise.all([
       getBatchInputCosts(
@@ -123,6 +121,10 @@ export default async function BatchDetailPage({
         returnTo
       ),
       getBatchFeedUsage(
+        batchId,
+        returnTo
+      ),
+      getBatchFeedMetrics(
         batchId,
         returnTo
       ),
@@ -160,6 +162,7 @@ export default async function BatchDetailPage({
       sales={sales}
       mortalities={mortalities}
       feedUsages={feedUsages}
+      feedMetrics={feedMetrics}
       vaccinations={vaccinations}
       weightSamplesResponse={weightSamplesResponse}
     />

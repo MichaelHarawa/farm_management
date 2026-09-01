@@ -30,6 +30,7 @@ from ..models import (
 
 
 from ..models import (
+    AccountingNature,
     AccountingPeriod,
     AdHocLabourPayment,
     AllocationSourceType,
@@ -917,7 +918,14 @@ def cash_used_from_batch(batch: Batch) -> Decimal:
         expenditure__status=ExpenditureStatus.POSTED,
     )
     total = allocations.aggregate(total=Sum("amount"))["total"] or ZERO
-    return money(total)
+    from ..models import PayrollPaymentFunding, PayrollPaymentStatus
+
+    payroll_total = PayrollPaymentFunding.objects.filter(
+        funding_source__source_type=FundingSourceType.BATCH_COLLECTION,
+        funding_source__batch=batch,
+        payment__status=PayrollPaymentStatus.POSTED,
+    ).aggregate(total=Sum("amount"))["total"] or ZERO
+    return money(total + payroll_total)
 
 
 def available_batch_cash(batch: Batch) -> Decimal:
@@ -945,7 +953,15 @@ def available_funding_source_cash(source: FundingSource) -> Decimal:
             expenditure__status=ExpenditureStatus.POSTED,
         ).aggregate(total=Sum("amount"))["total"]
     )
-    return money(received - used)
+    from ..models import PayrollPaymentFunding, PayrollPaymentStatus
+
+    payroll_used = money(
+        PayrollPaymentFunding.objects.filter(
+            funding_source=source,
+            payment__status=PayrollPaymentStatus.POSTED,
+        ).aggregate(total=Sum("amount"))["total"]
+    )
+    return money(received - used - payroll_used)
 
 
 def batch_revenue_utilization(batch: Batch) -> dict:
@@ -1001,6 +1017,44 @@ def batch_revenue_utilization(batch: Batch) -> dict:
                 "beneficiary": beneficiary or "Not allocated",
                 "funding_source": str(alloc.funding_source),
                 "status": exp.status,
+                "remaining_cash_after": running_cash,
+            }
+        )
+
+    from ..models import PayrollPaymentFunding, PayrollPaymentStatus
+
+    salary_funding = PayrollPaymentFunding.objects.filter(
+        funding_source__source_type=FundingSourceType.BATCH_COLLECTION,
+        funding_source__batch=batch,
+        payment__status=PayrollPaymentStatus.POSTED,
+    ).select_related(
+        "payment__payroll_entry__employee",
+        "payment__payroll_entry__expenditure",
+        "funding_source",
+    ).order_by("payment__payment_date", "created_at", "pk")
+    for allocation in salary_funding:
+        payment = allocation.payment
+        entry = payment.payroll_entry
+        expenditure = entry.expenditure
+        category_label = "Salaries and wages"
+        by_category[category_label] = by_category.get(category_label, ZERO) + allocation.amount
+        nature = AccountingNature.INDIRECT_OPERATING_EXPENSE
+        by_nature[nature] = by_nature.get(nature, ZERO) + allocation.amount
+        running_cash = money(running_cash - allocation.amount)
+        transactions.append(
+            {
+                "allocation_id": f"salary-{allocation.pk}",
+                "expenditure_id": expenditure.pk if expenditure else None,
+                "expenditure_reference": expenditure.expenditure_reference if expenditure else "Payroll",
+                "date": payment.payment_date,
+                "description": f"Salary payment: {entry.employee}",
+                "amount": allocation.amount,
+                "total_expenditure": entry.net_salary_payable,
+                "category": category_label,
+                "accounting_nature": nature,
+                "beneficiary": "Payroll cost beneficiaries",
+                "funding_source": str(allocation.funding_source),
+                "status": payment.status,
                 "remaining_cash_after": running_cash,
             }
         )

@@ -71,6 +71,7 @@ class FinancePaymentStatus(models.TextChoices):
     PARTIAL = "partial", "Partial"
     UNPAID = "unpaid", "Unpaid"
     CANCELLED = "cancelled", "Cancelled"
+    REVERSED = "reversed", "Reversed"
 
 
 class CostScope(models.TextChoices):
@@ -394,6 +395,14 @@ class PayrollEntry(DollarReferenceMixin, TimestampedModel):
     )
     payment_date = models.DateField(null=True, blank=True, db_index=True)
     notes = models.TextField(blank=True, default="")
+    cost_allocation_plan = models.JSONField(default=list, blank=True)
+    expenditure = models.OneToOneField(
+        "Expenditure",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="payroll_entry",
+    )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -437,6 +446,25 @@ class PayrollEntry(DollarReferenceMixin, TimestampedModel):
         return (
             self.total_employer_cost * self.selling_percentage / Decimal("100")
         ).quantize(Decimal("0.01"))
+
+    @property
+    def net_salary_payable(self) -> Decimal:
+        return max(self.gross_salary - self.deductions, Decimal("0.00")).quantize(
+            Decimal("0.01")
+        )
+
+    @property
+    def amount_paid(self) -> Decimal:
+        total = self.payments.filter(status="posted").aggregate(
+            total=models.Sum("amount")
+        )["total"] or Decimal("0.00")
+        return Decimal(total).quantize(Decimal("0.01"))
+
+    @property
+    def outstanding_salary(self) -> Decimal:
+        return max(self.net_salary_payable - self.amount_paid, Decimal("0.00")).quantize(
+            Decimal("0.01")
+        )
 
     def clean(self):
         super().clean()
@@ -597,6 +625,14 @@ class SharedExpense(DollarReferenceMixin, TimestampedModel):
     supplier = models.CharField(max_length=160, blank=True, default="")
     reference_number = models.CharField(max_length=120, blank=True, default="")
     notes = models.TextField(blank=True, default="")
+    expenditure = models.OneToOneField(
+        "Expenditure",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="legacy_shared_expense",
+        help_text="Authoritative expenditure projection for this historical finance record.",
+    )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -2336,6 +2372,73 @@ class FundingAllocation(TimestampedModel):
 
     def __str__(self) -> str:
         return f"{self.amount} from {self.funding_source} to expenditure {self.expenditure_id}"
+
+
+class PayrollPaymentStatus(models.TextChoices):
+    POSTED = "posted", "Posted"
+    REVERSED = "reversed", "Reversed"
+
+
+class PayrollPayment(TimestampedModel):
+    payroll_entry = models.ForeignKey(
+        PayrollEntry, on_delete=models.PROTECT, related_name="payments"
+    )
+    amount = models.DecimalField(
+        max_digits=14, decimal_places=2, validators=[MinValueValidator(Decimal("0.01"))]
+    )
+    payment_date = models.DateField(db_index=True)
+    payment_method = models.CharField(max_length=80)
+    external_reference = models.CharField(max_length=120, blank=True, default="")
+    idempotency_key = models.CharField(max_length=120, unique=True)
+    status = models.CharField(
+        max_length=20,
+        choices=PayrollPaymentStatus.choices,
+        default=PayrollPaymentStatus.POSTED,
+        db_index=True,
+    )
+    posted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="posted_payroll_payments",
+    )
+    reversed_at = models.DateTimeField(null=True, blank=True)
+    reversed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reversed_payroll_payments",
+    )
+    reversal_reason = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["-payment_date", "-created_at"]
+
+
+class PayrollPaymentFunding(TimestampedModel):
+    payment = models.ForeignKey(
+        PayrollPayment, on_delete=models.PROTECT, related_name="funding_allocations"
+    )
+    funding_source = models.ForeignKey(
+        FundingSource, on_delete=models.PROTECT, related_name="payroll_allocations"
+    )
+    amount = models.DecimalField(
+        max_digits=14, decimal_places=2, validators=[MinValueValidator(Decimal("0.01"))]
+    )
+
+
+class PayrollLiability(TimestampedModel):
+    payroll_entry = models.OneToOneField(
+        PayrollEntry, on_delete=models.PROTECT, related_name="deduction_liability"
+    )
+    amount = models.DecimalField(max_digits=14, decimal_places=2, validators=[MONEY_VALIDATOR])
+    remitted_amount = models.DecimalField(
+        max_digits=14, decimal_places=2, default=Decimal("0.00"), validators=[MONEY_VALIDATOR]
+    )
+    description = models.CharField(
+        max_length=160, default="Employee deductions payable to statutory authority"
+    )
 
 
 class InputCostReconciliation(TimestampedModel):

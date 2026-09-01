@@ -73,6 +73,10 @@ export const bookingSchema = z
 
     source_other: z.string().trim().optional(),
 
+    supplier_name: z.string().trim().min(2, "Supplier name is required."),
+
+    booking_reference: z.string().trim().optional(),
+
     booking_date: z.string().min(1, "Booking date is required."),
 
     estimated_chick_arrival_date: z

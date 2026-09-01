@@ -139,45 +139,45 @@ export default function FinanceExpendituresClient() {
       {error ? <div role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-800">{error}</div> : null}
 
       <div className="overflow-hidden rounded-xl border border-[#ddd7c9] bg-white">
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto pr-1">
         <table className="w-full min-w-[1100px] text-sm">
           <thead className="bg-[#f6f3eb]">
             <tr>
-              <th className="p-3 text-left">Ref</th>
-              <th className="p-3 text-left">Date</th>
-              <th className="p-3 text-left">Description</th>
-              <th className="p-3 text-right">Amount</th>
-              <th className="p-3">Cost beneficiary</th>
-              <th className="p-3">Payment source</th>
-              <th className="p-3">Payment</th>
-              <th className="p-3">Origin</th>
-              <th className="p-3">Status</th>
-              <th className="p-3">Actions</th>
+              <th className="px-4 py-3 text-left">Ref</th>
+              <th className="px-4 py-3 text-left">Date</th>
+              <th className="px-4 py-3 text-left">Description</th>
+              <th className="px-4 py-3 text-right">Amount</th>
+              <th className="px-4 py-3">Cost beneficiary</th>
+              <th className="px-4 py-3">Payment source</th>
+              <th className="px-4 py-3">Payment</th>
+              <th className="px-4 py-3">Origin</th>
+              <th className="px-4 py-3">Status</th>
+              <th className="px-4 py-3 pr-6">Actions</th>
             </tr>
           </thead>
           <tbody>
             {loading && (
-              <tr><td colSpan={10} className="p-8 text-center text-[#747b8d]">Loading expenditures…</td></tr>
+              <tr><td colSpan={10} className="px-4 py-8 text-center text-[#747b8d]">Loading expenditures…</td></tr>
             )}
             {!loading && expenditures.length === 0 && (
-              <tr><td colSpan={10} className="p-8 text-center text-[#747b8d]">No expenditures match these filters.</td></tr>
+              <tr><td colSpan={10} className="px-4 py-8 text-center text-[#747b8d]">No expenditures match these filters.</td></tr>
             )}
             {!loading && expenditures.map((exp) => (
               <tr key={exp.id} className="border-t">
-                <td className="p-3 font-mono text-xs">{exp.expenditure_reference || `#${exp.id}`}</td>
-                <td className="p-3">{formatDate(exp.expenditure_date)}</td>
-                <td className="p-3 font-medium">{exp.description}{exp.external_reference ? ` (Ref: ${exp.external_reference})` : ""}</td>
-                <td className="p-3 text-right font-mono">{formatCurrency(exp.amount)}</td>
-                <td className="p-3 text-center">{exp.beneficiary_batches?.length ? exp.beneficiary_batches.map((batch) => <Link key={batch.id} href={`/poultry/batches/${batch.id}?tab=costs`} className="block font-bold underline">{batch.batch_id}</Link>) : exp.beneficiary_detail || "Non-batch"}</td>
-                <td className="p-3 text-center">{exp.funding_allocations?.length ? exp.funding_allocations.map((row) => row.funding_source_display || `Source #${row.funding_source}`).join(", ") : "Not paid / unassigned"}</td>
-                <td className="p-3 text-center"><span className={`rounded px-2 py-0.5 text-xs font-bold ${exp.payment_status === "paid" ? "bg-green-100 text-green-800" : "bg-amber-100 text-amber-900"}`}>{formatLabel(exp.payment_status || "unpaid")}</span>{Number(exp.balance_due || 0) > 0 ? <span className="mt-1 block text-xs">Due {formatCurrency(exp.balance_due || 0)}</span> : null}</td>
-                <td className="p-3 text-center">{formatLabel(exp.origin || "finance")}</td>
-                <td className="p-3 text-center">
+                <td className="px-4 py-3 font-mono text-xs">{exp.expenditure_reference || `#${exp.id}`}</td>
+                <td className="px-4 py-3">{formatDate(exp.expenditure_date)}</td>
+                <td className="px-4 py-3 font-medium">{exp.description}{exp.external_reference ? ` (Ref: ${exp.external_reference})` : ""}</td>
+                <td className="px-4 py-3 text-right font-mono">{formatCurrency(exp.amount)}</td>
+                <td className="px-4 py-3 text-center">{exp.beneficiary_batches?.length ? exp.beneficiary_batches.map((batch) => <Link key={batch.id} href={`/poultry/batches/${batch.id}?tab=costs`} className="block font-bold underline">{batch.batch_id}</Link>) : exp.beneficiary_detail || "Non-batch"}</td>
+                <td className="px-4 py-3 text-center">{exp.funding_allocations?.length ? exp.funding_allocations.map((row) => row.funding_source_display || `Source #${row.funding_source}`).join(", ") : "Not paid / unassigned"}</td>
+                <td className="px-4 py-3 text-center"><span className={`rounded px-2 py-0.5 text-xs font-bold ${exp.payment_status === "paid" ? "bg-green-100 text-green-800" : "bg-amber-100 text-amber-900"}`}>{formatLabel(exp.payment_status || "unpaid")}</span>{Number(exp.balance_due || 0) > 0 ? <span className="mt-1 block text-xs">Due {formatCurrency(exp.balance_due || 0)}</span> : null}</td>
+                <td className="px-4 py-3 text-center">{formatLabel(exp.origin || "finance")}</td>
+                <td className="px-4 py-3 text-center">
                   <span className={`text-xs px-2 py-0.5 rounded ${exp.status === "posted" ? "bg-green-100" : exp.status === "void" ? "bg-gray-200" : "bg-amber-100"}`}>
                     {exp.status}
                   </span>
                 </td>
-                <td className="p-3 flex gap-1">
+                <td className="px-4 py-3 pr-6 flex gap-1">
                   <Link href={`/finance/expenditures/${exp.id}`} className="rounded border border-[#151f36] px-3 py-1 text-xs font-bold">{exp.status === "posted" && exp.payment_status !== "paid" ? "Record payment" : "Review"}</Link>
                   {exp.status === "posted" && (
                     <button onClick={() => voidExpenditure(exp.id)} className="text-xs bg-red-600 text-white px-2 py-1 rounded">Reverse</button>

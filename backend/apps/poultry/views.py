@@ -15,10 +15,17 @@ from apps.finance.services.expenditures import (
     create_batch_cost_transaction,
 )
 from apps.poultry.services.batch_lifecycle import (
+    assert_batch_accepts_cost,
     assert_batch_in_production,
     create_mortality_with_lifecycle,
     create_sale_with_lifecycle,
     recalculate_batch_status,
+)
+from apps.poultry.services.feed_metrics import (
+    create_flock_adjustment,
+    feed_summary,
+    recalculate_feed_event_populations,
+    record_feed_usage,
 )
 from apps.poultry.services.growth import (
     compute_growth_series,
@@ -34,6 +41,7 @@ from .models import(
     Sales,
     Mortality,
     FeedUsage,
+    FlockAdjustment,
     DrugsVaccination,
 )
 
@@ -46,6 +54,7 @@ from .serializers import(
     SalesSerializer,
     MortalitySerializer,
     FeedUsageSerializer,
+    FlockAdjustmentSerializer,
     DrugsVaccinationSerializer,
 )
 
@@ -77,6 +86,8 @@ class BatchViewset(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retrie
             return MortalitySerializer
         elif self.action == "feed_usage":
             return FeedUsageSerializer
+        elif self.action == "flock_adjustments":
+            return FlockAdjustmentSerializer
         elif self.action == "drugs_vaccine":
             return DrugsVaccinationSerializer
         elif self.action == "weight_samples":
@@ -140,6 +151,10 @@ class BatchViewset(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retrie
             entry_date + timedelta(days=46),
         )
         poultry_batch.quantity = data.get("quantity", poultry_batch.quantity)
+        poultry_batch.actual_quantity_received = poultry_batch.quantity
+        poultry_batch.expected_quantity = (
+            poultry_batch.expected_quantity or poultry_batch.quantity
+        )
         poultry_batch.delivery_confirmed_at = (
             poultry_batch.delivery_confirmed_at or timezone.now()
         )
@@ -149,6 +164,8 @@ class BatchViewset(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retrie
                 "entry_date",
                 "expected_maturity_date",
                 "quantity",
+                "actual_quantity_received",
+                "expected_quantity",
                 "delivery_confirmed_at",
                 "status",
                 "updated_at",
@@ -178,7 +195,7 @@ class BatchViewset(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retrie
             status=PeriodStatus.OPEN,
         ).exists()
         try:
-            assert_batch_in_production(
+            assert_batch_accepts_cost(
                 poultry_batch,
                 allow_closed_cost_correction=correction_period_is_open,
             )
@@ -273,13 +290,55 @@ class BatchViewset(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retrie
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        feed_usage = self.save_with_current_user(
-            serializer,
-            batch=poultry_batch,
-        )
+        try:
+            feed_usage = record_feed_usage(
+                batch_id=poultry_batch.pk,
+                created_by=request.user,
+                **serializer.validated_data,
+            )
+        except ValueError as error:
+            raise ValidationError({"batch": str(error)}) from error
 
         return Response(
             self.get_serializer(feed_usage).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    @action(detail=True, methods=["get"], url_path="feed-metrics")
+    def feed_metrics(self, request, pk=None):
+        return Response(feed_summary(self.get_object()))
+
+    @action(detail=True, methods=["post"], url_path="recalculate-feed-metrics")
+    def recalculate_feed_metrics(self, request, pk=None):
+        batch = self.get_object()
+        records = recalculate_feed_event_populations(batch)
+        return Response(
+            {
+                "records_recalculated": len(records),
+                "summary": feed_summary(batch),
+            }
+        )
+
+    @action(detail=True, methods=["get", "post"], url_path="flock-adjustments")
+    def flock_adjustments(self, request, pk=None):
+        batch = self.get_object()
+        if request.method == "GET":
+            return Response(
+                self.get_serializer(batch.flock_adjustments.all(), many=True).data
+            )
+        try:
+            assert_batch_in_production(batch)
+        except ValueError as error:
+            return Response({"detail": str(error)}, status=status.HTTP_400_BAD_REQUEST)
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        adjustment = create_flock_adjustment(
+            batch_id=batch.pk,
+            approved_by=request.user,
+            **serializer.validated_data,
+        )
+        return Response(
+            self.get_serializer(adjustment).data,
             status=status.HTTP_201_CREATED,
         )
 
