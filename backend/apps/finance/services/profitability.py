@@ -34,15 +34,22 @@ from ..models import (
     AccountingPeriod,
     AdHocLabourPayment,
     AllocationSourceType,
+    AssetDepreciationEntry,
     BatchProfitabilitySnapshot,
+    BirdDaySnapshot,
     ConsumableUsage,
     ConsumableUsageScope,
     CostAllocation,
     CostScope,
+    ExpenseRecognitionType,
+    Expenditure,
+    ExpenditureStatus,
+    PayrollEntry,
     SharedExpense,
     SharedExpenseScope,
 )
 from apps.poultry.services.batch_lifecycle import BirdBalance, calculate_bird_balance
+from .bird_days import calculate_batch_bird_days
 from .warnings import finance_warning
 
 
@@ -50,6 +57,7 @@ ZERO = Decimal("0.00")
 PRE_PRODUCTION_STATUSES = {
     BatchStatus.BOOKED,
     BatchStatus.DELIVERED,
+    BatchStatus.PLANNED,
 }
 
 
@@ -61,6 +69,50 @@ def percent(numerator: Decimal, denominator: Decimal) -> Decimal | None:
     if denominator == ZERO:
         return None
     return (numerator * Decimal("100") / denominator).quantize(Decimal("0.01"))
+
+
+def _snapshot_breakdown(rows: list[dict]) -> list[dict]:
+    """Return a JSON-safe copy of the management cost bridge."""
+
+    return [
+        {
+            **row,
+            "amount": str(money(row["amount"])),
+            **(
+                {
+                    "components": [
+                        {**component, "amount": str(money(component["amount"]))}
+                        for component in row.get("components", [])
+                    ]
+                }
+                if "components" in row
+                else {}
+            ),
+        }
+        for row in rows
+    ]
+
+
+def _restore_snapshot_breakdown(rows: list[dict]) -> list[dict]:
+    """Restore monetary values from a JSON profitability snapshot."""
+
+    return [
+        {
+            **row,
+            "amount": money(row.get("amount")),
+            **(
+                {
+                    "components": [
+                        {**component, "amount": money(component.get("amount"))}
+                        for component in row.get("components", [])
+                    ]
+                }
+                if "components" in row
+                else {}
+            ),
+        }
+        for row in rows
+    ]
 
 
 def _sum_decimal(queryset, expression) -> Decimal:
@@ -177,6 +229,11 @@ def allocated_production_total(batch: Batch) -> Decimal:
         source_type=AllocationSourceType.EXPENDITURE,
         expenditure__status=ExpenditureStatus.POSTED,
         expenditure__accounting_nature=AccountingNature.INDIRECT_OPERATING_EXPENSE,
+        # Payroll and legacy-expense expenditures are payment/register mirrors.
+        # Their economic cost is recognized from the linked source record below,
+        # so an expenditure allocation must never recognize the same cost again.
+        expenditure__payroll_entry__isnull=True,
+        expenditure__legacy_shared_expense__isnull=True,
     )
     return money(
         payroll.aggregate(total=Sum("allocated_amount"))["total"]
@@ -407,7 +464,361 @@ def _apply_final_snapshot(
             "active_batch_cost_exposure": ZERO,
         }
     )
+    if snapshot.management_net_position is not None:
+        row.update(
+            {
+                "central_selling_cost": money(snapshot.central_selling_cost),
+                "total_selling_cost": money(snapshot.total_selling_cost),
+                "allocated_administration_cost": money(
+                    snapshot.allocated_administration_cost
+                ),
+                "allocated_finance_cost": money(snapshot.allocated_finance_cost),
+                "allocated_tax": money(snapshot.allocated_tax),
+                "total_attributed_cost": money(snapshot.total_attributed_cost),
+                "management_net_position": money(snapshot.management_net_position),
+                "management_net_margin_percent": percent(
+                    money(snapshot.management_net_position), revenue
+                ),
+                "management_cost_breakdown": _restore_snapshot_breakdown(
+                    snapshot.management_cost_breakdown
+                ),
+                "management_snapshot_locked": True,
+            }
+        )
     return row
+
+
+def _percentage_amount(queryset, percentage_field: str) -> Decimal:
+    return money(
+        queryset.aggregate(
+            total=Sum(
+                ExpressionWrapper(
+                    F("period_depreciation")
+                    * F(percentage_field)
+                    / Decimal("100.00"),
+                    output_field=DecimalField(max_digits=16, decimal_places=2),
+                )
+            )
+        )["total"]
+    )
+
+
+def _payroll_percentage_amount(period: AccountingPeriod, field: str) -> Decimal:
+    return money(
+        PayrollEntry.objects.filter(accounting_period=period).aggregate(
+            total=Sum(
+                ExpressionWrapper(
+                    F("total_employer_cost") * F(field) / Decimal("100.00"),
+                    output_field=DecimalField(max_digits=16, decimal_places=2),
+                )
+            )
+        )["total"]
+    )
+
+
+def _period_batch_drivers(period: AccountingPeriod) -> tuple[dict[int, Decimal], dict[int, Decimal]]:
+    """Return stable bird-day and revenue drivers for every flock in a period."""
+
+    candidates = list(
+        Batch.objects.filter(entry_date__date__lte=period.period_end)
+        .filter(Q(closed_at__isnull=True) | Q(closed_at__date__gte=period.period_start))
+        .exclude(status__in=PRE_PRODUCTION_STATUSES)
+    )
+    snapshots = {
+        snapshot.batch_id: Decimal(snapshot.bird_days)
+        for snapshot in BirdDaySnapshot.objects.filter(
+            accounting_period=period,
+            batch_id__in=[batch.pk for batch in candidates],
+        )
+    }
+    bird_days: dict[int, Decimal] = {}
+    for candidate in candidates:
+        if candidate.pk in snapshots:
+            bird_days[candidate.pk] = snapshots[candidate.pk]
+            continue
+        try:
+            bird_days[candidate.pk] = Decimal(
+                calculate_batch_bird_days(candidate, period)["bird_days"]
+            )
+        except ValueError:
+            bird_days[candidate.pk] = ZERO
+
+    revenue_expression = ExpressionWrapper(
+        F("quantity_sold") * F("unit_price"),
+        output_field=DecimalField(max_digits=16, decimal_places=2),
+    )
+    revenue = {
+        item["batch_id"]: money(item["total"])
+        for item in Sales.objects.filter(
+            batch_id__in=[batch.pk for batch in candidates],
+            sale_date__date__gte=period.period_start,
+            sale_date__date__lte=period.period_end,
+        )
+        .exclude(payment_status=PaymentStatus.CANCELLED)
+        .values("batch_id")
+        .annotate(total=Sum(revenue_expression))
+    }
+    return bird_days, revenue
+
+
+def _management_overhead_by_batch(batches: list[Batch]) -> dict[int, dict[str, Decimal]]:
+    """Attribute whole-farm costs for a management net-position view.
+
+    Stored direct and production allocations remain authoritative. Central costs are
+    attributed without writing ledger rows: administration follows bird-days while
+    selling, finance costs, and tax follow period revenue (falling back to bird-days).
+    """
+
+    result = {
+        batch.pk: {
+            "selling_payroll": ZERO,
+            "selling_asset_depreciation": ZERO,
+            "administration_payroll": ZERO,
+            "administration_labour": ZERO,
+            "administration_consumables": ZERO,
+            "administration_overhead": ZERO,
+            "administration_asset_depreciation": ZERO,
+            "finance_cost": ZERO,
+            "tax": ZERO,
+        }
+        for batch in batches
+    }
+    if not batches:
+        return result
+
+    earliest = min(batch.entry_date.date() for batch in batches)
+    latest = max(
+        (batch.closed_at.date() if batch.closed_at else timezone.localdate())
+        for batch in batches
+    )
+    periods = AccountingPeriod.objects.filter(
+        period_end__gte=earliest,
+        period_start__lte=latest,
+    ).order_by("period_start")
+
+    for period in periods:
+        bird_days, revenue = _period_batch_drivers(period)
+        bird_day_total = sum(bird_days.values(), ZERO)
+        revenue_total = sum(revenue.values(), ZERO)
+        asset_entries = AssetDepreciationEntry.objects.filter(accounting_period=period)
+
+        admin_pools = {
+            "administration_payroll": _payroll_percentage_amount(
+                period, "administration_percentage"
+            ),
+            "administration_labour": money(
+                AdHocLabourPayment.objects.filter(
+                    accounting_period=period,
+                    cost_scope=CostScope.FARM_ADMINISTRATION,
+                ).aggregate(total=Sum("payment_amount"))["total"]
+            ),
+            "administration_consumables": money(
+                ConsumableUsage.objects.filter(
+                    accounting_period=period,
+                    usage_scope=ConsumableUsageScope.ADMINISTRATION,
+                ).aggregate(total=Sum("recognized_cost"))["total"]
+            ),
+            "administration_overhead": money(
+                SharedExpense.objects.filter(
+                    accounting_period=period,
+                    scope__in=[SharedExpenseScope.ADMIN_OVERHEAD, SharedExpenseScope.OTHER],
+                )
+                .exclude(
+                    recognition_type__in=[
+                        ExpenseRecognitionType.CAPITAL_EXPENDITURE,
+                        ExpenseRecognitionType.PREPAID_EXPENSE,
+                        ExpenseRecognitionType.SHARED_CONSUMABLE,
+                    ]
+                )
+                .aggregate(total=Sum("amount"))["total"]
+            ),
+            "administration_asset_depreciation": _percentage_amount(
+                asset_entries, "asset__administration_percentage"
+            ),
+        }
+        # New unified finance expenditures that are not projections of payroll or
+        # legacy shared-expense records and have no batch allocation are central admin.
+        admin_pools["administration_overhead"] += money(
+            Expenditure.objects.filter(
+                accounting_period=period,
+                status=ExpenditureStatus.POSTED,
+                accounting_nature=AccountingNature.INDIRECT_OPERATING_EXPENSE,
+                cost_allocations__isnull=True,
+                payroll_entry__isnull=True,
+                legacy_shared_expense__isnull=True,
+                beneficiary_type__in=[
+                    "admin",
+                    "administration",
+                    "general_admin",
+                    "whole_farm",
+                    "whole_farm_admin",
+                ],
+            ).aggregate(total=Sum("amount"))["total"]
+        )
+        revenue_pools = {
+            "selling_payroll": _payroll_percentage_amount(period, "selling_percentage"),
+            "selling_asset_depreciation": _percentage_amount(
+                asset_entries, "asset__selling_percentage"
+            ),
+            "finance_cost": money(
+                SharedExpense.objects.filter(
+                    accounting_period=period,
+                    scope=SharedExpenseScope.FINANCE_COST,
+                ).aggregate(total=Sum("amount"))["total"]
+            ),
+            "tax": money(
+                SharedExpense.objects.filter(
+                    accounting_period=period,
+                    scope=SharedExpenseScope.TAX,
+                ).aggregate(total=Sum("amount"))["total"]
+            ),
+        }
+
+        for batch in batches:
+            if batch.pk not in bird_days:
+                continue
+            admin_share = bird_days.get(batch.pk, ZERO) / bird_day_total if bird_day_total else ZERO
+            revenue_share = revenue.get(batch.pk, ZERO) / revenue_total if revenue_total else admin_share
+            for key, pool in admin_pools.items():
+                result[batch.pk][key] += money(pool * admin_share)
+            for key, pool in revenue_pools.items():
+                result[batch.pk][key] += money(pool * revenue_share)
+
+    return result
+
+
+def _attach_management_costs(rows: list[dict], batches: list[Batch]) -> list[dict]:
+    unlocked_ids = {
+        row["batch"] for row in rows if not row.get("management_snapshot_locked")
+    }
+    overhead = _management_overhead_by_batch(
+        [batch for batch in batches if batch.pk in unlocked_ids]
+    )
+    production_components = {
+        (item["batch_id"], item["source_type"]): money(item["total"])
+        for item in CostAllocation.objects.filter(
+            batch_id__in=[row["batch"] for row in rows],
+            source_type__in=[
+                AllocationSourceType.DEPRECIATION,
+                AllocationSourceType.PAYROLL,
+            ],
+        ).values("batch_id", "source_type").annotate(total=Sum("allocated_amount"))
+    } if rows else {}
+    for row in rows:
+        if row.get("management_snapshot_locked"):
+            continue
+        attributed = overhead.get(row["batch"], {})
+        production_assets = production_components.get(
+            (row["batch"], AllocationSourceType.DEPRECIATION), ZERO
+        )
+        production_payroll = production_components.get(
+            (row["batch"], AllocationSourceType.PAYROLL), ZERO
+        )
+        other_production_overhead = money(
+            row["allocated_production_cost"]
+            - production_assets
+            - production_payroll
+        )
+        central_selling = money(
+            attributed.get("selling_payroll", ZERO)
+            + attributed.get("selling_asset_depreciation", ZERO)
+        )
+        total_selling = money(row["selling_cost"] + central_selling)
+        administration = money(
+            sum(
+                (
+                    attributed.get(key, ZERO)
+                    for key in [
+                        "administration_payroll",
+                        "administration_labour",
+                        "administration_consumables",
+                        "administration_overhead",
+                        "administration_asset_depreciation",
+                    ]
+                ),
+                ZERO,
+            )
+        )
+        finance_cost = money(attributed.get("finance_cost", ZERO))
+        tax = money(attributed.get("tax", ZERO))
+        total_cost = money(
+            row["total_production_cost"] + total_selling + administration + finance_cost + tax
+        )
+        net_position = money(row["revenue"] - total_cost)
+        row.update(
+            {
+                "central_selling_cost": central_selling,
+                "total_selling_cost": total_selling,
+                "allocated_administration_cost": administration,
+                "allocated_finance_cost": finance_cost,
+                "allocated_tax": tax,
+                "total_attributed_cost": total_cost,
+                "management_net_position": net_position,
+                "management_net_margin_percent": percent(net_position, row["revenue"]),
+                "management_cost_breakdown": [
+                    {
+                        "key": "direct_batch",
+                        "label": "Direct batch costs",
+                        "amount": row["direct_batch_cost"],
+                        "basis": "Directly recorded against this batch",
+                    },
+                    {
+                        "key": "production_overhead",
+                        "label": "Allocated production overhead",
+                        "amount": row["allocated_production_cost"],
+                        "basis": "Stored production allocations",
+                        "components": [
+                            {"label": "Production asset depreciation", "amount": production_assets},
+                            {
+                                "label": "Production payroll (salary expenditure recognized once)",
+                                "amount": production_payroll,
+                            },
+                            {
+                                "label": "Labour, consumables and shared production",
+                                "amount": other_production_overhead,
+                            },
+                        ],
+                    },
+                    {
+                        "key": "selling",
+                        "label": "Selling and distribution",
+                        "amount": total_selling,
+                        "basis": "Direct allocations plus period revenue share",
+                        "components": [
+                            {"label": "Direct and stored selling allocations", "amount": row["selling_cost"]},
+                            {"label": "Selling payroll (salary expenditure recognized once)", "amount": attributed.get("selling_payroll", ZERO)},
+                            {"label": "Selling asset depreciation", "amount": attributed.get("selling_asset_depreciation", ZERO)},
+                        ],
+                    },
+                    {
+                        "key": "administration",
+                        "label": "Farm administration",
+                        "amount": administration,
+                        "basis": "Period bird-day share",
+                        "components": [
+                            {"label": "Administration payroll (salary expenditure recognized once)", "amount": attributed.get("administration_payroll", ZERO)},
+                            {"label": "Administration labour", "amount": attributed.get("administration_labour", ZERO)},
+                            {"label": "Administration consumables", "amount": attributed.get("administration_consumables", ZERO)},
+                            {"label": "General overhead", "amount": attributed.get("administration_overhead", ZERO)},
+                            {"label": "Administration asset depreciation", "amount": attributed.get("administration_asset_depreciation", ZERO)},
+                        ],
+                    },
+                    {
+                        "key": "finance",
+                        "label": "Finance costs",
+                        "amount": finance_cost,
+                        "basis": "Period revenue share",
+                    },
+                    {
+                        "key": "tax",
+                        "label": "Recorded tax",
+                        "amount": tax,
+                        "basis": "Period revenue share",
+                    },
+                ],
+            }
+        )
+    return rows
 
 
 def batch_profitability(batch: Batch) -> dict:
@@ -439,7 +850,8 @@ def batch_profitability(batch: Batch) -> dict:
             final=True,
             accounting_period__isnull=False,
         ).first()
-    return _apply_final_snapshot(row, snapshot)
+    row = _apply_final_snapshot(row, snapshot)
+    return _attach_management_costs([row], [batch])[0]
 
 
 def _money_by_group(queryset, group_field: str, expression) -> dict[int, Decimal]:
@@ -519,9 +931,19 @@ def _portfolio_profitability_rows(batches: list[Batch]) -> list[dict]:
         output_field=DecimalField(max_digits=14, decimal_places=2),
     )
     input_costs = _money_by_group(
-        InputCosts.objects.filter(batch_id__in=batch_ids),
+        InputCosts.objects.filter(batch_id__in=batch_ids, expenditure__isnull=True),
         "batch_id",
         input_expression,
+    )
+    authoritative_input_costs = _money_by_group(
+        CostAllocation.objects.filter(
+            batch_id__in=batch_ids,
+            source_type=AllocationSourceType.EXPENDITURE,
+            expenditure__status=ExpenditureStatus.POSTED,
+            expenditure__accounting_nature=AccountingNature.DIRECT_COST,
+        ),
+        "batch_id",
+        "allocated_amount",
     )
     direct_labour = _money_by_group(
         AdHocLabourPayment.objects.filter(
@@ -582,6 +1004,13 @@ def _portfolio_profitability_rows(batches: list[Batch]) -> list[dict]:
             consumable_usage__usage_scope=ConsumableUsageScope.SHARED_PRODUCTION,
         )
         | Q(source_type=AllocationSourceType.DEPRECIATION)
+        | Q(
+            source_type=AllocationSourceType.EXPENDITURE,
+            expenditure__status=ExpenditureStatus.POSTED,
+            expenditure__accounting_nature=AccountingNature.INDIRECT_OPERATING_EXPENSE,
+            expenditure__payroll_entry__isnull=True,
+            expenditure__legacy_shared_expense__isnull=True,
+        )
     )
     allocated_production = _money_by_group(
         CostAllocation.objects.filter(batch_id__in=batch_ids).filter(
@@ -643,6 +1072,7 @@ def _portfolio_profitability_rows(batches: list[Batch]) -> list[dict]:
         )
         direct_cost = (
             input_costs.get(batch.pk, ZERO)
+            + authoritative_input_costs.get(batch.pk, ZERO)
             + direct_labour.get(batch.pk, ZERO)
             + direct_expenses.get(batch.pk, ZERO)
             + direct_consumables.get(batch.pk, ZERO)
@@ -684,7 +1114,11 @@ def batch_portfolio_report(batches: Iterable[Batch]) -> dict:
     small flock does not carry the same weight as a large flock.
     """
 
-    rows = _portfolio_profitability_rows(list(batches))
+    batch_list = list(batches)
+    rows = _attach_management_costs(
+        _portfolio_profitability_rows(batch_list),
+        batch_list,
+    )
     included_rows = [row for row in rows if row["included_in_portfolio_summary"]]
 
     def total(field: str) -> Decimal:
@@ -699,6 +1133,12 @@ def batch_portfolio_report(batches: Iterable[Batch]) -> dict:
     selling_cost = total("selling_cost")
     administration_cost = total("allocated_administration_cost")
     contribution_after_selling = total("fully_loaded_batch_profit")
+    central_selling_cost = total("central_selling_cost")
+    total_selling_cost = total("total_selling_cost")
+    finance_cost = total("allocated_finance_cost")
+    tax = total("allocated_tax")
+    total_attributed_cost = total("total_attributed_cost")
+    management_net_position = total("management_net_position")
     receivable = total("accounts_receivable")
     active_exposure = total("active_batch_cost_exposure")
 
@@ -730,19 +1170,19 @@ def batch_portfolio_report(batches: Iterable[Batch]) -> dict:
             ),
         ),
         finance_warning(
-            code="central_costs_excluded",
+            code="central_costs_attributed",
             severity="info",
             message=(
-                "Central administration, finance costs and tax are not allocated to "
-                "batches, so contribution after selling costs is not whole-farm net profit."
+                "The management net position attributes central administration by "
+                "bird-days and selling, finance costs, and tax by period revenue share."
             ),
         ),
         finance_warning(
-            code="selling_payroll_excluded",
+            code="management_allocation_not_ledger_posting",
             severity="info",
             message=(
-                "Employee payroll selling percentages remain in the monthly whole-farm "
-                "report and are not yet allocated to individual batches."
+                "Management overhead attribution is a reporting view; it does not create "
+                "or change accounting ledger allocation records."
             ),
         ),
         finance_warning(
@@ -804,7 +1244,7 @@ def batch_portfolio_report(batches: Iterable[Batch]) -> dict:
 
     return {
         "analysis_basis": "lifecycle_management_cost",
-        "calculation_version": "batch-portfolio-v1",
+        "calculation_version": "batch-portfolio-v2",
         "selected_batch_ids": [row["batch"] for row in rows],
         "selected_batch_count": len(rows),
         "included_batch_count": len(included_rows),
@@ -819,7 +1259,14 @@ def batch_portfolio_report(batches: Iterable[Batch]) -> dict:
             "batch_gross_profit": gross_profit,
             "batch_gross_margin_percent": percent(gross_profit, revenue),
             "selling_cost": selling_cost,
+            "central_selling_cost": central_selling_cost,
+            "total_selling_cost": total_selling_cost,
             "allocated_administration_cost": administration_cost,
+            "allocated_finance_cost": finance_cost,
+            "allocated_tax": tax,
+            "total_attributed_cost": total_attributed_cost,
+            "management_net_position": management_net_position,
+            "management_net_margin_percent": percent(management_net_position, revenue),
             "fully_loaded_batch_profit": contribution_after_selling,
             "fully_loaded_margin_percent": percent(
                 contribution_after_selling,
@@ -849,6 +1296,42 @@ def batch_portfolio_report(batches: Iterable[Batch]) -> dict:
             ),
             "additional_revenue_required_to_break_even": additional_revenue_required,
             "active_batch_cost_exposure": active_exposure,
+            "management_cost_breakdown": [
+                {
+                    "key": key,
+                    "label": next(
+                        item["label"]
+                        for row in included_rows
+                        for item in row["management_cost_breakdown"]
+                        if item["key"] == key
+                    ),
+                    "basis": next(
+                        item["basis"]
+                        for row in included_rows
+                        for item in row["management_cost_breakdown"]
+                        if item["key"] == key
+                    ),
+                    "amount": money(
+                        sum(
+                            (
+                                item["amount"]
+                                for row in included_rows
+                                for item in row["management_cost_breakdown"]
+                                if item["key"] == key
+                            ),
+                            ZERO,
+                        )
+                    ),
+                }
+                for key in [
+                    "direct_batch",
+                    "production_overhead",
+                    "selling",
+                    "administration",
+                    "finance",
+                    "tax",
+                ]
+            ] if included_rows else [],
         },
         "results": rows,
         "warnings": warnings,
@@ -876,6 +1359,18 @@ def create_final_snapshot(
             "total_production_cost": data["total_production_cost"],
             "batch_gross_profit": data["batch_gross_profit"],
             "fully_loaded_batch_profit": data["fully_loaded_batch_profit"],
+            "central_selling_cost": data["central_selling_cost"],
+            "total_selling_cost": data["total_selling_cost"],
+            "allocated_administration_cost": data[
+                "allocated_administration_cost"
+            ],
+            "allocated_finance_cost": data["allocated_finance_cost"],
+            "allocated_tax": data["allocated_tax"],
+            "total_attributed_cost": data["total_attributed_cost"],
+            "management_net_position": data["management_net_position"],
+            "management_cost_breakdown": _snapshot_breakdown(
+                data["management_cost_breakdown"]
+            ),
             "valid_bird_units_sold": data["valid_bird_units_sold"],
             "remaining_live_birds": data["remaining_live_birds"],
             "finalized_at": timezone.now(),

@@ -70,7 +70,7 @@ export default async function FinanceBatchAnalysisPage({ searchParams }: PagePro
     <FinancePageShell
       eyebrow="Finance / Poultry"
       title="Batch performance analysis."
-      detail="Review one flock in detail or combine selected flocks using lifecycle revenue, collections, mortality, direct costs, and stored shared-cost allocations."
+      detail="Review one flock or combine selected flocks with the same complete production, overhead, asset, finance, and tax cost basis."
       actions={<FinanceNav />}
     >
       <Panel title="Choose Poultry Batches">
@@ -98,13 +98,13 @@ export default async function FinanceBatchAnalysisPage({ searchParams }: PagePro
             />
             <MetricCard label="Revenue" value={formatCurrency(report.summary.revenue)} />
             <MetricCard
-              label="Production cost"
-              value={formatCurrency(report.summary.total_production_cost)}
+              label="Full attributed cost"
+              value={formatCurrency(report.summary.total_attributed_cost)}
             />
             <MetricCard
-              label="Gross profit"
-              value={formatCurrency(report.summary.batch_gross_profit)}
-              detail={`${formatPercent(report.summary.batch_gross_margin_percent)} margin`}
+              label="Net position"
+              value={formatCurrency(report.summary.management_net_position)}
+              detail={`${formatPercent(report.summary.management_net_margin_percent)} net margin`}
             />
             <MetricCard
               label="Receivables"
@@ -116,8 +116,8 @@ export default async function FinanceBatchAnalysisPage({ searchParams }: PagePro
           <Panel title="Poultry Business Insights">
             <div className="grid gap-4 lg:grid-cols-2">
               <FinanceBarChart
-                title="Cost And Contribution"
-                detail="Direct flock cost and allocated production overhead are shown separately. Contribution deducts batch-attributed selling costs but excludes selling payroll, central administration, finance costs, and tax."
+                title="Revenue To Net Position"
+                detail="The complete management bridge uses the same cost basis as each individual batch finance page."
                 points={[
                   {
                     label: "Revenue",
@@ -138,38 +138,67 @@ export default async function FinanceBatchAnalysisPage({ searchParams }: PagePro
                     tone: "navy",
                   },
                   {
-                    label: "Gross profit",
-                    value: parseDecimal(report.summary.batch_gross_profit),
-                    displayValue: formatCurrency(report.summary.batch_gross_profit),
-                    tone: "green",
+                    label: "Selling and distribution",
+                    value: parseDecimal(report.summary.total_selling_cost),
+                    displayValue: formatCurrency(report.summary.total_selling_cost),
+                    tone: "muted",
                   },
                   {
-                    label: "After selling costs",
-                    value: parseDecimal(report.summary.fully_loaded_batch_profit),
-                    displayValue: formatCurrency(report.summary.fully_loaded_batch_profit),
-                    tone: "green",
+                    label: "Administration",
+                    value: parseDecimal(report.summary.allocated_administration_cost),
+                    displayValue: formatCurrency(report.summary.allocated_administration_cost),
+                    tone: "muted",
+                  },
+                  {
+                    label: "Net position",
+                    value: parseDecimal(report.summary.management_net_position),
+                    displayValue: formatCurrency(report.summary.management_net_position),
+                    tone: parseDecimal(report.summary.management_net_position) < 0 ? "danger" : "green",
                   },
                 ]}
               />
               <FinanceBarChart
-                title="Gross Profit By Batch"
-                detail="Up to ten selected batches are shown, ranked by gross profit. Red identifies a batch-level loss."
+                title="Net Position By Batch"
+                detail="Up to ten selected batches are ranked after all attributed costs."
                 points={[...report.results]
                   .filter((batch) => batch.included_in_portfolio_summary)
                   .sort(
                     (left, right) =>
-                      parseDecimal(right.batch_gross_profit) -
-                      parseDecimal(left.batch_gross_profit)
+                      parseDecimal(right.management_net_position) -
+                      parseDecimal(left.management_net_position)
                   )
                   .slice(0, 10)
                   .map((batch) => ({
                     label: batch.batch_id,
-                    value: parseDecimal(batch.batch_gross_profit),
-                    displayValue: formatCurrency(batch.batch_gross_profit),
-                    tone: "green" as const,
+                    value: parseDecimal(batch.management_net_position),
+                    displayValue: formatCurrency(batch.management_net_position),
+                    tone: (parseDecimal(batch.management_net_position) < 0 ? "danger" : "green") as "danger" | "green",
                   }))}
               />
             </div>
+          </Panel>
+
+          <Panel title="Combined Cost Breakdown">
+            <ReportRows
+              rows={[
+                ...report.summary.management_cost_breakdown.map((line) => [
+                  line.label,
+                  formatCurrency(line.amount),
+                ] as [string, string]),
+                ["Total attributed cost", formatCurrency(report.summary.total_attributed_cost)],
+                ["Net position", formatCurrency(report.summary.management_net_position)],
+              ]}
+            />
+            <p className="mt-4 text-xs leading-5 text-[var(--navy-muted)]">
+              Administration uses bird-day share. Selling, finance costs, and tax use
+              period revenue share. Asset purchase prices and owner withdrawals are excluded;
+              applicable asset depreciation is included.
+            </p>
+            <p className="mt-2 text-xs leading-5 text-[var(--navy-muted)]">
+              Linked salary expenditures provide payment history only. Their payroll
+              allocation is recognized once and split between production, selling, and
+              administration.
+            </p>
           </Panel>
 
           <div className="grid gap-6 lg:grid-cols-2">
@@ -209,8 +238,8 @@ export default async function FinanceBatchAnalysisPage({ searchParams }: PagePro
                     <th className="py-3 pr-4 text-right">Mortality</th>
                     <th className="py-3 pr-4 text-right">Revenue</th>
                     <th className="py-3 pr-4 text-right">Production cost</th>
-                    <th className="py-3 pr-4 text-right">Gross profit</th>
-                    <th className="py-3 pr-4 text-right">Margin</th>
+                    <th className="py-3 pr-4 text-right">Full cost</th>
+                    <th className="py-3 pr-4 text-right">Net position</th>
                     <th className="py-3 pr-4 text-right">Receivables</th>
                     <th className="py-3 text-right">Details</th>
                   </tr>
@@ -234,10 +263,10 @@ export default async function FinanceBatchAnalysisPage({ searchParams }: PagePro
                         {formatCurrency(batch.total_production_cost)}
                       </td>
                       <td className="py-4 pr-4 text-right font-bold">
-                        {formatCurrency(batch.batch_gross_profit)}
+                        {formatCurrency(batch.total_attributed_cost)}
                       </td>
                       <td className="py-4 pr-4 text-right">
-                        {formatPercent(batch.batch_gross_margin_percent)}
+                        {formatCurrency(batch.management_net_position)}
                       </td>
                       <td className="py-4 pr-4 text-right">
                         {formatCurrency(batch.accounts_receivable)}

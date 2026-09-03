@@ -156,6 +156,18 @@ def sync_payment_status(expenditure: Expenditure) -> None:
         expenditure.save(update_fields=["payment_status", "updated_at"])
 
 
+def sync_linked_payroll_status(expenditure: Expenditure) -> None:
+    """Keep payroll status aligned when its payable is paid as an expenditure."""
+
+    try:
+        payroll_entry = expenditure.payroll_entry
+    except Expenditure.payroll_entry.RelatedObjectDoesNotExist:
+        return
+    from .salary_payments import sync_entry_status
+
+    sync_entry_status(payroll_entry)
+
+
 def _create_cost_allocations(expenditure, rows, *, user, period=None):
     normalized = validate_cost_allocations(expenditure, rows)
     period = period or expenditure.accounting_period or accounting_period_for(
@@ -242,6 +254,7 @@ def post_expenditure(
     expenditure.posted_at = timezone.now()
     expenditure.save(update_fields=["status", "posted_by", "posted_at", "updated_at"])
     sync_payment_status(expenditure)
+    sync_linked_payroll_status(expenditure)
     return expenditure
 
 
@@ -368,6 +381,7 @@ def record_expenditure_payment(
         allocation_date=payment_date or timezone.localdate(),
     )
     sync_payment_status(expenditure)
+    sync_linked_payroll_status(expenditure)
     return expenditure
 
 

@@ -158,6 +158,22 @@ WARNING_GUIDANCE: dict[str, dict[str, str]] = {
         "action_label": "Open monthly report",
         "action_href": "/finance/monthly",
     },
+    "central_costs_attributed": {
+        "solution": (
+            "Use the detailed cost bridge to review each attribution. Correct source "
+            "payroll, expense, asset, finance-cost, or tax entries in their finance register."
+        ),
+        "action_label": "Review monthly source records",
+        "action_href": "/finance/monthly",
+    },
+    "management_allocation_not_ledger_posting": {
+        "solution": (
+            "Treat these shares as management analysis. Use the expenditure and payroll "
+            "registers when an accounting allocation itself must be corrected."
+        ),
+        "action_label": "Review expenditures",
+        "action_href": "/finance/expenditures",
+    },
     "selling_payroll_excluded": {
         "solution": (
             "Review employee selling percentages and use the monthly report for the "

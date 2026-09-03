@@ -455,10 +455,24 @@ class PayrollEntry(DollarReferenceMixin, TimestampedModel):
 
     @property
     def amount_paid(self) -> Decimal:
-        total = self.payments.filter(status="posted").aggregate(
+        payroll_ledger_total = self.payments.filter(status="posted").aggregate(
             total=models.Sum("amount")
         )["total"] or Decimal("0.00")
-        return Decimal(total).quantize(Decimal("0.01"))
+        expenditure_total = Decimal("0.00")
+        if self.expenditure_id:
+            expenditure_total = self.expenditure.funding_allocations.aggregate(
+                total=models.Sum("amount")
+            )["total"] or Decimal("0.00")
+
+        # Salary payments historically used the expenditure payment workflow;
+        # newer records may use the dedicated payroll ledger. These are alternate
+        # payment channels for one liability, not additive economic events.
+        canonical_total = (
+            expenditure_total if expenditure_total > 0 else payroll_ledger_total
+        )
+        return min(
+            Decimal(canonical_total), self.net_salary_payable
+        ).quantize(Decimal("0.01"))
 
     @property
     def outstanding_salary(self) -> Decimal:
@@ -1976,6 +1990,28 @@ class BatchProfitabilitySnapshot(TimestampedModel):
     total_production_cost = models.DecimalField(max_digits=14, decimal_places=2)
     batch_gross_profit = models.DecimalField(max_digits=14, decimal_places=2)
     fully_loaded_batch_profit = models.DecimalField(max_digits=14, decimal_places=2)
+    central_selling_cost = models.DecimalField(
+        max_digits=14, decimal_places=2, null=True, blank=True
+    )
+    total_selling_cost = models.DecimalField(
+        max_digits=14, decimal_places=2, null=True, blank=True
+    )
+    allocated_administration_cost = models.DecimalField(
+        max_digits=14, decimal_places=2, null=True, blank=True
+    )
+    allocated_finance_cost = models.DecimalField(
+        max_digits=14, decimal_places=2, null=True, blank=True
+    )
+    allocated_tax = models.DecimalField(
+        max_digits=14, decimal_places=2, null=True, blank=True
+    )
+    total_attributed_cost = models.DecimalField(
+        max_digits=14, decimal_places=2, null=True, blank=True
+    )
+    management_net_position = models.DecimalField(
+        max_digits=14, decimal_places=2, null=True, blank=True
+    )
+    management_cost_breakdown = models.JSONField(default=list, blank=True)
     valid_bird_units_sold = models.PositiveIntegerField(default=0)
     remaining_live_birds = models.PositiveIntegerField(default=0)
     final = models.BooleanField(default=False, db_index=True)

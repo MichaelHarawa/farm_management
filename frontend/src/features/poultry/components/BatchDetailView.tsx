@@ -512,7 +512,7 @@ export function BatchDetailView({
       0
     );
     const totalInputCosts =
-      decimalToNumber(profitabilityReport?.direct_batch_cost) ??
+      decimalToNumber(profitabilityReport?.total_production_cost) ??
       recordedInputCosts;
     const totalSales =
       decimalToNumber(profitabilityReport?.revenue) ?? localSalesTotal;
@@ -528,6 +528,10 @@ export function BatchDetailView({
     const grossProfit =
       decimalToNumber(profitabilityReport?.batch_gross_profit) ??
       totalSales - totalInputCosts;
+    const managementNetPosition =
+      decimalToNumber(profitabilityReport?.management_net_position) ?? grossProfit;
+    const fullAttributedCost =
+      decimalToNumber(profitabilityReport?.total_attributed_cost) ?? totalInputCosts;
     const collectionRate =
       decimalToNumber(profitabilityReport?.collection_rate_percent);
     const reportCostPerBird =
@@ -554,6 +558,8 @@ export function BatchDetailView({
       mortality: reportMortality,
       currentBirds,
       grossProfit,
+      managementNetPosition,
+      fullAttributedCost,
       survivalPercent: getPercent(currentBirds, batch.quantity),
       soldPercent: getPercent(totalBirdsSold, batch.quantity),
       mortalityPercent: getPercent(reportMortality, batch.quantity),
@@ -754,6 +760,7 @@ export function BatchDetailView({
             <OverviewTab
               batch={batch}
               metrics={metrics}
+              profitabilityReport={profitabilityReport}
               latestRecords={latestRecords}
               nextCare={nextCare}
             />
@@ -1007,6 +1014,8 @@ type Metrics = {
   mortality: number;
   currentBirds: number;
   grossProfit: number;
+  managementNetPosition: number;
+  fullAttributedCost: number;
   survivalPercent: number;
   soldPercent: number;
   mortalityPercent: number;
@@ -1157,6 +1166,7 @@ function PageHeader({
 type OverviewTabProps = {
   batch: PoultryBatch;
   metrics: Metrics;
+  profitabilityReport: BatchProfitabilityReport | null;
   latestRecords: LatestRecord[];
   nextCare: VaccinationScheduleItem | undefined;
 };
@@ -1164,6 +1174,7 @@ type OverviewTabProps = {
 function OverviewTab({
   batch,
   metrics,
+  profitabilityReport,
   latestRecords,
   nextCare,
 }: OverviewTabProps) {
@@ -1241,9 +1252,9 @@ function OverviewTab({
               />
               <ExecutiveMetric
                 label="Net Position"
-                value={formatSignedCurrency(metrics.grossProfit)}
-                detail={`${formatLabel(metrics.profitabilityStatus)} finance gross profit`}
-                tone={metrics.grossProfit < 0 ? "red" : "navy"}
+                value={formatSignedCurrency(metrics.managementNetPosition)}
+                detail={`${formatLabel(metrics.profitabilityStatus)} result after all attributed costs`}
+                tone={metrics.managementNetPosition < 0 ? "red" : "navy"}
               />
             </div>
           </div>
@@ -1296,6 +1307,52 @@ function OverviewTab({
           </aside>
         </div>
       </Card>
+
+      {profitabilityReport ? (
+        <Card className="p-6 lg:p-8">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <SectionLabel>Finance Reconciliation</SectionLabel>
+              <h2 className="mt-4 text-3xl font-extrabold">Full batch cost and net position</h2>
+              <p className="mt-3 max-w-3xl text-sm leading-6 text-[#747b8d]">
+                This adds shared production, selling, administration, finance, tax,
+                and asset depreciation to the direct batch costs.
+              </p>
+              <p className="mt-2 max-w-3xl text-xs leading-5 text-[#747b8d]">
+                Linked salary expenditures are payment records. Their payroll cost is
+                recognized once, then split across production, selling, and administration.
+              </p>
+            </div>
+            <Link
+              href={`/finance/batches/${batch.id}`}
+              className="inline-flex rounded-lg bg-[#151f36] px-6 py-3 text-sm font-bold text-white"
+            >
+              Review full finance breakdown
+            </Link>
+          </div>
+          <div className="mt-7 grid gap-x-10 gap-y-3 md:grid-cols-2">
+            {[
+              ["Revenue", profitabilityReport.revenue],
+              ["Direct batch costs", profitabilityReport.direct_batch_cost],
+              ["Allocated production", profitabilityReport.allocated_production_cost],
+              ["Selling and distribution", profitabilityReport.total_selling_cost],
+              ["Farm administration", profitabilityReport.allocated_administration_cost],
+              ["Finance costs", profitabilityReport.allocated_finance_cost],
+              ["Tax", profitabilityReport.allocated_tax],
+              ["Full attributed cost", profitabilityReport.total_attributed_cost],
+            ].map(([label, amount]) => (
+              <div key={label} className="flex items-center justify-between gap-4 border-b border-[#ddd7c9] py-3">
+                <span className="text-sm text-[#747b8d]">{label}</span>
+                <strong className="text-sm text-[#151f36]">{formatCurrency(Number(amount))}</strong>
+              </div>
+            ))}
+          </div>
+          <div className="mt-6 flex flex-col gap-2 rounded-xl bg-[#151f36] px-6 py-5 text-white sm:flex-row sm:items-center sm:justify-between">
+            <span className="text-sm font-extrabold uppercase tracking-[0.14em] text-white/65">Net position after all costs</span>
+            <strong className="text-2xl">{formatSignedCurrency(metrics.managementNetPosition)}</strong>
+          </div>
+        </Card>
+      ) : null}
 
       <div className="grid gap-6 lg:grid-cols-[1fr_0.5fr]">
         <Card>

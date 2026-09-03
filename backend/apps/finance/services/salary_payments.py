@@ -89,12 +89,28 @@ def sync_entry_status(entry: PayrollEntry) -> None:
     latest = entry.payments.filter(status=PayrollPaymentStatus.POSTED).order_by(
         "-payment_date", "-pk"
     ).first()
+    latest_expenditure_payment = (
+        entry.expenditure.funding_allocations.order_by("-allocation_date", "-pk").first()
+        if entry.expenditure_id
+        else None
+    )
+    payment_dates = [
+        value
+        for value in [
+            latest.payment_date if latest else None,
+            latest_expenditure_payment.allocation_date
+            if latest_expenditure_payment
+            else None,
+        ]
+        if value is not None
+    ]
+    latest_payment_date = max(payment_dates) if payment_dates else None
     PayrollEntry.objects.filter(pk=entry.pk).update(
         payment_status=state,
-        payment_date=latest.payment_date if latest else None,
+        payment_date=latest_payment_date,
     )
     entry.payment_status = state
-    entry.payment_date = latest.payment_date if latest else None
+    entry.payment_date = latest_payment_date
     if entry.expenditure_id:
         expenditure_state = {
             FinancePaymentStatus.PAID: ExpenditurePaymentStatus.PAID,
@@ -172,6 +188,15 @@ def set_salary_cost_allocations(*, payroll_entry_id: int, rows, user) -> Payroll
 def record_salary_payment(*, payroll_entry_id: int, amount, payment_date, payment_method: str,
                           funding_rows, idempotency_key: str, external_reference: str, user):
     entry = PayrollEntry.objects.select_for_update().get(pk=payroll_entry_id)
+    if entry.expenditure_id and entry.expenditure.funding_allocations.exists():
+        raise ValidationError(
+            {
+                "detail": (
+                    "This salary is already being paid through its linked expenditure. "
+                    "Record the remaining payment from the expenditure page."
+                )
+            }
+        )
     key = (idempotency_key or "").strip()
     if not key:
         raise ValidationError({"idempotency_key": "A submission key is required."})

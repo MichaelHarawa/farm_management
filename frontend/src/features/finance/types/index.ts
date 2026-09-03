@@ -246,7 +246,15 @@ export type BatchProfitabilityReport = {
   batch_gross_profit: DecimalString;
   batch_gross_margin_percent: DecimalString | null;
   selling_cost: DecimalString;
+  central_selling_cost: DecimalString;
+  total_selling_cost: DecimalString;
   allocated_administration_cost: DecimalString;
+  allocated_finance_cost: DecimalString;
+  allocated_tax: DecimalString;
+  total_attributed_cost: DecimalString;
+  management_net_position: DecimalString;
+  management_net_margin_percent: DecimalString | null;
+  management_cost_breakdown: BatchManagementCostLine[];
   fully_loaded_batch_profit: DecimalString;
   fully_loaded_margin_percent: DecimalString | null;
   birds_placed: number;
@@ -279,7 +287,15 @@ export type BatchPortfolioSummary = {
   batch_gross_profit: DecimalString;
   batch_gross_margin_percent: DecimalString | null;
   selling_cost: DecimalString;
+  central_selling_cost: DecimalString;
+  total_selling_cost: DecimalString;
   allocated_administration_cost: DecimalString;
+  allocated_finance_cost: DecimalString;
+  allocated_tax: DecimalString;
+  total_attributed_cost: DecimalString;
+  management_net_position: DecimalString;
+  management_net_margin_percent: DecimalString | null;
+  management_cost_breakdown: BatchManagementCostLine[];
   fully_loaded_batch_profit: DecimalString;
   fully_loaded_margin_percent: DecimalString | null;
   birds_placed: number;
@@ -293,6 +309,19 @@ export type BatchPortfolioSummary = {
   break_even_selling_price_per_remaining_bird: DecimalString | null;
   additional_revenue_required_to_break_even: DecimalString;
   active_batch_cost_exposure: DecimalString;
+};
+
+export type BatchManagementCostComponent = {
+  label: string;
+  amount: DecimalString;
+};
+
+export type BatchManagementCostLine = {
+  key: string;
+  label: string;
+  amount: DecimalString;
+  basis: string;
+  components?: BatchManagementCostComponent[];
 };
 
 export type BatchPortfolioReport = {

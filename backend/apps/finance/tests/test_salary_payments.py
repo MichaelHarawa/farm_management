@@ -7,12 +7,16 @@ from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
 from apps.finance.models import (
-    AccountingPeriod, CostAllocation, EmployeeProfile, EmploymentType,
+    AccountingPeriod, AllocationSourceType, CostAllocation, EmployeeProfile, EmploymentType,
     FinancePaymentStatus, FundingReceipt, FundingSource, FundingSourceType,
     PayrollPayment, PayrollPaymentStatus,
 )
 from apps.finance.services.payroll import generate_payroll_for_period
-from apps.finance.services.profitability import available_funding_source_cash
+from apps.finance.services.expenditures import record_expenditure_payment
+from apps.finance.services.profitability import (
+    available_funding_source_cash,
+    batch_profitability,
+)
 from apps.finance.services.salary_payments import (
     record_salary_payment, reverse_salary_payment, set_salary_cost_allocations,
 )
@@ -94,6 +98,57 @@ class SalaryPaymentLedgerTests(TestCase):
         allocations = {row.batch_id: row.allocated_amount for row in CostAllocation.objects.filter(payroll_entry=self.entry)}
         self.assertEqual(allocations, {self.batch_a.pk: Decimal("150.00"), self.batch_b.pk: Decimal("90.00")})
         self.assertEqual(available_funding_source_cash(self.source), Decimal("500.00"))
+
+    def test_salary_paid_through_expenditure_is_reconciled_once(self):
+        set_salary_cost_allocations(
+            payroll_entry_id=self.entry.pk,
+            rows=[
+                {"beneficiary_type": "batch", "batch": self.batch_a.pk, "amount": "150.00"},
+                {"beneficiary_type": "batch", "batch": self.batch_b.pk, "amount": "90.00"},
+                {"beneficiary_type": "administration", "amount": "60.00"},
+            ],
+            user=self.manager,
+        )
+        self.entry.refresh_from_db()
+        expenditure = self.entry.expenditure
+
+        # Guard against a projected salary expenditure being allocated as a
+        # second economic cost in addition to its payroll allocation.
+        CostAllocation.objects.create(
+            accounting_period=self.period,
+            batch=self.batch_a,
+            source_type=AllocationSourceType.EXPENDITURE,
+            expenditure=expenditure,
+            allocation_method="manual",
+            driver_quantity=Decimal("150.00"),
+            total_driver_quantity=Decimal("300.00"),
+            allocation_percentage=Decimal("50.00"),
+            allocated_amount=Decimal("150.00"),
+            generated_by=self.manager,
+        )
+        self.assertEqual(
+            batch_profitability(self.batch_a)["allocated_production_cost"],
+            Decimal("150.00"),
+        )
+
+        record_expenditure_payment(
+            expenditure_id=expenditure.pk,
+            funding_rows=[{"funding_source": self.source.pk, "amount": "300.00"}],
+            payment_group_key="salary-through-expenditure",
+            payment_date=date(2026, 1, 31),
+            user=self.manager,
+        )
+        self.entry.refresh_from_db()
+        expenditure.refresh_from_db()
+
+        self.assertEqual(self.entry.amount_paid, Decimal("270.00"))
+        self.assertEqual(self.entry.payment_status, FinancePaymentStatus.PAID)
+        self.assertEqual(expenditure.payment_status, "paid")
+        self.assertEqual(available_funding_source_cash(self.source), Decimal("200.00"))
+        with self.assertRaisesMessage(
+            ValidationError, "already being paid through its linked expenditure"
+        ):
+            self.pay("1.00", "duplicate-payment-channel")
 
     def test_insufficient_funding_rolls_back(self):
         low_source = FundingSource.objects.create(

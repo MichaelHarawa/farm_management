@@ -587,7 +587,9 @@ class FinanceServiceTests(TestCase):
         )
 
         # Collection totals now come from the append-only payment ledger.
-        with self.assertNumQueries(12):
+        # Includes unified expenditure attribution, management-period discovery,
+        # and one grouped asset-depreciation breakdown query (no per-batch N+1).
+        with self.assertNumQueries(15):
             report = batch_portfolio_report([batch_a, batch_b])
         summary = report["summary"]
 
@@ -871,6 +873,49 @@ class FinanceServiceTests(TestCase):
         )
         self.assertEqual(batch_report["selling_cost"], Decimal("70.00"))
 
+    def test_batch_management_net_attributes_central_costs_and_matches_portfolio(self):
+        period = AccountingPeriod.objects.create(
+            period_start=date(2026, 1, 1),
+            period_end=date(2026, 1, 31),
+        )
+        batch = self.batch(quantity=100)
+        create_sale_with_lifecycle(
+            batch_id=batch.id,
+            created_by=self.user,
+            **self.sale_payload(
+                quantity_sold=10,
+                unit_price=Decimal("100.00"),
+                amount_paid=Decimal("1000.00"),
+            ),
+        )
+        for scope, amount in [
+            (SharedExpenseScope.ADMIN_OVERHEAD, Decimal("40.00")),
+            (SharedExpenseScope.FINANCE_COST, Decimal("10.00")),
+            (SharedExpenseScope.TAX, Decimal("5.00")),
+        ]:
+            SharedExpense.objects.create(
+                description=f"Central {scope}",
+                category="Management reporting",
+                expense_date=date(2026, 1, 15),
+                accounting_period=period,
+                amount=amount,
+                scope=scope,
+                created_by=self.user,
+            )
+
+        single = batch_profitability(batch)
+        portfolio = batch_portfolio_report([batch])
+
+        self.assertEqual(single["allocated_administration_cost"], Decimal("40.00"))
+        self.assertEqual(single["allocated_finance_cost"], Decimal("10.00"))
+        self.assertEqual(single["allocated_tax"], Decimal("5.00"))
+        self.assertEqual(single["total_attributed_cost"], Decimal("55.00"))
+        self.assertEqual(single["management_net_position"], Decimal("945.00"))
+        self.assertEqual(
+            portfolio["summary"]["management_net_position"],
+            single["management_net_position"],
+        )
+
     def test_closed_batch_uses_authoritative_final_snapshot(self):
         period = AccountingPeriod.objects.create(
             period_start=date(2026, 1, 1),
@@ -885,6 +930,7 @@ class FinanceServiceTests(TestCase):
             accounting_period=period,
             generated_by=self.user,
         )
+        frozen_net_position = snapshot.management_net_position
         SharedExpense.objects.create(
             description="Late unposted transport",
             category="Transport",
@@ -895,15 +941,29 @@ class FinanceServiceTests(TestCase):
             directly_assigned_batch=batch,
             created_by=self.user,
         )
+        SharedExpense.objects.create(
+            description="Late administration correction",
+            category="Administration",
+            expense_date=date(2026, 1, 31),
+            accounting_period=period,
+            amount=Decimal("250.00"),
+            scope=SharedExpenseScope.ADMIN_OVERHEAD,
+            created_by=self.user,
+        )
 
         single = batch_profitability(batch)
         portfolio = batch_portfolio_report([batch])
 
         self.assertEqual(single["calculation_basis"], "final_snapshot")
         self.assertEqual(single["direct_batch_cost"], snapshot.direct_batch_cost)
+        self.assertEqual(single["management_net_position"], frozen_net_position)
         self.assertEqual(
             portfolio["summary"]["direct_batch_cost"],
             snapshot.direct_batch_cost,
+        )
+        self.assertEqual(
+            portfolio["summary"]["management_net_position"],
+            frozen_net_position,
         )
 
     def test_period_close_reconciles_allocations_then_versions_final_snapshot(self):
