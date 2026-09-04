@@ -126,6 +126,18 @@ export default async function FinanceBatchProfitabilityPage({ params }: PageProp
             It is separate from accounting profit.
           </p>
         </Panel>
+
+        <Panel title="Actual-To-Date And Forecast">
+          <Rows rows={[
+            ["Actual management net position", formatCurrency(report.management_net_position)],
+            ["Forecast revenue at completion", formatCurrency(report.forecast_revenue_at_completion)],
+            ["Forecast cost at completion", formatCurrency(report.forecast_cost_at_completion)],
+            ["Forecast final profit", formatCurrency(report.forecast_final_profit)],
+          ]} />
+          <p className="mt-3 text-xs leading-5 text-[var(--navy-muted)]">
+            {report.result_interpretation} {report.forecast_basis}
+          </p>
+        </Panel>
       </div>
 
       <Panel title="Complete Cost Breakdown">
@@ -156,6 +168,29 @@ export default async function FinanceBatchProfitabilityPage({ params }: PageProp
           that payroll cost—the expenditure amount is not added again.
         </p>
       </Panel>
+      {report.allocation_trace.length ? (
+        <Panel title="Allocation Driver Audit Trail">
+          <div className="overflow-x-auto">
+            <table className="min-w-[900px] text-left text-sm">
+              <thead><tr className="border-b border-[var(--line)] text-[var(--navy-muted)]">
+                <th className="py-3 pr-4">Source period</th><th className="py-3 pr-4">Admin driver</th>
+                <th className="py-3 pr-4 text-right">Numerator / denominator</th><th className="py-3 pr-4 text-right">Admin share</th>
+                <th className="py-3 pr-4">Selling / finance / tax driver</th><th className="py-3 text-right">Share</th>
+              </tr></thead>
+              <tbody>{report.allocation_trace.map((trace) => (
+                <tr key={trace.source_period} className="border-b border-[var(--line)]">
+                  <td className="py-3 pr-4">{trace.period_start} – {trace.period_end}</td>
+                  <td className="py-3 pr-4">{formatLabel(trace.administration_driver)}</td>
+                  <td className="py-3 pr-4 text-right">{trace.administration_numerator} / {trace.administration_denominator}</td>
+                  <td className="py-3 pr-4 text-right">{formatPercent(trace.administration_percentage)}</td>
+                  <td className="py-3 pr-4">{formatLabel(trace.selling_finance_tax_driver)}</td>
+                  <td className="py-3 text-right">{formatPercent(trace.selling_percentage)}</td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        </Panel>
+      ) : null}
     </FinancePageShell>
   );
 }

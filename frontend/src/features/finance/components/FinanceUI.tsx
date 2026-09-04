@@ -59,17 +59,14 @@ export function FinancePageShell({
 
 export function FinanceNav() {
   const links = [
-    ["Dashboard", "/finance"],
-    ["Expenditures", "/finance/expenditures"],
-    ["Revenue Usage", "/finance/revenue-usage"],
-    ["Batch Analysis", "/finance/batches"],
-    ["Receivables", "/finance/receivables"],
-    ["Employees", "/finance/employees"],
-    ["Payroll", "/finance/payroll"],
-    ["Labour", "/finance/labour"],
-    ["Consumables", "/finance/consumables"],
+    ["Overview", "/finance"],
+    ["Sales & Receivables", "/finance/receivables"],
+    ["Purchases & Payables", "/finance/expenditures"],
+    ["People & Payroll", "/finance/payroll"],
+    ["Inventory", "/finance/consumables"],
     ["Assets", "/finance/assets"],
-    ["Monthly", "/finance/monthly"],
+    ["Batch Performance", "/finance/batches"],
+    ["Period Reports", "/finance/monthly"],
   ];
 
 

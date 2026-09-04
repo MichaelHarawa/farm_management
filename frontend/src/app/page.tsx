@@ -2,6 +2,7 @@ import {
   ArrowRight,
   BarChart3,
   Package,
+  Settings,
   ShieldCheck,
   Sprout,
 } from "lucide-react";
@@ -49,6 +50,16 @@ const modules: ModuleCard[] = [
     metric: "Herd activity",
     signal: "Roadmap",
     icon: Package,
+  },
+  {
+    name: "Administration",
+    description:
+      "Manage system users, access roles, account status, password resets, and technical oversight.",
+    href: "/administration",
+    status: "Live",
+    metric: "System controls",
+    signal: "Administrative",
+    icon: Settings,
   },
 ];
 
@@ -118,7 +129,7 @@ export default function HomePage() {
             </p>
           </div>
 
-          <div className="grid gap-5 md:grid-cols-3">
+          <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-4">
             {modules.map((module) => (
               <ModuleTile key={module.name} module={module} />
             ))}

@@ -187,6 +187,9 @@ export default async function FinanceBatchAnalysisPage({ searchParams }: PagePro
                 ] as [string, string]),
                 ["Total attributed cost", formatCurrency(report.summary.total_attributed_cost)],
                 ["Net position", formatCurrency(report.summary.management_net_position)],
+                ["Forecast revenue at completion", formatCurrency(report.summary.forecast_revenue_at_completion)],
+                ["Forecast cost at completion", formatCurrency(report.summary.forecast_cost_at_completion)],
+                ["Forecast final profit", formatCurrency(report.summary.forecast_final_profit)],
               ]}
             />
             <p className="mt-4 text-xs leading-5 text-[var(--navy-muted)]">

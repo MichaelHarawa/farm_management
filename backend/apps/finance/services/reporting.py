@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import date, timedelta
 from decimal import Decimal
 
 from django.conf import settings
-from django.db.models import DecimalField, ExpressionWrapper, F, Sum
+from django.db.models import DecimalField, ExpressionWrapper, F, Q, Sum
 from django.utils import timezone
 
 from apps.poultry.models import (
@@ -33,7 +33,18 @@ from ..models import (
     CostScope,
     ExpenseRecognitionSchedule,
     ExpenseRecognitionType,
+    Expenditure,
     ExpenditureStatus,
+    FinancePaymentStatus,
+    FundingAllocation,
+    FundingReceipt,
+    FundingReceiptStatus,
+    FundingSourceType,
+    PayrollPayment,
+    PayrollPaymentStatus,
+    PeriodReportSnapshot,
+    PeriodStatus,
+    ReportingPolicy,
     PayrollEntry,
     SalePayment,
     SalePaymentStatus,
@@ -111,7 +122,7 @@ def _management_cogs(period: AccountingPeriod) -> Decimal:
     return money(cogs)
 
 
-def monthly_profitability_report(period: AccountingPeriod) -> dict:
+def _calculate_monthly_profitability_report(period: AccountingPeriod) -> dict:
     sales = _period_sales(period)
     revenue_rows = sales.values("product_type").annotate(total=Sum(_sales_expression()))
     revenue_by_product = {
@@ -140,6 +151,48 @@ def monthly_profitability_report(period: AccountingPeriod) -> dict:
         ).aggregate(total=Sum("amount"))["total"]
     )
     accounts_receivable = money(max(total_revenue - collected_against_period_sales, Decimal("0.00")))
+    opening_sales = Sales.objects.filter(sale_date__date__lt=period.period_start).exclude(
+        payment_status=PaymentStatus.CANCELLED
+    )
+    opening_invoiced = money(opening_sales.aggregate(total=Sum(_sales_expression()))["total"])
+    opening_collected = money(
+        SalePayment.objects.filter(
+            sale__in=opening_sales,
+            status=SalePaymentStatus.POSTED,
+            payment_date__date__lt=period.period_start,
+        ).aggregate(total=Sum("amount"))["total"]
+    )
+    opening_receivables = max(opening_invoiced - opening_collected, Decimal("0.00"))
+    collections_against_opening = money(
+        SalePayment.objects.filter(
+            sale__sale_date__date__lt=period.period_start,
+            status=SalePaymentStatus.POSTED,
+            payment_date__date__gte=period.period_start,
+            payment_date__date__lte=period.period_end,
+        ).aggregate(total=Sum("amount"))["total"]
+    )
+    cohort_collections_in_period = money(
+        SalePayment.objects.filter(
+            sale__in=sales,
+            status=SalePaymentStatus.POSTED,
+            payment_date__date__gte=period.period_start,
+            payment_date__date__lte=period.period_end,
+        ).aggregate(total=Sum("amount"))["total"]
+    )
+    all_sales_to_cutoff = Sales.objects.filter(sale_date__date__lte=period.period_end).exclude(
+        payment_status=PaymentStatus.CANCELLED
+    )
+    invoiced_to_cutoff = money(
+        all_sales_to_cutoff.aggregate(total=Sum(_sales_expression()))["total"]
+    )
+    collected_to_cutoff = money(
+        SalePayment.objects.filter(
+            sale__in=all_sales_to_cutoff,
+            status=SalePaymentStatus.POSTED,
+            payment_date__date__lte=period.period_end,
+        ).aggregate(total=Sum("amount"))["total"]
+    )
+    closing_receivables = max(invoiced_to_cutoff - collected_to_cutoff, Decimal("0.00"))
 
     direct_batch_costs = money(
         CostAllocation.objects.filter(
@@ -214,11 +267,44 @@ def monthly_profitability_report(period: AccountingPeriod) -> dict:
     )
 
     active_batch_work_in_progress = Decimal("0.00")
-    active_batches = _active_production_batches()
-    for batch in active_batches.prefetch_related("sales_row", "input_costs"):
-        active_batch_work_in_progress += batch_profitability(batch)[
-            "active_batch_cost_exposure"
-        ]
+    cutoff_batches = Batch.objects.filter(entry_date__date__lte=period.period_end).exclude(
+        status__in=PRE_PRODUCTION_BATCH_STATUSES
+    )
+    for batch in cutoff_batches:
+        sold_to_cutoff = (
+            Sales.objects.filter(
+                batch=batch,
+                sale_date__date__lte=period.period_end,
+                product_type__in=[ProductType.LIVE_CHICKEN, ProductType.DRESSED_CHICKEN],
+            ).exclude(payment_status=PaymentStatus.CANCELLED).aggregate(total=Sum("quantity_sold"))["total"]
+            or 0
+        )
+        mortality_to_cutoff = (
+            Mortality.objects.filter(
+                batch=batch, mortality_date__date__lte=period.period_end
+            ).aggregate(total=Sum("quantity_dead"))["total"]
+            or 0
+        )
+        remaining_to_cutoff = max(batch.quantity - sold_to_cutoff - mortality_to_cutoff, 0)
+        if not remaining_to_cutoff:
+            continue
+        allocated_to_cutoff = money(
+            CostAllocation.objects.filter(
+                batch=batch, accounting_period__period_end__lte=period.period_end
+            ).aggregate(total=Sum("allocated_amount"))["total"]
+        )
+        legacy_to_cutoff = money(
+            InputCosts.objects.filter(
+                batch=batch, expenditure__isnull=True, purchase_date__date__lte=period.period_end
+            ).aggregate(total=Sum(_input_cost_expression()))["total"]
+        )
+        total_units = remaining_to_cutoff + sold_to_cutoff
+        if total_units:
+            active_batch_work_in_progress += money(
+                (allocated_to_cutoff + legacy_to_cutoff)
+                * Decimal(remaining_to_cutoff)
+                / Decimal(total_units)
+            )
 
     # Management COGS uses the same provisional/final batch cost-per-bird logic
     # as the batch profitability endpoint. Closed batches use final cost per
@@ -349,29 +435,104 @@ def monthly_profitability_report(period: AccountingPeriod) -> dict:
     net_profit_before_tax = operating_profit - finance_costs
     net_profit_after_recorded_tax = net_profit_before_tax - tax_expenses
 
-    cash_paid = money(
-        PayrollEntry.objects.filter(
-            accounting_period=period,
-            payment_status=PaymentStatus.PAID,
-        ).aggregate(total=Sum("total_employer_cost"))["total"]
-    ) + money(
-        AdHocLabourPayment.objects.filter(
-            accounting_period=period,
-            payment_status=PaymentStatus.PAID,
-        ).aggregate(total=Sum("payment_amount"))["total"]
-    ) + money(
-        SharedExpense.objects.filter(
-            accounting_period=period,
-            payment_status=PaymentStatus.PAID,
+    dated_payments = FundingAllocation.objects.filter(
+        allocation_date__gte=period.period_start,
+        allocation_date__lte=period.period_end,
+        expenditure__status=ExpenditureStatus.POSTED,
+    )
+    legacy_paid_dates = (
+        Q(payment_date__gte=period.period_start, payment_date__lte=period.period_end)
+        | Q(
+            payment_date__isnull=True,
+            expense_date__gte=period.period_start,
+            expense_date__lte=period.period_end,
+        )
+    )
+    legacy_paid = SharedExpense.objects.filter(
+        legacy_paid_dates,
+        payment_status=FinancePaymentStatus.PAID,
+        expenditure__funding_allocations__isnull=True,
+    )
+    legacy_operating_paid = money(
+        legacy_paid.exclude(
+            Q(recognition_type=ExpenseRecognitionType.CAPITAL_EXPENDITURE)
+            | Q(scope=SharedExpenseScope.CAPITAL_EXPENDITURE)
         ).aggregate(total=Sum("amount"))["total"]
     )
-    capital_expenditure_paid = money(
-        SharedExpense.objects.filter(
-            accounting_period=period,
-            payment_status=PaymentStatus.PAID,
-            recognition_type=ExpenseRecognitionType.CAPITAL_EXPENDITURE,
+    legacy_investing_paid = money(
+        legacy_paid.filter(
+            Q(recognition_type=ExpenseRecognitionType.CAPITAL_EXPENDITURE)
+            | Q(scope=SharedExpenseScope.CAPITAL_EXPENDITURE)
         ).aggregate(total=Sum("amount"))["total"]
     )
+    operating_cash_paid = money(
+        dated_payments.filter(
+            expenditure__accounting_nature__in=[
+                AccountingNature.DIRECT_COST,
+                AccountingNature.INDIRECT_OPERATING_EXPENSE,
+                AccountingNature.OTHER,
+            ]
+        ).aggregate(total=Sum("amount"))["total"]
+    ) + money(
+        PayrollPayment.objects.filter(
+            payment_date__gte=period.period_start,
+            payment_date__lte=period.period_end,
+            status=PayrollPaymentStatus.POSTED,
+        ).aggregate(total=Sum("amount"))["total"]
+    ) + legacy_operating_paid
+    investing_cash_paid = money(
+        dated_payments.filter(
+            expenditure__accounting_nature=AccountingNature.CAPITAL_EXPENDITURE
+        ).aggregate(total=Sum("amount"))["total"]
+    ) + legacy_investing_paid
+    financing_cash_paid = money(
+        dated_payments.filter(
+            expenditure__accounting_nature__in=[
+                AccountingNature.LOAN_REPAYMENT,
+                AccountingNature.OWNER_WITHDRAWAL,
+                AccountingNature.TRANSFER,
+            ]
+        ).aggregate(total=Sum("amount"))["total"]
+    )
+    non_sales_receipts = FundingReceipt.objects.filter(
+        receipt_date__date__gte=period.period_start,
+        receipt_date__date__lte=period.period_end,
+        status=FundingReceiptStatus.POSTED,
+    )
+    operating_cash_in = cash_received + money(
+        non_sales_receipts.filter(
+            funding_source__source_type__in=[FundingSourceType.OTHER_INCOME, FundingSourceType.GRANT]
+        ).aggregate(total=Sum("amount"))["total"]
+    )
+    financing_cash_in = money(
+        non_sales_receipts.filter(
+            funding_source__source_type__in=[FundingSourceType.OWNER_CAPITAL, FundingSourceType.LOAN]
+        ).aggregate(total=Sum("amount"))["total"]
+    )
+    cash_paid = money(operating_cash_paid + investing_cash_paid + financing_cash_paid)
+    capital_expenditure_paid = investing_cash_paid
+    net_cash_movement = money(operating_cash_in + financing_cash_in - cash_paid)
+    opening_cash_receipts = money(
+        SalePayment.objects.filter(
+            status=SalePaymentStatus.POSTED, payment_date__date__lt=period.period_start
+        ).aggregate(total=Sum("amount"))["total"]
+    ) + money(
+        FundingReceipt.objects.filter(
+            status=FundingReceiptStatus.POSTED, receipt_date__date__lt=period.period_start
+        ).aggregate(total=Sum("amount"))["total"]
+    )
+    opening_cash_payments = money(
+        FundingAllocation.objects.filter(
+            expenditure__status=ExpenditureStatus.POSTED,
+            allocation_date__lt=period.period_start,
+        ).aggregate(total=Sum("amount"))["total"]
+    ) + money(
+        PayrollPayment.objects.filter(
+            status=PayrollPaymentStatus.POSTED, payment_date__lt=period.period_start
+        ).aggregate(total=Sum("amount"))["total"]
+    )
+    opening_cash = money(opening_cash_receipts - opening_cash_payments)
+    closing_cash = money(opening_cash + net_cash_movement)
     reserve_contributions = money(
         ReplacementReserveTransaction.objects.filter(
             accounting_period=period,
@@ -395,15 +556,18 @@ def monthly_profitability_report(period: AccountingPeriod) -> dict:
             accounting_period=period,
         ).aggregate(total=Sum("recognized_cost"))["total"]
     )
-    closing_consumable_inventory = money(
-        SharedConsumableLot.objects.aggregate(
-            total=Sum(
-                ExpressionWrapper(
-                    F("quantity_available") * F("unit_cost"),
-                    output_field=DecimalField(max_digits=16, decimal_places=2),
-                )
-            )
-        )["total"]
+    closing_consumable_inventory = max(
+        money(
+            SharedConsumableLot.objects.filter(purchase_date__lte=period.period_end).aggregate(
+                total=Sum("total_purchase_cost")
+            )["total"]
+        )
+        - money(
+            ConsumableUsage.objects.filter(usage_date__lte=period.period_end).aggregate(
+                total=Sum("recognized_cost")
+            )["total"]
+        ),
+        Decimal("0.00"),
     )
     prepaid_recognized = money(
         ExpenseRecognitionSchedule.objects.filter(accounting_period=period).aggregate(
@@ -427,12 +591,101 @@ def monthly_profitability_report(period: AccountingPeriod) -> dict:
             disposal_date__lte=period.period_end,
         ).aggregate(total=Sum("disposal_proceeds"))["total"]
     )
-    gross_asset_cost = money(Asset.objects.aggregate(total=Sum("total_capitalized_cost"))["total"])
+    net_cash_movement = money(
+        operating_cash_in
+        + financing_cash_in
+        + disposal_proceeds
+        - operating_cash_paid
+        - investing_cash_paid
+        - financing_cash_paid
+    )
+    closing_cash = money(opening_cash + net_cash_movement)
+    gross_asset_cost = money(
+        Asset.objects.filter(purchase_date__lte=period.period_end)
+        .exclude(disposal_date__lt=period.period_start)
+        .aggregate(total=Sum("total_capitalized_cost"))["total"]
+    )
     accumulated_depreciation = money(
-        AssetDepreciationEntry.objects.aggregate(total=Sum("period_depreciation"))["total"]
+        AssetDepreciationEntry.objects.filter(
+            accounting_period__period_end__lte=period.period_end
+        ).aggregate(total=Sum("period_depreciation"))["total"]
     )
     impairment = money(Asset.objects.aggregate(total=Sum("recognized_impairment_amount"))["total"])
     carrying_amount = gross_asset_cost - accumulated_depreciation - impairment
+    supplier_payables = Decimal("0.00")
+    payable_ageing = {"current": Decimal("0.00"), "31_60": Decimal("0.00"), "61_90": Decimal("0.00"), "over_90": Decimal("0.00")}
+    for expenditure in Expenditure.objects.filter(
+        status=ExpenditureStatus.POSTED,
+        expenditure_date__lte=period.period_end,
+        payroll_entry__isnull=True,
+    ).prefetch_related("funding_allocations"):
+        paid_to_cutoff = money(
+            sum(
+                (
+                    payment.amount
+                    for payment in expenditure.funding_allocations.all()
+                    if payment.allocation_date <= period.period_end
+                ),
+                Decimal("0.00"),
+            )
+        )
+        outstanding = max(money(expenditure.amount) - paid_to_cutoff, Decimal("0.00"))
+        if not outstanding:
+            continue
+        supplier_payables += outstanding
+        age = (period.period_end - expenditure.expenditure_date).days
+        bucket = "current" if age <= 30 else "31_60" if age <= 60 else "61_90" if age <= 90 else "over_90"
+        payable_ageing[bucket] += outstanding
+    payroll_payable = Decimal("0.00")
+    for entry in PayrollEntry.objects.filter(
+        accounting_period__period_end__lte=period.period_end
+    ).prefetch_related("payments", "expenditure__funding_allocations"):
+        direct_paid = money(
+            sum(
+                (payment.amount for payment in entry.payments.all() if payment.status == PayrollPaymentStatus.POSTED and payment.payment_date <= period.period_end),
+                Decimal("0.00"),
+            )
+        )
+        expenditure_paid = money(
+            sum(
+                (payment.amount for payment in entry.expenditure.funding_allocations.all() if payment.allocation_date <= period.period_end),
+                Decimal("0.00"),
+            ) if entry.expenditure_id else Decimal("0.00")
+        )
+        payroll_payable += max(money(entry.net_salary_payable) - max(direct_paid, expenditure_paid), Decimal("0.00"))
+    loans = money(
+        FundingReceipt.objects.filter(
+            status=FundingReceiptStatus.POSTED,
+            funding_source__source_type=FundingSourceType.LOAN,
+            receipt_date__date__lte=period.period_end,
+        ).aggregate(total=Sum("amount"))["total"]
+    ) - money(
+        FundingAllocation.objects.filter(
+            expenditure__status=ExpenditureStatus.POSTED,
+            expenditure__accounting_nature=AccountingNature.LOAN_REPAYMENT,
+            allocation_date__lte=period.period_end,
+        ).aggregate(total=Sum("amount"))["total"]
+    )
+    owner_equity = money(
+        FundingReceipt.objects.filter(
+            status=FundingReceiptStatus.POSTED,
+            funding_source__source_type=FundingSourceType.OWNER_CAPITAL,
+            receipt_date__date__lte=period.period_end,
+        ).aggregate(total=Sum("amount"))["total"]
+    )
+    total_assets = money(closing_cash + closing_receivables + closing_consumable_inventory + active_batch_work_in_progress + carrying_amount)
+    total_liabilities = money(supplier_payables + payroll_payable + max(loans, Decimal("0.00")))
+    net_assets = money(total_assets - total_liabilities)
+    previous_period = AccountingPeriod.objects.filter(period_end__lt=period.period_start).order_by("-period_end").first()
+    previous_revenue = money(
+        _period_sales(previous_period).aggregate(total=Sum(_sales_expression()))["total"]
+    ) if previous_period else Decimal("0.00")
+    ytd_revenue = money(
+        Sales.objects.filter(
+            sale_date__date__gte=date(period.period_start.year, 1, 1),
+            sale_date__date__lte=period.period_end,
+        ).exclude(payment_status=PaymentStatus.CANCELLED).aggregate(total=Sum(_sales_expression()))["total"]
+    )
     reserve_balance = (
         money(
             ReplacementReserveTransaction.objects.filter(
@@ -475,8 +728,12 @@ def monthly_profitability_report(period: AccountingPeriod) -> dict:
         or 0
     )
     birds_remaining = 0
-    for batch in _active_production_batches():
-        birds_remaining += max(calculate_bird_balance(batch).remaining_live_birds, 0)
+    period_batches = Batch.objects.filter(entry_date__date__lte=period.period_end).filter(
+        Q(closed_at__isnull=True) | Q(closed_at__date__gte=period.period_start)
+    ).exclude(status__in=PRE_PRODUCTION_BATCH_STATUSES)
+    from .bird_days import calculate_batch_bird_days
+    for batch in period_batches:
+        birds_remaining += max(int(calculate_batch_bird_days(batch, period)["closing_live_birds"]), 0)
 
     feed_consumed = (
         FeedUsage.objects.filter(
@@ -491,6 +748,8 @@ def monthly_profitability_report(period: AccountingPeriod) -> dict:
         "period_start": period.period_start,
         "period_end": period.period_end,
         "status": period.status,
+        "reporting_basis": "MTD / provisional" if period.status == PeriodStatus.OPEN else "closed snapshot",
+        "as_of": period.period_end,
         "revenue": {
             "bird_sales": bird_sales,
             "egg_sales": egg_sales,
@@ -503,9 +762,23 @@ def monthly_profitability_report(period: AccountingPeriod) -> dict:
         },
         "collections": {
             "cash_received": cash_received,
-            "credit_sales": accounts_receivable,
-            "accounts_receivable": accounts_receivable,
-            "collection_rate_percent": percent(cash_received, total_revenue),
+            "credit_sales": total_revenue,
+            "accounts_receivable": closing_receivables,
+            "collection_rate_percent": percent(
+                min(collected_against_period_sales, total_revenue), total_revenue
+            ),
+            "collection_overpayment": max(
+                collected_against_period_sales - total_revenue, Decimal("0.00")
+            ),
+            "roll_forward": {
+                "opening_receivables": opening_receivables,
+                "current_period_sales": total_revenue,
+                "collections_against_opening": collections_against_opening,
+                "collections_against_current_sales": cohort_collections_in_period,
+                "credit_notes_and_reversals": Decimal("0.00"),
+                "write_offs": Decimal("0.00"),
+                "closing_receivables": closing_receivables,
+            },
         },
         "production": {
             "direct_batch_costs": direct_batch_costs + batch_direct_labour,
@@ -540,7 +813,7 @@ def monthly_profitability_report(period: AccountingPeriod) -> dict:
             "net_profit_after_recorded_tax": net_profit_after_recorded_tax,
         },
         "cash_flow": {
-            "opening_cash": None,
+            "opening_cash": opening_cash,
             "cash_received": cash_received,
             "cash_paid": cash_paid,
             "capital_expenditure_paid": capital_expenditure_paid,
@@ -548,8 +821,24 @@ def monthly_profitability_report(period: AccountingPeriod) -> dict:
             "reserve_contributions": reserve_contributions,
             "reserve_withdrawals": reserve_withdrawals,
             "disposal_proceeds": disposal_proceeds,
-            "net_cash_movement": cash_received - cash_paid,
-            "closing_cash": None,
+            "operating": {
+                "inflows": operating_cash_in,
+                "outflows": operating_cash_paid,
+                "net": money(operating_cash_in - operating_cash_paid),
+            },
+            "investing": {
+                "inflows": disposal_proceeds,
+                "outflows": investing_cash_paid,
+                "net": money(disposal_proceeds - investing_cash_paid),
+            },
+            "financing": {
+                "inflows": financing_cash_in,
+                "outflows": financing_cash_paid,
+                "net": money(financing_cash_in - financing_cash_paid),
+            },
+            "net_cash_movement": net_cash_movement,
+            "closing_cash": closing_cash,
+            "reconciles": money(opening_cash + net_cash_movement) == closing_cash,
         },
         "deferred_balances": {
             "consumables_purchased": consumables_purchased,
@@ -590,6 +879,45 @@ def monthly_profitability_report(period: AccountingPeriod) -> dict:
                 Decimal("0.00"),
             ),
         },
+        "statement_of_financial_position": {
+            "cash": closing_cash,
+            "receivables": closing_receivables,
+            "consumable_inventory": closing_consumable_inventory,
+            "poultry_wip_management_cost": active_batch_work_in_progress,
+            "fixed_assets_net": carrying_amount,
+            "total_assets": total_assets,
+            "supplier_payables": supplier_payables,
+            "payroll_and_statutory_liabilities": payroll_payable,
+            "loans": max(loans, Decimal("0.00")),
+            "total_liabilities": total_liabilities,
+            "owner_contributed_equity": owner_equity,
+            "net_assets": net_assets,
+            "basis": "management-cost balance sheet; biological fair value is not recorded",
+        },
+        "ageing": {
+            "payables": payable_ageing,
+            "receivables": {
+                "total": closing_receivables,
+                "note": "Detailed due-date ageing is available in Sales & Receivables.",
+            },
+        },
+        "comparatives": {
+            "current_period_revenue": total_revenue,
+            "previous_period_revenue": previous_revenue,
+            "revenue_change": money(total_revenue - previous_revenue),
+            "ytd_revenue": ytd_revenue,
+        },
+        "close_readiness": {
+            "unresolved_warning_count": len(dashboard_warnings(period)),
+            "is_closed": period.status == PeriodStatus.CLOSED,
+            "checklist": [
+                "Reconcile sales receipts and receivables",
+                "Reconcile supplier and payroll liabilities",
+                "Post inventory usage and period depreciation",
+                "Resolve allocation and period-lock warnings",
+                "Review cash reconciliation before close",
+            ],
+        },
         "operational_metrics": {
             "batches_active": _active_production_batches().count(),
             "batches_closed": Batch.objects.filter(status=BatchStatus.CLOSED).count(),
@@ -621,6 +949,53 @@ def monthly_profitability_report(period: AccountingPeriod) -> dict:
         },
         "warnings": dashboard_warnings(period),
     }
+
+
+def _snapshot_safe(value):
+    if isinstance(value, Decimal):
+        return str(value)
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {key: _snapshot_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_snapshot_safe(item) for item in value]
+    return value
+
+
+def create_period_report_snapshot(period: AccountingPeriod, *, generated_by=None):
+    """Create a new immutable close-report version without erasing prior versions."""
+
+    previous = PeriodReportSnapshot.objects.filter(accounting_period=period).first()
+    version = (previous.version + 1) if previous else 1
+    policy = ReportingPolicy.objects.filter(
+        is_active=True, effective_from__lte=period.period_end
+    ).order_by("-effective_from", "-version").first()
+    report = _calculate_monthly_profitability_report(period)
+    report["snapshot_version"] = version
+    report["reporting_policy"] = policy.code if policy else None
+    return PeriodReportSnapshot.objects.create(
+        accounting_period=period,
+        version=version,
+        report_data=_snapshot_safe(report),
+        reporting_policy=policy,
+        generated_by=generated_by,
+        supersedes=previous,
+    )
+
+
+def monthly_profitability_report(period: AccountingPeriod) -> dict:
+    if period.status == PeriodStatus.CLOSED:
+        snapshot = PeriodReportSnapshot.objects.filter(accounting_period=period).first()
+        if snapshot:
+            return snapshot.report_data
+    report = _calculate_monthly_profitability_report(period)
+    report["snapshot_version"] = None
+    policy = ReportingPolicy.objects.filter(
+        is_active=True, effective_from__lte=period.period_end
+    ).order_by("-effective_from", "-version").first()
+    report["reporting_policy"] = policy.code if policy else None
+    return report
 
 
 def dashboard_warnings(period: AccountingPeriod | None = None) -> list[dict[str, str]]:
@@ -942,12 +1317,48 @@ def dashboard_indicators() -> dict:
     )
 
     latest_report = monthly_profitability_report(latest_period) if latest_period else None
+    active_reports = [batch_profitability(batch) for batch in active_batches]
+    forecast_profit = money(sum((row.get("forecast_final_profit", Decimal("0.00")) for row in active_reports), Decimal("0.00")))
+    forecast_revenue = money(sum((row.get("forecast_revenue_at_completion", Decimal("0.00")) for row in active_reports), Decimal("0.00")))
+    overdue_receivables = money(
+        Sales.objects.exclude(payment_status=PaymentStatus.CANCELLED)
+        .filter(balance__gt=0, due_date__lt=timezone.localdate())
+        .aggregate(total=Sum("balance"))["total"]
+    )
+    low_stock_count = SharedConsumableLot.objects.filter(
+        quantity_available__gt=0,
+        quantity_available__lte=F("quantity_purchased") * Decimal("0.20"),
+    ).count()
+    expiring_count = SharedConsumableLot.objects.filter(
+        quantity_available__gt=0,
+        expiry_date__lte=timezone.localdate() + timedelta(days=30),
+    ).count()
+    statement = latest_report.get("statement_of_financial_position", {}) if latest_report else {}
+    close = latest_report.get("close_readiness", {}) if latest_report else {}
+    current_cash = latest_report["cash_flow"]["closing_cash"] if latest_report else Decimal("0.00")
+    mtd_net = latest_report["other_costs"]["net_profit_after_recorded_tax"] if latest_report else Decimal("0.00")
+    ytd_revenue = latest_report.get("comparatives", {}).get("ytd_revenue", Decimal("0.00")) if latest_report else Decimal("0.00")
 
     return {
         "active_batches": active_batches.count(),
         "active_batch_cost_exposure": active_cost_exposure,
         "closed_batch_profit": closed_batch_profit,
         "receivables": receivable_total,
+        "current_cash": current_cash,
+        "mtd_net_result": mtd_net,
+        "ytd_revenue": ytd_revenue,
+        "overdue_receivables": overdue_receivables,
+        "supplier_payables": statement.get("supplier_payables", Decimal("0.00")),
+        "payroll_liabilities": statement.get("payroll_and_statutory_liabilities", Decimal("0.00")),
+        "inventory_value": statement.get("consumable_inventory", Decimal("0.00")),
+        "fixed_asset_carrying_amount": statement.get("fixed_assets_net", Decimal("0.00")),
+        "poultry_wip_management_cost": statement.get("poultry_wip_management_cost", Decimal("0.00")),
+        "active_batch_forecast_profit": forecast_profit,
+        "active_batch_forecast_margin_percent": percent(forecast_profit, forecast_revenue),
+        "low_stock_count": low_stock_count,
+        "expiring_stock_count": expiring_count,
+        "period_status": latest_period.status if latest_period else None,
+        "close_readiness": close,
         "latest_month": latest_report,
         "warnings": dashboard_warnings(latest_period),
     }
@@ -989,6 +1400,18 @@ def receivables_report(filters=None) -> dict:
         sales = sales.filter(sale_id=focus_sale)
 
     open_sales = sales
+    ordering = filters.get("ordering", "sale_date") if hasattr(filters, "get") else "sale_date"
+    if ordering not in {"sale_date", "-sale_date", "due_date", "-due_date", "balance", "-balance"}:
+        ordering = "sale_date"
+    try:
+        page_number = max(int(filters.get("page", 1)), 1)
+        page_size = min(max(int(filters.get("page_size", 20)), 1), 100)
+    except (TypeError, ValueError):
+        page_number, page_size = 1, 20
+    count = open_sales.count()
+    page_count = max((count + page_size - 1) // page_size, 1)
+    page_number = min(page_number, page_count)
+    start = (page_number - 1) * page_size
     today = timezone.localdate()
     rows = [
         {
@@ -1034,10 +1457,15 @@ def receivables_report(filters=None) -> dict:
                 for payment in sale.payments.all()
             ],
         }
-        for sale in open_sales.select_related("batch").prefetch_related("payments").order_by("sale_date")
+        for sale in open_sales.select_related("batch").prefetch_related("payments").order_by(ordering, "pk")[start:start + page_size]
     ]
     return {
         "total_receivable": money(open_sales.aggregate(total=Sum("balance"))["total"]),
-        "count": len(rows),
+        "count": count,
+        "page": page_number,
+        "page_size": page_size,
+        "pages": page_count,
+        "next": page_number + 1 if page_number < page_count else None,
+        "previous": page_number - 1 if page_number > 1 else None,
         "results": rows,
     }

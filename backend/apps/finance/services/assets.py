@@ -8,6 +8,8 @@ from django.db import models, transaction
 from ..models import (
     Asset,
     AssetCapitalizedCost,
+    AssetEventType,
+    AssetLifecycleEvent,
     AssetStatus,
     ReplacementReserveTransaction,
     ReserveTransactionType,
@@ -46,11 +48,19 @@ def link_capital_expense_to_asset(
     )
     link.full_clean()
     link.save()
+    AssetLifecycleEvent.objects.create(
+        asset=asset,
+        event_type=AssetEventType.CAPITALIZED_COST,
+        event_date=expense.expense_date,
+        reason=notes,
+        details={"expense_id": expense.pk, "amount": str(amount)},
+        created_by=created_by,
+    )
     return link
 
 
 @transaction.atomic
-def impair_asset(*, asset: Asset, amount: Decimal) -> Asset:
+def impair_asset(*, asset: Asset, amount: Decimal, event_date=None, reason: str = "", user=None) -> Asset:
     if amount < Decimal("0.00"):
         raise ValueError("Impairment amount cannot be negative.")
     asset.recognized_impairment_amount = money(
@@ -59,6 +69,14 @@ def impair_asset(*, asset: Asset, amount: Decimal) -> Asset:
     asset.status = AssetStatus.IMPAIRED
     asset.full_clean()
     asset.save(update_fields=["recognized_impairment_amount", "status", "updated_at"])
+    AssetLifecycleEvent.objects.create(
+        asset=asset,
+        event_type=AssetEventType.IMPAIRMENT,
+        event_date=event_date or date.today(),
+        reason=reason,
+        details={"amount": str(money(amount))},
+        created_by=user,
+    )
     return asset
 
 
@@ -68,6 +86,8 @@ def dispose_asset(
     asset: Asset,
     disposal_date: date,
     proceeds: Decimal = Decimal("0.00"),
+    reason: str = "",
+    user=None,
 ) -> Asset:
     recovery = asset_recovery_summary(asset)
     asset.status = AssetStatus.DISPOSED
@@ -83,6 +103,35 @@ def dispose_asset(
             "disposal_gain_loss",
             "updated_at",
         ]
+    )
+    AssetLifecycleEvent.objects.create(
+        asset=asset,
+        event_type=AssetEventType.DISPOSAL,
+        event_date=disposal_date,
+        reason=reason,
+        details={
+            "proceeds": str(money(proceeds)),
+            "carrying_amount": str(recovery["carrying_amount"]),
+            "gain_loss": str(asset.disposal_gain_loss),
+        },
+        created_by=user,
+    )
+    return asset
+
+
+@transaction.atomic
+def transfer_asset(*, asset: Asset, event_date: date, location: str, custodian: str, reason: str, user=None):
+    before = {"location": asset.location, "custodian": asset.custodian}
+    asset.location = location
+    asset.custodian = custodian
+    asset.save(update_fields=["location", "custodian", "updated_at"])
+    AssetLifecycleEvent.objects.create(
+        asset=asset,
+        event_type=AssetEventType.TRANSFER,
+        event_date=event_date,
+        reason=reason,
+        details={"before": before, "after": {"location": location, "custodian": custodian}},
+        created_by=user,
     )
     return asset
 

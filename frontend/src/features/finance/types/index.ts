@@ -25,7 +25,8 @@ export type FinanceUserSummary = {
 
 export type EmployeeProfile = {
   id: number;
-  user: FinanceUserSummary;
+  user: FinanceUserSummary | null;
+  display_name: string;
   employee_number: string;
   employment_type: "permanent" | "contract" | "temporary";
   job_title: string;
@@ -107,6 +108,8 @@ export type AdHocLabourPayment = {
   batch: number | null;
   accounting_period: number | null;
   payment_status: string;
+  workflow_status: "draft" | "approved" | "posted" | "partially_paid" | "paid" | "reversed";
+  expenditure: number | null;
 };
 
 export type SharedExpense = {
@@ -194,15 +197,19 @@ export type Asset = {
   depreciation_method: string;
   depreciation_unit: string;
   estimated_total_lifetime_units: DecimalString | null;
+  status: string;
+  location: string;
+  custodian: string;
+  condition: string;
+  disposal_date: string | null;
+  disposal_proceeds: DecimalString;
+  disposal_gain_loss: DecimalString;
   production_scope: string;
   production_percentage: DecimalString;
   administration_percentage: DecimalString;
   selling_percentage: DecimalString;
   default_allocation_driver: string;
   fallback_allocation_driver: string;
-  status: string;
-  location: string;
-  custodian: string;
   supplier: string;
   usd_exchange_rate: DecimalString | null;
   usd_equivalent: DecimalString | null;
@@ -224,6 +231,32 @@ export type FinanceWarning = {
   solution: string;
   action_label: string;
   action_href: string;
+};
+
+export type AssetLifecycleEvent = {
+  id: number;
+  asset: string;
+  event_type: string;
+  event_date: string;
+  reason: string;
+  details: Record<string, unknown>;
+  created_by_name: string;
+};
+
+export type StockMovement = {
+  id: number;
+  movement_type: string;
+  movement_date: string;
+  item: number;
+  item_name: string;
+  lot: number | null;
+  batch: number | null;
+  batch_code: string | null;
+  quantity: DecimalString;
+  unit_cost: DecimalString;
+  total_cost: DecimalString;
+  reference: string;
+  reason: string;
 };
 
 export type BatchProfitabilityReport = {
@@ -255,6 +288,26 @@ export type BatchProfitabilityReport = {
   management_net_position: DecimalString;
   management_net_margin_percent: DecimalString | null;
   management_cost_breakdown: BatchManagementCostLine[];
+  actual_result_basis: "actual_to_date" | "final_actual";
+  result_interpretation: string;
+  forecast_revenue_at_completion: DecimalString;
+  forecast_cost_at_completion: DecimalString;
+  forecast_final_profit: DecimalString;
+  forecast_basis: string;
+  allocation_trace: Array<{
+    source_period: number;
+    period_start: string;
+    period_end: string;
+    administration_driver: string;
+    administration_numerator: DecimalString;
+    administration_denominator: DecimalString;
+    administration_percentage: DecimalString;
+    selling_finance_tax_driver: string;
+    selling_numerator: DecimalString;
+    selling_denominator: DecimalString;
+    selling_percentage: DecimalString;
+    calculation_version: string;
+  }>;
   fully_loaded_batch_profit: DecimalString;
   fully_loaded_margin_percent: DecimalString | null;
   birds_placed: number;
@@ -296,6 +349,9 @@ export type BatchPortfolioSummary = {
   management_net_position: DecimalString;
   management_net_margin_percent: DecimalString | null;
   management_cost_breakdown: BatchManagementCostLine[];
+  forecast_revenue_at_completion: DecimalString;
+  forecast_cost_at_completion: DecimalString;
+  forecast_final_profit: DecimalString;
   fully_loaded_batch_profit: DecimalString;
   fully_loaded_margin_percent: DecimalString | null;
   birds_placed: number;
@@ -347,14 +403,65 @@ export type MonthlyReport = {
   period_start: string;
   period_end: string;
   status: string;
+  reporting_basis: string;
+  as_of: string;
+  snapshot_version: number | null;
+  reporting_policy: string | null;
   revenue: Record<string, DecimalString>;
-  collections: Record<string, DecimalString | null>;
+  collections: {
+    cash_received: DecimalString;
+    credit_sales: DecimalString;
+    accounts_receivable: DecimalString;
+    collection_rate_percent: DecimalString | null;
+    collection_overpayment: DecimalString;
+    roll_forward: Record<string, DecimalString>;
+  };
   production: Record<string, DecimalString | null>;
   operating_costs: Record<string, DecimalString>;
   other_costs: Record<string, DecimalString>;
-  cash_flow: Record<string, DecimalString | null>;
+  cash_flow: {
+    opening_cash: DecimalString;
+    cash_received: DecimalString;
+    cash_paid: DecimalString;
+    capital_expenditure_paid: DecimalString;
+    asset_purchases: DecimalString;
+    reserve_contributions: DecimalString;
+    reserve_withdrawals: DecimalString;
+    disposal_proceeds: DecimalString;
+    operating: Record<string, DecimalString>;
+    investing: Record<string, DecimalString>;
+    financing: Record<string, DecimalString>;
+    net_cash_movement: DecimalString;
+    closing_cash: DecimalString;
+    reconciles: boolean;
+  };
   deferred_balances: Record<string, DecimalString | null>;
   asset_reporting: Record<string, DecimalString | number | null>;
+  statement_of_financial_position: {
+    cash: DecimalString;
+    receivables: DecimalString;
+    consumable_inventory: DecimalString;
+    poultry_wip_management_cost: DecimalString;
+    fixed_assets_net: DecimalString;
+    total_assets: DecimalString;
+    supplier_payables: DecimalString;
+    payroll_and_statutory_liabilities: DecimalString;
+    loans: DecimalString;
+    total_liabilities: DecimalString;
+    owner_contributed_equity: DecimalString;
+    net_assets: DecimalString;
+    basis: string;
+  };
+  ageing: {
+    payables: Record<string, DecimalString>;
+    receivables: { total: DecimalString; note: string };
+  };
+  comparatives: Record<string, DecimalString>;
+  close_readiness: {
+    unresolved_warning_count: number;
+    is_closed: boolean;
+    checklist: string[];
+  };
   operational_metrics: Record<string, DecimalString | number | null>;
   warnings: FinanceWarning[];
 };
@@ -364,6 +471,21 @@ export type FinanceDashboard = {
   active_batch_cost_exposure: DecimalString;
   closed_batch_profit: DecimalString;
   receivables: DecimalString;
+  current_cash: DecimalString;
+  mtd_net_result: DecimalString;
+  ytd_revenue: DecimalString;
+  overdue_receivables: DecimalString;
+  supplier_payables: DecimalString;
+  payroll_liabilities: DecimalString;
+  inventory_value: DecimalString;
+  fixed_asset_carrying_amount: DecimalString;
+  poultry_wip_management_cost: DecimalString;
+  active_batch_forecast_profit: DecimalString;
+  active_batch_forecast_margin_percent: DecimalString | null;
+  low_stock_count: number;
+  expiring_stock_count: number;
+  period_status: "open" | "closed" | null;
+  close_readiness: MonthlyReport["close_readiness"] | Record<string, never>;
   latest_month: MonthlyReport | null;
   warnings: FinanceWarning[];
 };
@@ -404,6 +526,11 @@ export type SalePayment = {
 export type ReceivablesReport = {
   total_receivable: DecimalString;
   count: number;
+  page: number;
+  page_size: number;
+  pages: number;
+  next: number | null;
+  previous: number | null;
   results: ReceivableSale[];
 };
 
@@ -462,6 +589,10 @@ export type BatchRevenueUtilization = {
   by_category: Record<string, DecimalString>;
   by_accounting_nature: Record<string, DecimalString>;
   beneficiary_modules: string[];
+  transaction_page?: {
+    count: number; page: number; page_size: number; pages: number;
+    next: number | null; previous: number | null;
+  };
   transactions: Array<{
     allocation_id: number;
     expenditure_id: number;

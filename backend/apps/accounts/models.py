@@ -108,3 +108,29 @@ class User(AbstractUser):
         return bool(
             self.role_slugs.intersection(required_roles)
         )
+
+
+class AccountAuditEvent(models.Model):
+    """Append-only audit trail for privileged account administration."""
+
+    actor = models.ForeignKey(
+        User, on_delete=models.PROTECT, related_name="account_actions"
+    )
+    target_user = models.ForeignKey(
+        User, on_delete=models.PROTECT, related_name="account_audit_events"
+    )
+    action = models.CharField(max_length=40, db_index=True)
+    details = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["-created_at", "-pk"]
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            raise ValueError("Account audit events are immutable.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("Account audit events cannot be deleted.")
+

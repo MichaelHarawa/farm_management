@@ -23,6 +23,7 @@ from .views import (
     FundingReceiptViewSet,
     MonthlyReportView,
     BatchRevenueUtilizationView,
+    BatchRevenueUtilizationListView,
     CrossBatchFinancingReportView,
     PayrollEntryViewSet,
     ReceivablesView,
@@ -31,6 +32,9 @@ from .views import (
     ReplacementReserveTransactionViewSet,
     SharedExpenseViewSet,
     SharedConsumableLotViewSet,
+    ConsumableItemViewSet,
+    InventoryLocationViewSet,
+    StockMovementViewSet,
 )
 
 
@@ -49,6 +53,9 @@ router.register(
     SharedConsumableLotViewSet,
     basename="finance-consumable-lot",
 )
+router.register("consumable-items", ConsumableItemViewSet, basename="finance-consumable-item")
+router.register("inventory-locations", InventoryLocationViewSet, basename="finance-inventory-location")
+router.register("stock-movements", StockMovementViewSet, basename="finance-stock-movement")
 router.register(
     "consumable-usages",
     ConsumableUsageViewSet,
@@ -111,6 +118,11 @@ urlpatterns = [
         "reports/batches/<int:batch_id>/revenue-utilization",
         BatchRevenueUtilizationView.as_view(),
         name="batch-revenue-utilization",
+    ),
+    path(
+        "reports/revenue-utilization",
+        BatchRevenueUtilizationListView.as_view(),
+        name="batch-revenue-utilization-list",
     ),
     path(
         "reports/cross-batch-financing",

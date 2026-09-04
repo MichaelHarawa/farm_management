@@ -6,7 +6,7 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
     container_name: farm_backend
-    command: sh -c "python backend/manage.py migrate && python backend/manage.py runserver 0.0.0.0:7070"
+    command: sh -c "python backend/manage.py migrate && python backend/manage.py finance_preflight && python backend/manage.py runserver 0.0.0.0:7070"
     env_file:
       - ../.env
     volumes:

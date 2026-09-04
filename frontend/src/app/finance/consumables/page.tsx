@@ -2,6 +2,7 @@ import {
   getAccountingPeriods,
   getConsumableLots,
   getConsumableUsages,
+  getStockMovements,
 } from "@/features/finance/api/finance";
 import {
   ConsumableLotDialog,
@@ -22,10 +23,11 @@ import {
 import { getPoultryBatches } from "@/features/poultry/api/batches";
 
 export default async function FinanceConsumablesPage() {
-  const [periods, lots, usages, batches] = await Promise.all([
+  const [periods, lots, usages, movements, batches] = await Promise.all([
     getAccountingPeriods("/finance/consumables"),
     getConsumableLots("/finance/consumables"),
     getConsumableUsages("/finance/consumables"),
+    getStockMovements("/finance/consumables"),
     getPoultryBatches("/finance/consumables"),
   ]);
   const batchLabels = new Map(batches.map((batch) => [batch.id, batch.batch_id]));
@@ -136,6 +138,10 @@ export default async function FinanceConsumablesPage() {
         ) : (
           <EmptyState message="No consumable usage has been recognized." />
         )}
+      </Panel>
+
+      <Panel id="stock-movements" title="Immutable Stock Movement Ledger">
+        {movements.length ? <div className="overflow-x-auto"><table className="min-w-full text-sm"><thead><tr className="border-b text-left"><th className="py-3 pr-4">Date</th><th className="py-3 pr-4">Movement</th><th className="py-3 pr-4">Item</th><th className="py-3 pr-4">Batch</th><th className="py-3 pr-4 text-right">Quantity</th><th className="py-3 pr-4 text-right">Cost</th></tr></thead><tbody>{movements.map((movement) => <tr key={movement.id} className="border-b"><td className="py-3 pr-4">{formatDate(movement.movement_date)}</td><td className="py-3 pr-4">{formatLabel(movement.movement_type)}</td><td className="py-3 pr-4 font-bold">{movement.item_name}</td><td className="py-3 pr-4">{movement.batch_code || "Farm stock"}</td><td className="py-3 pr-4 text-right">{formatNumber(movement.quantity)}</td><td className="py-3 pr-4 text-right">{formatCurrency(movement.total_cost)}</td></tr>)}</tbody></table></div> : <EmptyState message="No stock movements have been posted." />}
       </Panel>
     </FinancePageShell>
   );

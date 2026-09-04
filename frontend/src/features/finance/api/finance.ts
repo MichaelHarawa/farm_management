@@ -9,6 +9,7 @@ import type {
   AdHocLabourPayment,
   Asset,
   AssetCategory,
+  AssetLifecycleEvent,
   AssetDepreciationEntry,
   BatchPortfolioReport,
   BatchProfitabilityReport,
@@ -21,6 +22,7 @@ import type {
   ReceivablesReport,
   SharedExpense,
   SharedConsumableLot,
+  StockMovement,
 } from "../types";
 
 import { financeApiPaths } from "./paths";
@@ -113,6 +115,14 @@ export async function getConsumableUsages(returnTo: string): Promise<ConsumableU
   return normalizeList(data);
 }
 
+export async function getStockMovements(returnTo: string): Promise<StockMovement[]> {
+  const data = await authenticatedBackendFetch<StockMovement[] | PaginatedResponse<StockMovement>>(
+    financeApiPaths.stockMovements,
+    { returnTo, cache: "no-store" }
+  );
+  return normalizeList(data);
+}
+
 export async function getAssetCategories(returnTo: string): Promise<AssetCategory[]> {
   const data = await authenticatedBackendFetch<
     AssetCategory[] | PaginatedResponse<AssetCategory>
@@ -133,6 +143,18 @@ export async function getAssets(returnTo: string): Promise<Asset[]> {
   });
 
   return normalizeList(data);
+}
+
+export async function getAsset(id: string, returnTo: string): Promise<Asset> {
+  return authenticatedBackendFetch<Asset>(financeApiPaths.asset(id), { returnTo, cache: "no-store" });
+}
+
+export async function getAssetHistory(id: string, returnTo: string): Promise<AssetLifecycleEvent[]> {
+  return authenticatedBackendFetch<AssetLifecycleEvent[]>(financeApiPaths.assetHistory(id), { returnTo, cache: "no-store" });
+}
+
+export async function getAssetDepreciationSchedule(id: string, returnTo: string): Promise<AssetDepreciationEntry[]> {
+  return authenticatedBackendFetch<AssetDepreciationEntry[]>(financeApiPaths.assetDepreciationSchedule(id), { returnTo, cache: "no-store" });
 }
 
 export async function getAssetDepreciation(returnTo: string): Promise<AssetDepreciationEntry[]> {

@@ -74,6 +74,15 @@ class FinancePaymentStatus(models.TextChoices):
     REVERSED = "reversed", "Reversed"
 
 
+class LabourWorkflowStatus(models.TextChoices):
+    DRAFT = "draft", "Draft"
+    APPROVED = "approved", "Approved"
+    POSTED = "posted", "Posted / payable"
+    PARTIALLY_PAID = "partially_paid", "Partially paid"
+    PAID = "paid", "Paid"
+    REVERSED = "reversed", "Reversed"
+
+
 class CostScope(models.TextChoices):
     BATCH_DIRECT = "batch_direct", "Batch direct"
     SHARED_PRODUCTION = "shared_production", "Shared production"
@@ -258,8 +267,12 @@ class EmployeeProfile(DollarReferenceMixin, TimestampedModel):
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
         related_name="employee_profile",
+        null=True,
+        blank=True,
     )
     employee_number = models.CharField(max_length=40, unique=True)
+    first_name = models.CharField(max_length=150, blank=True, default="")
+    last_name = models.CharField(max_length=150, blank=True, default="")
     employment_type = models.CharField(
         max_length=20,
         choices=EmploymentType.choices,
@@ -322,7 +335,7 @@ class EmployeeProfile(DollarReferenceMixin, TimestampedModel):
         ]
 
     def __str__(self) -> str:
-        return f"{self.employee_number} - {self.user}"
+        return f"{self.employee_number} - {self.user or self.job_title}"
 
     def clean(self):
         super().clean()
@@ -551,6 +564,37 @@ class AdHocLabourPayment(DollarReferenceMixin, TimestampedModel):
         default=FinancePaymentStatus.UNPAID,
         db_index=True,
     )
+    workflow_status = models.CharField(
+        max_length=24,
+        choices=LabourWorkflowStatus.choices,
+        default=LabourWorkflowStatus.DRAFT,
+        db_index=True,
+    )
+    expenditure = models.OneToOneField(
+        "Expenditure",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="labour_source",
+    )
+    approved_at = models.DateTimeField(null=True, blank=True)
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="approved_ad_hoc_labour",
+    )
+    posted_at = models.DateTimeField(null=True, blank=True)
+    reversed_at = models.DateTimeField(null=True, blank=True)
+    reversed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reversed_ad_hoc_labour",
+    )
+    reversal_reason = models.TextField(blank=True, default="")
     notes = models.TextField(blank=True, default="")
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -2589,3 +2633,386 @@ class SalePayment(TimestampedModel):
 # Note: Cost allocation side continues to use the existing CostAllocation model
 # (or can be extended later). The combination of FundingAllocation + CostAllocation
 # gives the two required dimensions.
+
+
+class AccountType(models.TextChoices):
+    ASSET = "asset", "Asset"
+    LIABILITY = "liability", "Liability"
+    EQUITY = "equity", "Equity"
+    REVENUE = "revenue", "Revenue"
+    EXPENSE = "expense", "Expense"
+
+
+class NormalBalance(models.TextChoices):
+    DEBIT = "debit", "Debit"
+    CREDIT = "credit", "Credit"
+
+
+class JournalStatus(models.TextChoices):
+    DRAFT = "draft", "Draft"
+    POSTED = "posted", "Posted"
+    REVERSED = "reversed", "Reversed"
+
+
+class ChartOfAccount(TimestampedModel):
+    code = models.CharField(max_length=20, unique=True)
+    name = models.CharField(max_length=160)
+    account_type = models.CharField(max_length=20, choices=AccountType.choices)
+    normal_balance = models.CharField(max_length=10, choices=NormalBalance.choices)
+    control_type = models.CharField(max_length=40, blank=True, default="")
+    is_active = models.BooleanField(default=True, db_index=True)
+
+    class Meta:
+        ordering = ["code"]
+
+    def __str__(self):
+        return f"{self.code} - {self.name}"
+
+
+class CashOrBankAccount(TimestampedModel):
+    name = models.CharField(max_length=120, unique=True)
+    ledger_account = models.OneToOneField(
+        ChartOfAccount, on_delete=models.PROTECT, related_name="cash_account"
+    )
+    funding_source = models.OneToOneField(
+        FundingSource,
+        on_delete=models.PROTECT,
+        related_name="cash_or_bank_account",
+        null=True,
+        blank=True,
+    )
+    is_active = models.BooleanField(default=True, db_index=True)
+
+
+class JournalEntry(TimestampedModel):
+    reference = models.CharField(max_length=40, unique=True, db_index=True)
+    posting_date = models.DateField(db_index=True)
+    accounting_period = models.ForeignKey(
+        AccountingPeriod, on_delete=models.PROTECT, related_name="journal_entries"
+    )
+    description = models.CharField(max_length=255)
+    source_model = models.CharField(max_length=80, db_index=True)
+    source_identifier = models.CharField(max_length=120, db_index=True)
+    idempotency_key = models.CharField(max_length=180, unique=True)
+    status = models.CharField(
+        max_length=20, choices=JournalStatus.choices, default=JournalStatus.DRAFT, db_index=True
+    )
+    reversal_of = models.OneToOneField(
+        "self",
+        on_delete=models.PROTECT,
+        related_name="reversal_entry",
+        null=True,
+        blank=True,
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name="created_journal_entries",
+        null=True,
+        blank=True,
+    )
+    posted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name="posted_journal_entries",
+        null=True,
+        blank=True,
+    )
+    posted_at = models.DateTimeField(null=True, blank=True)
+    reversed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name="reversed_journal_entries",
+        null=True,
+        blank=True,
+    )
+    reversed_at = models.DateTimeField(null=True, blank=True)
+    reversal_reason = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["-posting_date", "-pk"]
+        indexes = [models.Index(fields=["source_model", "source_identifier"])]
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            original = JournalEntry.objects.filter(pk=self.pk).values(
+                "status", "posting_date", "accounting_period_id", "description",
+                "source_model", "source_identifier", "idempotency_key", "reversal_of_id",
+            ).first()
+            if original and original["status"] in {JournalStatus.POSTED, JournalStatus.REVERSED}:
+                protected = {key: original[key] for key in original}
+                current = {
+                    "status": self.status,
+                    "posting_date": self.posting_date,
+                    "accounting_period_id": self.accounting_period_id,
+                    "description": self.description,
+                    "source_model": self.source_model,
+                    "source_identifier": self.source_identifier,
+                    "idempotency_key": self.idempotency_key,
+                    "reversal_of_id": self.reversal_of_id,
+                }
+                allowed_status_change = original["status"] == JournalStatus.POSTED and self.status == JournalStatus.REVERSED
+                if any(protected[key] != current[key] for key in protected if key != "status") or (
+                    original["status"] != self.status and not allowed_status_change
+                ):
+                    raise ValidationError("Posted journals are immutable; create a reversal journal.")
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        if self.status != JournalStatus.DRAFT:
+            raise ValidationError("Posted or reversed journals cannot be deleted.")
+        return super().delete(*args, **kwargs)
+
+
+class JournalLine(TimestampedModel):
+    journal_entry = models.ForeignKey(
+        JournalEntry, on_delete=models.PROTECT, related_name="lines"
+    )
+    account = models.ForeignKey(
+        ChartOfAccount, on_delete=models.PROTECT, related_name="journal_lines"
+    )
+    debit = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0.00"))
+    credit = models.DecimalField(max_digits=18, decimal_places=2, default=Decimal("0.00"))
+    batch = models.ForeignKey(
+        Batch, on_delete=models.PROTECT, related_name="journal_lines", null=True, blank=True
+    )
+    funding_source = models.ForeignKey(
+        FundingSource,
+        on_delete=models.PROTECT,
+        related_name="journal_lines",
+        null=True,
+        blank=True,
+    )
+    memo = models.CharField(max_length=255, blank=True, default="")
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=(Q(debit__gt=0, credit=0) | Q(credit__gt=0, debit=0)),
+                name="journal_line_exactly_one_side",
+            )
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.journal_entry_id and self.journal_entry.status != JournalStatus.DRAFT:
+            raise ValidationError("Lines of a posted journal are immutable.")
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        if self.journal_entry.status != JournalStatus.DRAFT:
+            raise ValidationError("Lines of a posted journal cannot be deleted.")
+        return super().delete(*args, **kwargs)
+
+
+class ReportingPolicy(TimestampedModel):
+    code = models.CharField(max_length=40, unique=True)
+    name = models.CharField(max_length=160)
+    version = models.PositiveIntegerField(default=1)
+    effective_from = models.DateField()
+    inventory_costing_method = models.CharField(max_length=30, default="weighted_average")
+    biological_asset_basis = models.CharField(max_length=40, default="management_cost")
+    administration_driver = models.CharField(max_length=40, default="bird_days")
+    selling_driver = models.CharField(max_length=40, default="revenue_share")
+    notes = models.TextField(blank=True, default="")
+    is_active = models.BooleanField(default=True, db_index=True)
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True
+    )
+
+
+class AllocationPolicy(TimestampedModel):
+    name = models.CharField(max_length=120)
+    cost_pool = models.CharField(max_length=60)
+    driver = models.CharField(max_length=40, choices=AllocationMethod.choices)
+    version = models.PositiveIntegerField(default=1)
+    effective_from = models.DateField()
+    effective_to = models.DateField(null=True, blank=True)
+    is_active = models.BooleanField(default=True, db_index=True)
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["cost_pool", "version"], name="unique_allocation_policy_version"
+            )
+        ]
+
+
+class PeriodReportSnapshot(TimestampedModel):
+    accounting_period = models.ForeignKey(
+        AccountingPeriod, on_delete=models.PROTECT, related_name="report_snapshots"
+    )
+    version = models.PositiveIntegerField()
+    report_data = models.JSONField()
+    reporting_policy = models.ForeignKey(
+        ReportingPolicy, on_delete=models.PROTECT, null=True, blank=True
+    )
+    generated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True
+    )
+    generated_at = models.DateTimeField(default=timezone.now)
+    supersedes = models.ForeignKey(
+        "self", on_delete=models.PROTECT, null=True, blank=True, related_name="superseded_by"
+    )
+
+    class Meta:
+        ordering = ["accounting_period", "-version"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["accounting_period", "version"], name="unique_period_report_version"
+            )
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            raise ValidationError("Period report snapshots are immutable.")
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Period report snapshots cannot be deleted.")
+
+
+class InventoryCostingMethod(models.TextChoices):
+    WEIGHTED_AVERAGE = "weighted_average", "Weighted average"
+    FIFO = "fifo", "FIFO"
+
+
+class StockMovementType(models.TextChoices):
+    RECEIPT = "receipt", "Supplier receipt"
+    ISSUE = "issue", "Issue"
+    RETURN = "return", "Return"
+    TRANSFER = "transfer", "Transfer"
+    WASTE = "waste", "Waste"
+    EXPIRY = "expiry", "Expiry"
+    ADJUSTMENT = "adjustment", "Adjustment"
+
+
+class ConsumableItem(TimestampedModel):
+    sku = models.CharField(max_length=40, unique=True)
+    name = models.CharField(max_length=160)
+    category = models.CharField(max_length=80)
+    base_unit = models.CharField(max_length=40)
+    costing_method = models.CharField(
+        max_length=24,
+        choices=InventoryCostingMethod.choices,
+        default=InventoryCostingMethod.WEIGHTED_AVERAGE,
+    )
+    reorder_level = models.DecimalField(
+        max_digits=14, decimal_places=4, default=Decimal("0.0000"), validators=[MONEY_VALIDATOR]
+    )
+    is_active = models.BooleanField(default=True, db_index=True)
+
+    class Meta:
+        ordering = ["name"]
+        indexes = [models.Index(fields=["category", "is_active"])]
+
+    def __str__(self):
+        return f"{self.sku} - {self.name}"
+
+
+class InventoryUnitConversion(TimestampedModel):
+    item = models.ForeignKey(ConsumableItem, on_delete=models.PROTECT, related_name="unit_conversions")
+    from_unit = models.CharField(max_length=40)
+    to_base_multiplier = models.DecimalField(
+        max_digits=18, decimal_places=6, validators=[POSITIVE_DECIMAL_VALIDATOR]
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["item", "from_unit"], name="unique_inventory_item_unit")
+        ]
+
+
+class InventoryLocation(TimestampedModel):
+    code = models.CharField(max_length=40, unique=True)
+    name = models.CharField(max_length=120)
+    is_active = models.BooleanField(default=True, db_index=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
+class StockMovement(TimestampedModel):
+    movement_type = models.CharField(max_length=20, choices=StockMovementType.choices, db_index=True)
+    movement_date = models.DateField(db_index=True)
+    item = models.ForeignKey(ConsumableItem, on_delete=models.PROTECT, related_name="movements")
+    lot = models.ForeignKey(
+        SharedConsumableLot, on_delete=models.PROTECT, related_name="movements", null=True, blank=True
+    )
+    usage = models.OneToOneField(
+        ConsumableUsage, on_delete=models.PROTECT, related_name="stock_movement", null=True, blank=True
+    )
+    from_location = models.ForeignKey(
+        InventoryLocation, on_delete=models.PROTECT, related_name="outgoing_movements", null=True, blank=True
+    )
+    to_location = models.ForeignKey(
+        InventoryLocation, on_delete=models.PROTECT, related_name="incoming_movements", null=True, blank=True
+    )
+    batch = models.ForeignKey(Batch, on_delete=models.PROTECT, related_name="stock_movements", null=True, blank=True)
+    quantity = models.DecimalField(
+        max_digits=14, decimal_places=4, validators=[MinValueValidator(Decimal("0.0001"))]
+    )
+    unit_cost = models.DecimalField(max_digits=16, decimal_places=6, validators=[MONEY_VALIDATOR])
+    total_cost = models.DecimalField(max_digits=16, decimal_places=2, validators=[MONEY_VALIDATOR])
+    reference = models.CharField(max_length=120, blank=True, default="")
+    reason = models.CharField(max_length=255, blank=True, default="")
+    idempotency_key = models.CharField(max_length=160, unique=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="created_stock_movements"
+    )
+
+    class Meta:
+        ordering = ["-movement_date", "-pk"]
+        indexes = [
+            models.Index(fields=["item", "movement_date"]),
+            models.Index(fields=["batch", "movement_date"]),
+        ]
+
+    def save(self, *args, **kwargs):
+        self.total_cost = (self.quantity * self.unit_cost).quantize(Decimal("0.01"))
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Stock movements are immutable; post a correcting movement.")
+
+
+class AssetEventType(models.TextChoices):
+    ACQUISITION = "acquisition", "Acquisition"
+    AVAILABLE_FOR_USE = "available_for_use", "Available for use"
+    CAPITALIZED_COST = "capitalized_cost", "Additional capitalized cost"
+    USAGE = "usage", "Usage reading"
+    MAINTENANCE = "maintenance", "Maintenance"
+    ESTIMATE_CHANGE = "estimate_change", "Prospective estimate change"
+    IMPAIRMENT = "impairment", "Impairment"
+    TRANSFER = "transfer", "Transfer / custodian change"
+    DISPOSAL = "disposal", "Disposal"
+
+
+class AssetLifecycleEvent(TimestampedModel):
+    asset = models.ForeignKey(Asset, on_delete=models.PROTECT, related_name="lifecycle_events")
+    event_type = models.CharField(max_length=30, choices=AssetEventType.choices, db_index=True)
+    event_date = models.DateField(db_index=True)
+    reason = models.TextField(blank=True, default="")
+    details = models.JSONField(default=dict)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="created_asset_lifecycle_events"
+    )
+
+    class Meta:
+        ordering = ["-event_date", "-pk"]
+        indexes = [models.Index(fields=["asset", "event_type", "event_date"])]
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            raise ValidationError("Asset lifecycle events are immutable.")
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Asset lifecycle events are immutable.")

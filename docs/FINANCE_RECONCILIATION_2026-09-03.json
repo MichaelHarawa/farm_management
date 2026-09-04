@@ -1,0 +1,28 @@
+{
+  "source": "dump-farm_management-202609031558.sql",
+  "source_sha256": "1BA1096E0662613D945EF13F752DF820BCB9BEAAA9BB470DF61A797561DA5BD9",
+  "source_modified": false,
+  "isolated_database": "farm_management_codex_latest_final",
+  "isolated_database_removed_after_verification": true,
+  "before": {"finance_migration": "0019", "batches": 3, "expenditures": 79, "input_costs": 69, "sale_payments": 31, "payroll_entries": 4, "assets": 1},
+  "after_schema_migration": {
+    "finance_migration": "0024", "accounts_migration": "0003", "batches": 3,
+    "expenditures": 79, "input_costs": 69, "sale_payments": 31, "payroll_entries": 4,
+    "assets": 1, "records_deleted": 0,
+    "general_ledger_preview": {"source_events": 165, "journals_to_create": 165, "applied": false, "preview_balanced": true}
+  },
+  "exceptions": [
+    {"code": "unlinked_operational_cost", "record_id": 26, "amount_mwk": "15000.00", "status": "queued_for_review"},
+    {"code": "void_linked_operational_cost", "record_id": 53, "amount_mwk": "18000.00", "status": "accounting_decision_required"},
+    {"code": "unfunded_or_partly_funded_expenditures", "count": 52, "amount_mwk": "4422200.00", "status": "historical_source_assignment_required"},
+    {"code": "period_lock_violations", "count": 32, "status": "review_before_locking"},
+    {"code": "source_events_pending_general_ledger_backfill", "count": 136, "status": "backfill_approval_required"}
+  ],
+  "verified_batch_1": {
+    "revenue_mwk": "3584500.00", "cash_collected_mwk": "3538500.00",
+    "receivable_mwk": "46000.00", "production_cost_mwk": "3539755.80",
+    "gross_profit_mwk": "44744.20", "selling_cost_mwk": "180000.00",
+    "allocated_administration_mwk": "76084.30", "management_net_position_mwk": "-211340.10"
+  },
+  "policy_approval_required": true
+}

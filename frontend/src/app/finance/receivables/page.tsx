@@ -26,6 +26,7 @@ export default function FinanceReceivablesPage() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [focusedSale, setFocusedSale] = useState("");
+  const [page, setPage] = useState(1);
   const [paymentSale, setPaymentSale] = useState<ReceivableSale | null>(null);
   const [expandedSale, setExpandedSale] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -60,6 +61,8 @@ export default function FinanceReceivablesPage() {
     if (dateFrom) query.set("date_from", dateFrom);
     if (dateTo) query.set("date_to", dateTo);
     if (focusedSale) query.set("sale", focusedSale);
+    query.set("page", String(page));
+    query.set("page_size", "20");
     try {
       const data = await clientApiFetch<ReceivablesReport>(`/api/finance/receivables?${query}`);
       setReport(data);
@@ -68,7 +71,7 @@ export default function FinanceReceivablesPage() {
     } finally {
       setLoading(false);
     }
-  }, [buyer, dateFrom, dateTo, focusedSale, selectedBatches, status]);
+  }, [buyer, dateFrom, dateTo, focusedSale, page, selectedBatches, status]);
 
   useEffect(() => {
     void load();
@@ -192,6 +195,14 @@ export default function FinanceReceivablesPage() {
           </tbody>
         </table>
       </section>
+      {report && report.pages > 1 ? <nav aria-label="Receivables pagination" className="mt-5 flex flex-wrap gap-2">
+        <button disabled={page === 1} onClick={() => setPage(1)} className="rounded border px-3 py-2 disabled:opacity-40">First</button>
+        <button disabled={page === 1} onClick={() => setPage(page - 1)} className="rounded border px-3 py-2 disabled:opacity-40">Previous</button>
+        {Array.from({length: report.pages}, (_, index) => index + 1).slice(Math.max(page - 3, 0), Math.max(page - 3, 0) + 5).map((number) => <button key={number} onClick={() => setPage(number)} aria-current={number === page ? "page" : undefined} className={`rounded border px-3 py-2 ${number === page ? "bg-[var(--navy)] text-white" : ""}`}>{number}</button>)}
+        <button disabled={page === report.pages} onClick={() => setPage(page + 1)} className="rounded border px-3 py-2 disabled:opacity-40">Next</button>
+        <button disabled={page === report.pages} onClick={() => setPage(report.pages)} className="rounded border px-3 py-2 disabled:opacity-40">Last</button>
+        <span className="self-center text-sm text-[var(--navy-muted)]">{report.count} sales</span>
+      </nav> : null}
 
       {paymentSale ? <div role="dialog" aria-modal="true" aria-labelledby="payment-title" className="fixed inset-0 z-50 grid place-items-center bg-[#151f36]/45 p-4"><form onSubmit={submitPayment} className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-2xl"><div className="flex items-start justify-between"><div><p className="finance-eyebrow">Collection receipt</p><h2 id="payment-title" className="mt-2 text-2xl font-extrabold">Record payment for {paymentSale.sale_id}</h2><p className="mt-2 text-sm text-[var(--navy-muted)]">Outstanding: {formatCurrency(paymentSale.balance)}</p></div><button type="button" onClick={() => setPaymentSale(null)} aria-label="Close payment form" className="text-2xl">×</button></div><div className="mt-6 grid gap-4 sm:grid-cols-2">
         <label className="text-sm font-bold">Amount<input required type="number" min="0.01" max={paymentSale.balance} step="0.01" value={payment.amount} onChange={(event) => setPayment({ ...payment, amount: event.target.value })} className="form-input mt-2 w-full" /></label>

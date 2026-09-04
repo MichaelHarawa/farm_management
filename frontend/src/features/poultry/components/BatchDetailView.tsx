@@ -1325,7 +1325,7 @@ function OverviewTab({
             </div>
             <Link
               href={`/finance/batches/${batch.id}`}
-              className="inline-flex rounded-lg bg-[#151f36] px-6 py-3 text-sm font-bold text-white"
+              className="finance-button !text-[#151f36] shadow-sm"
             >
               Review full finance breakdown
             </Link>

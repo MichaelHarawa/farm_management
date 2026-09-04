@@ -561,7 +561,7 @@ def _period_batch_drivers(period: AccountingPeriod) -> tuple[dict[int, Decimal],
     return bird_days, revenue
 
 
-def _management_overhead_by_batch(batches: list[Batch]) -> dict[int, dict[str, Decimal]]:
+def _management_overhead_by_batch(batches: list[Batch]) -> dict[int, dict]:
     """Attribute whole-farm costs for a management net-position view.
 
     Stored direct and production allocations remain authoritative. Central costs are
@@ -580,6 +580,7 @@ def _management_overhead_by_batch(batches: list[Batch]) -> dict[int, dict[str, D
             "administration_asset_depreciation": ZERO,
             "finance_cost": ZERO,
             "tax": ZERO,
+            "allocation_trace": [],
         }
         for batch in batches
     }
@@ -683,6 +684,22 @@ def _management_overhead_by_batch(batches: list[Batch]) -> dict[int, dict[str, D
                 result[batch.pk][key] += money(pool * admin_share)
             for key, pool in revenue_pools.items():
                 result[batch.pk][key] += money(pool * revenue_share)
+            result[batch.pk]["allocation_trace"].append(
+                {
+                    "source_period": period.pk,
+                    "period_start": period.period_start,
+                    "period_end": period.period_end,
+                    "administration_driver": "bird_days",
+                    "administration_numerator": bird_days.get(batch.pk, ZERO),
+                    "administration_denominator": bird_day_total,
+                    "administration_percentage": (admin_share * Decimal("100")).quantize(Decimal("0.0001")),
+                    "selling_finance_tax_driver": "revenue_share" if revenue_total else "bird_days_fallback",
+                    "selling_numerator": revenue.get(batch.pk, ZERO) if revenue_total else bird_days.get(batch.pk, ZERO),
+                    "selling_denominator": revenue_total if revenue_total else bird_day_total,
+                    "selling_percentage": (revenue_share * Decimal("100")).quantize(Decimal("0.0001")),
+                    "calculation_version": "management-allocation-v2",
+                }
+            )
 
     return result
 
@@ -706,6 +723,17 @@ def _attach_management_costs(rows: list[dict], batches: list[Batch]) -> list[dic
     } if rows else {}
     for row in rows:
         if row.get("management_snapshot_locked"):
+            row.update(
+                {
+                    "actual_result_basis": "final_actual",
+                    "result_interpretation": "Final actual result for the completed batch.",
+                    "forecast_revenue_at_completion": row["revenue"],
+                    "forecast_cost_at_completion": row["total_attributed_cost"],
+                    "forecast_final_profit": row["management_net_position"],
+                    "forecast_basis": "Closed-batch actual result; no run-rate projection applied.",
+                    "allocation_trace": [],
+                }
+            )
             continue
         attributed = overhead.get(row["batch"], {})
         production_assets = production_components.get(
@@ -745,6 +773,31 @@ def _attach_management_costs(rows: list[dict], batches: list[Batch]) -> list[dic
             row["total_production_cost"] + total_selling + administration + finance_cost + tax
         )
         net_position = money(row["revenue"] - total_cost)
+        batch = next(batch for batch in batches if batch.pk == row["batch"])
+        cycle_days = max((batch.expected_maturity_date.date() - batch.entry_date.date()).days, 1)
+        elapsed_days = max((min(timezone.localdate(), batch.expected_maturity_date.date()) - batch.entry_date.date()).days, 1)
+        progress = Decimal("1.00") if batch.status == BatchStatus.CLOSED else min(
+            Decimal(elapsed_days) / Decimal(cycle_days), Decimal("1.00")
+        )
+        forecast_production_cost = money(
+            row["total_production_cost"] if progress == Decimal("1.00")
+            else row["total_production_cost"] / progress
+        )
+        bird_units = row["valid_bird_units_sold"]
+        average_bird_price = (
+            row["revenue"] / Decimal(bird_units) if bird_units else ZERO
+        )
+        forecast_saleable_units = max(row["birds_placed"] - row["mortality"], 0)
+        forecast_revenue = money(
+            row["revenue"] if batch.status == BatchStatus.CLOSED or not average_bird_price
+            else average_bird_price * Decimal(forecast_saleable_units)
+        )
+        forecast_overhead = money(
+            total_selling + administration + finance_cost + tax
+            if progress == Decimal("1.00")
+            else (total_selling + administration + finance_cost + tax) / progress
+        )
+        forecast_profit = money(forecast_revenue - forecast_production_cost - forecast_overhead)
         row.update(
             {
                 "central_selling_cost": central_selling,
@@ -755,6 +808,21 @@ def _attach_management_costs(rows: list[dict], batches: list[Batch]) -> list[dic
                 "total_attributed_cost": total_cost,
                 "management_net_position": net_position,
                 "management_net_margin_percent": percent(net_position, row["revenue"]),
+                "actual_result_basis": (
+                    "final_actual"
+                    if row["profitability_status"] == "final"
+                    else "actual_to_date"
+                ),
+                "result_interpretation": (
+                    "Provisional actual-to-date; not a final loss or profit."
+                    if batch.status != BatchStatus.CLOSED
+                    else "Final actual result for the completed batch."
+                ),
+                "forecast_revenue_at_completion": forecast_revenue,
+                "forecast_cost_at_completion": money(forecast_production_cost + forecast_overhead),
+                "forecast_final_profit": forecast_profit,
+                "forecast_basis": "Run-rate projection from lifecycle progress and realized bird price; review before decisions.",
+                "allocation_trace": attributed.get("allocation_trace", []),
                 "management_cost_breakdown": [
                     {
                         "key": "direct_batch",
@@ -1139,6 +1207,9 @@ def batch_portfolio_report(batches: Iterable[Batch]) -> dict:
     tax = total("allocated_tax")
     total_attributed_cost = total("total_attributed_cost")
     management_net_position = total("management_net_position")
+    forecast_revenue = total("forecast_revenue_at_completion")
+    forecast_cost = total("forecast_cost_at_completion")
+    forecast_profit = total("forecast_final_profit")
     receivable = total("accounts_receivable")
     active_exposure = total("active_batch_cost_exposure")
 
@@ -1206,8 +1277,8 @@ def batch_portfolio_report(batches: Iterable[Batch]) -> dict:
             code="cash_receipt_ledger_limitation",
             severity="info",
             message=(
-                "Cash collected reflects the amount currently stored on each sale, not "
-                "a dated receipt ledger."
+                "Lifecycle cash collected is reconciled to the sale summary; period reports "
+                "use the dated receipt ledger and sales-cohort collection measures."
             ),
         ),
         finance_warning(
@@ -1267,6 +1338,9 @@ def batch_portfolio_report(batches: Iterable[Batch]) -> dict:
             "total_attributed_cost": total_attributed_cost,
             "management_net_position": management_net_position,
             "management_net_margin_percent": percent(management_net_position, revenue),
+            "forecast_revenue_at_completion": forecast_revenue,
+            "forecast_cost_at_completion": forecast_cost,
+            "forecast_final_profit": forecast_profit,
             "fully_loaded_batch_profit": contribution_after_selling,
             "fully_loaded_margin_percent": percent(
                 contribution_after_selling,

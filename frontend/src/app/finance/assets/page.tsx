@@ -19,6 +19,7 @@ import {
   formatDate,
   formatLabel,
 } from "@/features/finance/utils/formatters";
+import Link from "next/link";
 
 export default async function FinanceAssetsPage() {
   const [periods, categories, assets] = await Promise.all([
@@ -76,9 +77,9 @@ export default async function FinanceAssetsPage() {
                 {assets.map((asset) => (
                   <tr key={asset.id} className="border-b border-[var(--line)]">
                     <td className="py-4 pr-4">
-                      <p className="font-extrabold text-[var(--navy)]">
+                      <Link href={`/finance/assets/${asset.id}`} className="font-extrabold text-[var(--navy)] underline">
                         {asset.asset_code || asset.name}
-                      </p>
+                      </Link>
                       <p className="text-xs text-[var(--navy-muted)]">{asset.name}</p>
                     </td>
                     <td className="py-4 pr-4">{formatLabel(asset.status)}</td>

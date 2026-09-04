@@ -27,6 +27,7 @@ from .models import (
     BatchProfitabilitySnapshot,
     BirdDaySnapshot,
     ConsumableUsage,
+    ConsumableItem,
     ConsumableUsageScope,
     CostScope,
     CostAllocation,
@@ -43,6 +44,9 @@ from .models import (
     SharedExpense,
     SharedExpenseScope,
     SharedConsumableLot,
+    StockMovement,
+    InventoryLocation,
+    AssetLifecycleEvent,
 )
 
 
@@ -73,6 +77,14 @@ class UserSummarySerializer(serializers.ModelSerializer):
 
 class EmployeeProfileSerializer(serializers.ModelSerializer):
     user = UserSummarySerializer(read_only=True)
+    display_name = serializers.SerializerMethodField()
+    user_id = serializers.PrimaryKeyRelatedField(
+        source="user",
+        queryset=User.objects.all(),
+        write_only=True,
+        required=False,
+        allow_null=True,
+    )
     username = serializers.CharField(write_only=True, required=False)
     email = serializers.EmailField(write_only=True, required=False)
     first_name = serializers.CharField(write_only=True, required=False, allow_blank=True)
@@ -89,6 +101,8 @@ class EmployeeProfileSerializer(serializers.ModelSerializer):
         fields = (
             "id",
             "user",
+            "user_id",
+            "display_name",
             "username",
             "email",
             "first_name",
@@ -114,7 +128,13 @@ class EmployeeProfileSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         )
-        read_only_fields = ("id", "created_by", "created_at", "updated_at")
+        read_only_fields = ("id", "display_name", "created_by", "created_at", "updated_at")
+
+    def get_display_name(self, obj):
+        name = f"{obj.first_name} {obj.last_name}".strip()
+        if name:
+            return name
+        return obj.user.get_full_name() or obj.user.username if obj.user else obj.employee_number
 
     def validate(self, attrs):
         if self.instance and "password" in attrs:
@@ -122,10 +142,15 @@ class EmployeeProfileSerializer(serializers.ModelSerializer):
                 {"password": "Password can only be supplied during account creation."}
             )
 
-        if not self.instance:
-            for field in ("username", "email", "password"):
-                if not attrs.get(field):
-                    raise serializers.ValidationError({field: "This field is required."})
+        account_values = [attrs.get(field) for field in ("username", "email", "password")]
+        if not self.instance and any(account_values) and not all(account_values):
+            raise serializers.ValidationError(
+                {"username": "Username, email, and password are all required when creating login access."}
+            )
+        if not self.instance and attrs.get("user") and any(account_values):
+            raise serializers.ValidationError(
+                {"user_id": "Choose an existing system user or enter new login details, not both."}
+            )
 
         production = attrs.get(
             "production_percentage",
@@ -163,34 +188,53 @@ class EmployeeProfileSerializer(serializers.ModelSerializer):
     @transaction.atomic
     def create(self, validated_data):
         role_slugs = validated_data.pop("role_slugs", [])
-        user_data = {
-            "username": validated_data.pop("username"),
-            "email": validated_data.pop("email"),
-            "first_name": validated_data.pop("first_name", ""),
-            "last_name": validated_data.pop("last_name", ""),
-        }
-        password = validated_data.pop("password")
-        user = User.objects.create_user(**user_data, password=password)
-        if role_slugs:
-            user.roles.set(resolve_roles(role_slugs))
+        user = validated_data.pop("user", None)
+        username = validated_data.pop("username", "")
+        email = validated_data.pop("email", "")
+        password = validated_data.pop("password", "")
+        first_name = validated_data.pop("first_name", "")
+        last_name = validated_data.pop("last_name", "")
+        if username:
+            user = User.objects.create_user(
+                username=username,
+                email=email,
+                first_name=first_name,
+                last_name=last_name,
+                password=password,
+            )
+            if role_slugs:
+                user.roles.set(resolve_roles(role_slugs))
 
-        profile = EmployeeProfile.objects.create(user=user, **validated_data)
+        profile = EmployeeProfile.objects.create(
+            user=user, first_name=first_name, last_name=last_name, **validated_data
+        )
         profile.full_clean()
         return profile
 
     @transaction.atomic
     def update(self, instance, validated_data):
         role_slugs = validated_data.pop("role_slugs", None)
-        user_fields = {
+        if "user" in validated_data:
+            instance.user = validated_data.pop("user")
+        identity_fields = {
             key: validated_data.pop(key)
             for key in ("username", "email", "first_name", "last_name")
             if key in validated_data
         }
-        for key, value in user_fields.items():
-            setattr(instance.user, key, value)
-        if user_fields:
-            instance.user.save(update_fields=[*user_fields.keys(), "updated_at"])
-        if role_slugs is not None:
+        login_fields = {key: value for key, value in identity_fields.items() if key in {"username", "email"}}
+        if login_fields and instance.user_id is None:
+            raise serializers.ValidationError(
+                {"user": "Link a system user from Administration before editing login details."}
+            )
+        for key in ("first_name", "last_name"):
+            if key in identity_fields:
+                setattr(instance, key, identity_fields[key])
+        if instance.user_id:
+            for key, value in identity_fields.items():
+                setattr(instance.user, key, value)
+            if identity_fields:
+                instance.user.save(update_fields=[*identity_fields.keys(), "updated_at"])
+        if role_slugs is not None and instance.user_id:
             instance.user.roles.set(resolve_roles(role_slugs))
 
         for key, value in validated_data.items():
@@ -280,7 +324,10 @@ class AdHocLabourPaymentSerializer(serializers.ModelSerializer):
     class Meta:
         model = AdHocLabourPayment
         fields = "__all__"
-        read_only_fields = ("created_by", "created_at", "updated_at")
+        read_only_fields = (
+            "created_by", "payment_status", "payment_date", "workflow_status", "expenditure", "approved_at", "approved_by",
+            "posted_at", "reversed_at", "reversed_by", "reversal_reason", "created_at", "updated_at"
+        )
 
     def validate(self, attrs):
         period = attrs.get("accounting_period", getattr(self.instance, "accounting_period", None))
@@ -408,6 +455,32 @@ class ConsumableUsageSerializer(serializers.ModelSerializer):
         return attrs
 
 
+class ConsumableItemSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ConsumableItem
+        fields = "__all__"
+        read_only_fields = ("created_at", "updated_at")
+
+
+class InventoryLocationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = InventoryLocation
+        fields = "__all__"
+        read_only_fields = ("created_at", "updated_at")
+
+
+class StockMovementSerializer(serializers.ModelSerializer):
+    item_name = serializers.CharField(source="item.name", read_only=True)
+    batch_code = serializers.CharField(source="batch.batch_id", read_only=True)
+
+    class Meta:
+        model = StockMovement
+        fields = "__all__"
+        read_only_fields = (
+            "total_cost", "item_name", "batch_code", "created_by", "created_at", "updated_at"
+        )
+
+
 class ExpenseRecognitionScheduleSerializer(serializers.ModelSerializer):
     class Meta:
         model = ExpenseRecognitionSchedule
@@ -484,6 +557,30 @@ class AssetSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         )
+
+    def validate(self, attrs):
+        if self.instance and self.instance.depreciation_entries.exists():
+            protected = {
+                "purchase_price", "delivery_cost", "installation_cost", "non_refundable_tax_cost",
+                "other_capitalized_cost", "residual_value", "useful_life_months", "depreciation_method",
+                "available_for_use_date", "estimated_total_lifetime_units",
+            }
+            changed = [field for field in protected.intersection(attrs) if attrs[field] != getattr(self.instance, field)]
+            if changed:
+                raise serializers.ValidationError({
+                    "detail": "Depreciation exists. Use a prospective estimate-change or controlled adjustment.",
+                    "protected_fields": changed,
+                })
+        return attrs
+
+
+class AssetLifecycleEventSerializer(serializers.ModelSerializer):
+    created_by_name = serializers.CharField(source="created_by.get_username", read_only=True)
+
+    class Meta:
+        model = AssetLifecycleEvent
+        fields = "__all__"
+        read_only_fields = ("created_by", "created_by_name", "created_at", "updated_at")
 
 
 class AssetCapitalizedCostSerializer(serializers.ModelSerializer):
@@ -659,7 +756,7 @@ class ExpenditureSerializer(serializers.ModelSerializer):
     total_funded = serializers.SerializerMethodField(read_only=True)
     funding_allocations_input = serializers.ListField(
         child=serializers.DictField(), write_only=True, required=False
-    )
+        )
     cost_allocations_input = serializers.ListField(
         child=serializers.DictField(), write_only=True, required=False
     )

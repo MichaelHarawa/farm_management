@@ -24,6 +24,7 @@ from ..models import (
     PeriodStatus,
 )
 from .profitability import available_funding_source_cash
+from .ledger import post_journal
 
 
 ZERO = Decimal("0.00")
@@ -168,6 +169,28 @@ def sync_linked_payroll_status(expenditure: Expenditure) -> None:
     sync_entry_status(payroll_entry)
 
 
+def sync_linked_labour_status(expenditure: Expenditure) -> None:
+    """Keep the operational labour subledger aligned with actual cash events."""
+
+    try:
+        labour = expenditure.labour_source
+    except Expenditure.labour_source.RelatedObjectDoesNotExist:
+        return
+    paid = funded_total(expenditure)
+    if paid >= money(expenditure.amount):
+        labour.workflow_status = "paid"
+        labour.payment_status = "paid"
+    elif paid > ZERO:
+        labour.workflow_status = "partially_paid"
+        labour.payment_status = "partial"
+    else:
+        labour.workflow_status = "posted"
+        labour.payment_status = "unpaid"
+    latest_payment = expenditure.funding_allocations.order_by("-allocation_date", "-pk").first()
+    labour.payment_date = latest_payment.allocation_date if latest_payment else None
+    labour.save(update_fields=["workflow_status", "payment_status", "payment_date", "updated_at"])
+
+
 def _create_cost_allocations(expenditure, rows, *, user, period=None):
     normalized = validate_cost_allocations(expenditure, rows)
     period = period or expenditure.accounting_period or accounting_period_for(
@@ -255,6 +278,7 @@ def post_expenditure(
     expenditure.save(update_fields=["status", "posted_by", "posted_at", "updated_at"])
     sync_payment_status(expenditure)
     sync_linked_payroll_status(expenditure)
+    sync_linked_labour_status(expenditure)
     return expenditure
 
 
@@ -380,8 +404,34 @@ def record_expenditure_payment(
         payment_group_key=payment_group_key,
         allocation_date=payment_date or timezone.localdate(),
     )
+    new_allocations = expenditure.funding_allocations.filter(
+        payment_group_key=payment_group_key
+    ).select_related("funding_source")
+    payable_account = "2100" if hasattr(expenditure, "payroll_entry") else "2000"
+    for funding in new_allocations:
+        post_journal(
+            posting_date=funding.allocation_date,
+            description=f"Payment of {expenditure.expenditure_reference}",
+            source_model="finance.FundingAllocation",
+            source_identifier=str(funding.pk),
+            idempotency_key=f"expenditure-payment:{funding.pk}",
+            user=user,
+            lines=[
+                {
+                    "account": payable_account,
+                    "debit": funding.amount,
+                    "funding_source_id": funding.funding_source_id,
+                },
+                {
+                    "account": "1000",
+                    "credit": funding.amount,
+                    "funding_source_id": funding.funding_source_id,
+                },
+            ],
+        )
     sync_payment_status(expenditure)
     sync_linked_payroll_status(expenditure)
+    sync_linked_labour_status(expenditure)
     return expenditure
 
 

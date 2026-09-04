@@ -31,14 +31,23 @@ export default async function FinanceDashboardPage() {
       <div className="grid gap-4 md:grid-cols-4">
         <MetricCard label="Active batches" value={dashboard.active_batches.toString()} />
         <MetricCard
-          label="Active cost exposure"
-          value={formatCurrency(dashboard.active_batch_cost_exposure)}
+          label="Current cash"
+          value={formatCurrency(dashboard.current_cash)}
         />
         <MetricCard
-          label="Closed-batch profit"
-          value={formatCurrency(dashboard.closed_batch_profit)}
+          label="MTD net result"
+          value={formatCurrency(dashboard.mtd_net_result)}
         />
-        <MetricCard label="Receivables" value={formatCurrency(dashboard.receivables)} />
+        <MetricCard label="Overdue receivables" value={formatCurrency(dashboard.overdue_receivables)} />
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-6">
+        <MetricCard label="Supplier payables" value={formatCurrency(dashboard.supplier_payables)} />
+        <MetricCard label="Payroll liabilities" value={formatCurrency(dashboard.payroll_liabilities)} />
+        <MetricCard label="Inventory" value={formatCurrency(dashboard.inventory_value)} detail={`${dashboard.low_stock_count} low-stock alerts`} />
+        <MetricCard label="Fixed assets" value={formatCurrency(dashboard.fixed_asset_carrying_amount)} />
+        <MetricCard label="Poultry WIP" value={formatCurrency(dashboard.poultry_wip_management_cost)} />
+        <MetricCard label="Forecast batch result" value={formatCurrency(dashboard.active_batch_forecast_profit)} detail={`${dashboard.expiring_stock_count} lots expiring soon`} />
       </div>
 
       <Panel title="Poultry Batch Analysis">

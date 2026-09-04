@@ -508,7 +508,6 @@ export function LabourPaymentForm({
         cost_scope: costScope,
         batch: batchValue ? Number(batchValue) : null,
         accounting_period: Number(formData.get("accounting_period")),
-        payment_status: formData.get("payment_status"),
       });
       setState(initialState);
       router.refresh();
@@ -546,17 +545,7 @@ export function LabourPaymentForm({
         <BatchSelect batches={batches} allowShared />
       ) : null}
       <PeriodSelect periods={periods} />
-      <SelectInput
-        label="Payment status"
-        name="payment_status"
-        options={[
-          ["unpaid", "Unpaid"],
-          ["paid", "Paid"],
-          ["partial", "Partial"],
-          ["pending", "Pending"],
-        ]}
-      />
-      <FormFooter state={state} label="Record labour" />
+      <FormFooter state={state} label="Save labour draft" />
     </form>
   );
 }

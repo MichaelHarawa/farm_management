@@ -18,8 +18,12 @@ export const financeApiPaths = {
   expenses: `${FINANCE_ROOT}/expenses`,
   consumableLots: `${FINANCE_ROOT}/consumable-lots`,
   consumableUsages: `${FINANCE_ROOT}/consumable-usages`,
+  stockMovements: `${FINANCE_ROOT}/stock-movements`,
   assetCategories: `${FINANCE_ROOT}/asset-categories`,
   assets: `${FINANCE_ROOT}/assets`,
+  asset: (id: string) => `${FINANCE_ROOT}/assets/${id}`,
+  assetHistory: (id: string) => `${FINANCE_ROOT}/assets/${id}/history`,
+  assetDepreciationSchedule: (id: string) => `${FINANCE_ROOT}/assets/${id}/depreciation-schedule`,
   assetDepreciation: `${FINANCE_ROOT}/asset-depreciation`,
   generateDepreciation: (id: number) =>
     `${FINANCE_ROOT}/accounting-periods/${id}/generate-depreciation`,

@@ -45,7 +45,7 @@ export default async function FinanceEmployeesPage() {
                   <tr key={employee.id} className="border-b border-[var(--line)]">
                     <td className="py-4 pr-4">
                       <p className="font-extrabold text-[var(--navy)]">
-                        {employee.user.full_name}
+                        {employee.display_name}
                       </p>
                       <p className="text-xs text-[var(--navy-muted)]">
                         {employee.employee_number}

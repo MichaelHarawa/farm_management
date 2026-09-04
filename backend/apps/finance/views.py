@@ -4,7 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import F, Q, Sum
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import mixins, status, viewsets
@@ -30,6 +30,7 @@ from .models import (
     BatchProfitabilitySnapshot,
     BirdDaySnapshot,
     ConsumableUsage,
+    ConsumableItem,
     CostAllocation,
     EmployeeBatchWorkLog,
     EmployeeProfile,
@@ -49,6 +50,9 @@ from .models import (
     ReplacementReserveTransaction,
     SharedExpense,
     SharedConsumableLot,
+    StockMovement,
+    InventoryLocation,
+    AssetLifecycleEvent,
 )
 from .permissions import FinancePermission
 from .serializers import (
@@ -63,6 +67,7 @@ from .serializers import (
     AssetUsageRecordSerializer,
     BirdDaySnapshotSerializer,
     ConsumableUsageSerializer,
+    ConsumableItemSerializer,
     CostAllocationSerializer,
     EmployeeBatchWorkLogSerializer,
     EmployeeProfileSerializer,
@@ -75,10 +80,14 @@ from .serializers import (
     FundingReceiptSerializer,
     RecordSalePaymentSerializer,
     SalePaymentSerializer,
+    StockMovementSerializer,
+    InventoryLocationSerializer,
+    AssetLifecycleEventSerializer,
 )
 from .services.allocations import regenerate_allocations_for_period
-from .services.assets import dispose_asset, impair_asset, link_capital_expense_to_asset
-from .services.consumables import record_consumable_usage
+from .services.assets import dispose_asset, impair_asset, link_capital_expense_to_asset, transfer_asset
+from .services.consumables import record_consumable_receipt, record_consumable_usage
+from .services.labour import approve_labour, pay_labour, post_labour, reverse_labour
 from .services.depreciation import (
     asset_recovery_summary,
     generate_depreciation_for_period,
@@ -97,6 +106,7 @@ from .services.profitability import (
     create_final_snapshot,
 )
 from .services.reporting import (
+    create_period_report_snapshot,
     dashboard_indicators,
     monthly_profitability_report,
     receivables_report,
@@ -148,8 +158,9 @@ class EmployeeProfileViewSet(
     def activate(self, request, pk=None):
         employee = self.get_object()
         employee.is_active = True
-        employee.user.is_active = True
-        employee.user.save(update_fields=["is_active", "updated_at"])
+        if employee.user_id:
+            employee.user.is_active = True
+            employee.user.save(update_fields=["is_active", "updated_at"])
         employee.save(update_fields=["is_active", "updated_at"])
         return Response(self.get_serializer(employee).data)
 
@@ -157,8 +168,9 @@ class EmployeeProfileViewSet(
     def deactivate(self, request, pk=None):
         employee = self.get_object()
         employee.is_active = False
-        employee.user.is_active = False
-        employee.user.save(update_fields=["is_active", "updated_at"])
+        if employee.user_id:
+            employee.user.is_active = False
+            employee.user.save(update_fields=["is_active", "updated_at"])
         employee.save(update_fields=["is_active", "updated_at"])
         return Response(self.get_serializer(employee).data)
 
@@ -261,6 +273,7 @@ class AccountingPeriodViewSet(viewsets.ModelViewSet):
                 accounting_period=period,
                 generated_by=request.user,
             )
+        create_period_report_snapshot(period, generated_by=request.user)
         return Response(self.get_serializer(period).data)
 
     @action(detail=True, methods=["post"], url_path="reopen")
@@ -419,6 +432,34 @@ class AdHocLabourPaymentViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
 
+    @action(detail=True, methods=["post"])
+    def approve(self, request, pk=None):
+        return Response(self.get_serializer(approve_labour(labour_id=self.get_object().pk, user=request.user)).data)
+
+    @action(detail=True, methods=["post"])
+    def post(self, request, pk=None):
+        return Response(self.get_serializer(post_labour(labour_id=self.get_object().pk, user=request.user)).data)
+
+    @action(detail=True, methods=["post"])
+    def pay(self, request, pk=None):
+        labour = pay_labour(
+            labour_id=self.get_object().pk,
+            funding_rows=request.data.get("funding_allocations", []),
+            payment_group_key=str(request.data.get("idempotency_key", "")),
+            payment_date=request.data.get("payment_date"),
+            user=request.user,
+        )
+        return Response(self.get_serializer(labour).data)
+
+    @action(detail=True, methods=["post"])
+    def reverse(self, request, pk=None):
+        labour = reverse_labour(
+            labour_id=self.get_object().pk,
+            reason=str(request.data.get("reason", "")),
+            user=request.user,
+        )
+        return Response(self.get_serializer(labour).data)
+
 
 class SharedExpenseViewSet(viewsets.ModelViewSet):
     serializer_class = SharedExpenseSerializer
@@ -447,7 +488,31 @@ class SharedConsumableLotViewSet(viewsets.ModelViewSet):
     )
 
     def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user)
+        try:
+            serializer.instance = record_consumable_receipt(
+                created_by=self.request.user, **serializer.validated_data
+            )
+        except (ValueError, ValidationError) as error:
+            raise ValidationError({"detail": str(error)}) from error
+
+
+class ConsumableItemViewSet(viewsets.ModelViewSet):
+    serializer_class = ConsumableItemSerializer
+    permission_classes = (FinancePermission,)
+    queryset = ConsumableItem.objects.all()
+
+
+class InventoryLocationViewSet(viewsets.ModelViewSet):
+    serializer_class = InventoryLocationSerializer
+    permission_classes = (FinancePermission,)
+    queryset = InventoryLocation.objects.all()
+
+
+class StockMovementViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
+    serializer_class = StockMovementSerializer
+    permission_classes = (FinancePermission,)
+    queryset = StockMovement.objects.select_related("item", "lot", "usage", "batch", "from_location", "to_location")
+    filterset_fields = ("movement_type", "item", "batch")
 
 
 class ConsumableUsageViewSet(
@@ -502,7 +567,14 @@ class AssetViewSet(viewsets.ModelViewSet):
     queryset = Asset.objects.select_related("asset_category", "created_by")
 
     def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user)
+        asset = serializer.save(created_by=self.request.user)
+        AssetLifecycleEvent.objects.create(
+            asset=asset,
+            event_type="acquisition",
+            event_date=asset.purchase_date,
+            details={"capitalized_cost": str(asset.total_capitalized_cost)},
+            created_by=self.request.user,
+        )
 
     @action(detail=False, methods=["post"], url_path="from-expense")
     def from_expense(self, request):
@@ -599,9 +671,17 @@ class AssetViewSet(viewsets.ModelViewSet):
     def impair(self, request, pk=None):
         asset = self.get_object()
         try:
+            event_date = request.data.get("event_date")
+            parsed_event_date = (
+                datetime.strptime(event_date, "%Y-%m-%d").date()
+                if event_date else timezone.localdate()
+            )
             updated = impair_asset(
                 asset=asset,
                 amount=Decimal(str(request.data.get("amount", "0.00"))),
+                event_date=parsed_event_date,
+                reason=str(request.data.get("reason", "")),
+                user=request.user,
             )
         except ValueError as error:
             return Response({"detail": str(error)}, status=status.HTTP_400_BAD_REQUEST)
@@ -622,10 +702,32 @@ class AssetViewSet(viewsets.ModelViewSet):
                 asset=asset,
                 disposal_date=parsed_date,
                 proceeds=Decimal(str(request.data.get("proceeds", "0.00"))),
+                reason=str(request.data.get("reason", "")),
+                user=request.user,
             )
         except (ValueError, TypeError) as error:
             return Response({"detail": str(error)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(self.get_serializer(updated).data)
+
+    @action(detail=True, methods=["post"])
+    def transfer(self, request, pk=None):
+        event_date = request.data.get("event_date")
+        if not event_date or not request.data.get("reason"):
+            raise ValidationError({"detail": "event_date and reason are required."})
+        updated = transfer_asset(
+            asset=self.get_object(),
+            event_date=datetime.strptime(event_date, "%Y-%m-%d").date(),
+            location=str(request.data.get("location", "")),
+            custodian=str(request.data.get("custodian", "")),
+            reason=str(request.data.get("reason")),
+            user=request.user,
+        )
+        return Response(self.get_serializer(updated).data)
+
+    @action(detail=True, methods=["get"], url_path="history")
+    def history(self, request, pk=None):
+        rows = self.get_object().lifecycle_events.select_related("created_by")
+        return Response(AssetLifecycleEventSerializer(rows, many=True).data)
 
     @action(detail=True, methods=["get"], url_path="depreciation-schedule")
     def depreciation_schedule(self, request, pk=None):
@@ -890,6 +992,12 @@ class ExpenditurePagination(PageNumberPagination):
     max_page_size = 100
 
 
+class FinanceRegisterPagination(PageNumberPagination):
+    page_size = 20
+    page_size_query_param = "page_size"
+    max_page_size = 100
+
+
 class ExpenditureViewSet(viewsets.ModelViewSet):
     """
     CRUD + Post action for expenditures.
@@ -1089,7 +1197,81 @@ class BatchRevenueUtilizationView(APIView):
     def get(self, request, batch_id: int):
         batch = get_object_or_404(Batch, pk=batch_id)
         data = batch_revenue_utilization(batch)
+        transactions = data.get("transactions", [])
+        try:
+            page_number = max(int(request.query_params.get("page", 1)), 1)
+            page_size = min(max(int(request.query_params.get("page_size", 20)), 1), 100)
+        except (TypeError, ValueError):
+            raise ValidationError({"page": "Page and page_size must be positive integers."})
+        transaction_count = len(transactions)
+        page_count = max((transaction_count + page_size - 1) // page_size, 1)
+        page_number = min(page_number, page_count)
+        start = (page_number - 1) * page_size
+        data["transactions"] = transactions[start:start + page_size]
+        data["transaction_page"] = {
+            "count": transaction_count,
+            "page": page_number,
+            "page_size": page_size,
+            "pages": page_count,
+            "next": page_number + 1 if page_number < page_count else None,
+            "previous": page_number - 1 if page_number > 1 else None,
+        }
         return Response(json_safe(data))
+
+
+class BatchRevenueUtilizationListView(APIView):
+    """One paginated request for batch cash-utilization summaries."""
+    permission_classes = (FinancePermission,)
+
+    def get(self, request):
+        ordering = request.query_params.get("ordering", "-entry_date")
+        allowed_ordering = {"entry_date", "-entry_date", "batch_id", "-batch_id"}
+        if ordering not in allowed_ordering:
+            ordering = "-entry_date"
+        queryset = Batch.objects.all().order_by(ordering, "-pk")
+        search = request.query_params.get("search", "").strip()
+        if search:
+            queryset = queryset.filter(batch_id__icontains=search)
+        paginator = FinanceRegisterPagination()
+        page = paginator.paginate_queryset(queryset, request, view=self)
+        batch_ids = [batch.pk for batch in page]
+        posted_receipts = {
+            row["sale__batch_id"]: Decimal(row["total"] or 0)
+            for row in SalePayment.objects.filter(
+                sale__batch_id__in=batch_ids, status="posted"
+            ).values("sale__batch_id").annotate(total=Sum("amount"))
+        }
+        reversed_receipts = {
+            row["sale__batch_id"]: Decimal(row["total"] or 0)
+            for row in SalePayment.objects.filter(
+                sale__batch_id__in=batch_ids, status="reversed"
+            ).values("sale__batch_id").annotate(total=Sum("amount"))
+        }
+        spent = {
+            row["funding_source__batch_id"]: Decimal(row["total"] or 0)
+            for row in FundingAllocation.objects.filter(
+                funding_source__batch_id__in=batch_ids,
+                funding_source__source_type=FundingSourceType.BATCH_COLLECTION,
+                expenditure__status=ExpenditureStatus.POSTED,
+            ).values("funding_source__batch_id").annotate(total=Sum("amount"))
+        }
+        results = []
+        for batch in page:
+            collected = posted_receipts.get(batch.pk, Decimal("0.00"))
+            refunds = reversed_receipts.get(batch.pk, Decimal("0.00"))
+            used = spent.get(batch.pk, Decimal("0.00"))
+            results.append({
+                "batch_id": batch.pk,
+                "batch_code": batch.batch_id,
+                "cash_collected": collected,
+                "gross_collections": collected + refunds,
+                "refunds": refunds,
+                "cash_used": used,
+                "available_cash": collected - used,
+                "utilization_percent": (used * Decimal("100") / collected).quantize(Decimal("0.01")) if collected else None,
+                "beneficiary_modules": [],
+            })
+        return paginator.get_paginated_response(json_safe(results))
 
 
 class CrossBatchFinancingReportView(APIView):
@@ -1097,29 +1279,43 @@ class CrossBatchFinancingReportView(APIView):
     permission_classes = (FinancePermission,)
 
     def get(self, request):
-        posted_fundings = FundingAllocation.objects.filter(
+        flows_queryset = FundingAllocation.objects.filter(
             expenditure__status=ExpenditureStatus.POSTED,
             funding_source__source_type=FundingSourceType.BATCH_COLLECTION,
-        ).select_related("funding_source__batch", "expenditure")
-
-        flows = []
-        for fa in posted_fundings:
-            src_batch = fa.funding_source.batch
-            if not src_batch:
-                continue
-            # find cost allocations linked to the expenditure
-            cas = CostAllocation.objects.filter(expenditure=fa.expenditure).select_related("batch")
-            for ca in cas:
-                if ca.batch_id and ca.batch_id != src_batch.pk:
-                    flows.append({
-                        "funding_batch_id": src_batch.pk,
-                        "funding_batch_code": src_batch.batch_id,
-                        "expenditure_id": fa.expenditure_id,
-                        "expenditure_desc": fa.expenditure.description,
-                        "amount_funded": str(fa.amount),
-                        "allocated_to_batch_id": ca.batch_id,
-                        "allocated_amount": str(ca.allocated_amount),
-                        "date": str(fa.allocation_date),
-                    })
-
-        return Response({"flows": flows[:100]})
+            expenditure__cost_allocations__batch__isnull=False,
+        ).exclude(
+            funding_source__batch_id=F("expenditure__cost_allocations__batch_id")
+        ).values(
+            "funding_source__batch_id",
+            "funding_source__batch__batch_id",
+            "expenditure_id",
+            "expenditure__description",
+            "amount",
+            "expenditure__cost_allocations__batch_id",
+            "expenditure__cost_allocations__allocated_amount",
+            "allocation_date",
+        )
+        batch_id = request.query_params.get("batch")
+        if batch_id:
+            flows_queryset = flows_queryset.filter(
+                Q(funding_source__batch_id=batch_id)
+                | Q(expenditure__cost_allocations__batch_id=batch_id)
+            )
+        ordering = request.query_params.get("ordering", "-allocation_date")
+        allowed_ordering = {"allocation_date", "-allocation_date", "amount", "-amount"}
+        if ordering not in allowed_ordering:
+            ordering = "-allocation_date"
+        flows_queryset = flows_queryset.order_by(ordering, "-pk")
+        paginator = FinanceRegisterPagination()
+        page = paginator.paginate_queryset(flows_queryset, request, view=self)
+        flows = [{
+            "funding_batch_id": row["funding_source__batch_id"],
+            "funding_batch_code": row["funding_source__batch__batch_id"],
+            "expenditure_id": row["expenditure_id"],
+            "expenditure_desc": row["expenditure__description"],
+            "amount_funded": str(row["amount"]),
+            "allocated_to_batch_id": row["expenditure__cost_allocations__batch_id"],
+            "allocated_amount": str(row["expenditure__cost_allocations__allocated_amount"]),
+            "date": str(row["allocation_date"]),
+        } for row in page]
+        return paginator.get_paginated_response(flows)

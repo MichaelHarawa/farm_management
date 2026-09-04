@@ -30,11 +30,11 @@ export function EmployeeTable({ rows }: { rows: EmployeeProfile[] }) {
         {
           key: "employee",
           header: "Employee",
-          sortValue: (employee) => employee.user.full_name,
+          sortValue: (employee) => employee.display_name,
           cell: (employee) => (
             <div>
               <p className="font-extrabold text-[var(--navy)]">
-                {employee.user.full_name}
+                {employee.display_name}
               </p>
               <p className="text-xs text-[var(--navy-muted)]">
                 {employee.employee_number}

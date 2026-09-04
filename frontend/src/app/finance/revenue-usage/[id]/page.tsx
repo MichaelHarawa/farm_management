@@ -13,12 +13,13 @@ export default function BatchRevenueUsageDetailPage() {
   const params = useParams<{ id: string }>();
   const [report, setReport] = useState<BatchRevenueUtilization | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
-    clientApiFetch<BatchRevenueUtilization>(`/api/finance/reports/batches/${params.id}/revenue-utilization`)
+    clientApiFetch<BatchRevenueUtilization>(`/api/finance/reports/batches/${params.id}/revenue-utilization?page=${page}&page_size=20`)
       .then(setReport)
       .catch((requestError: unknown) => setError(getApiErrorMessage(requestError)));
-  }, [params.id]);
+  }, [params.id, page]);
 
   if (!report) return <main className="p-8">{error || "Loading revenue usage…"}</main>;
 
@@ -30,5 +31,13 @@ export default function BatchRevenueUsageDetailPage() {
       {report.transactions.map((transaction) => <tr key={transaction.allocation_id} className="border-t"><td className="p-3"><Link href={`/finance/expenditures/${transaction.expenditure_id}`} className="font-bold underline">{transaction.expenditure_reference}</Link></td><td className="p-3">{formatDate(transaction.date)}</td><td className="p-3">{transaction.description}</td><td className="p-3">{transaction.category}</td><td className="p-3">{formatLabel(transaction.accounting_nature)}</td><td className="p-3 text-right">{formatCurrency(transaction.total_expenditure)}</td><td className="p-3 text-right font-bold">{formatCurrency(transaction.amount)}</td><td className="p-3">{transaction.beneficiary}</td><td className="p-3">{formatLabel(transaction.status)}</td><td className="p-3 text-right font-bold">{formatCurrency(transaction.remaining_cash_after)}</td></tr>)}
       {!report.transactions.length ? <tr><td colSpan={10} className="p-8 text-center text-[var(--navy-muted)]">No posted expenditures have used this batch&apos;s cash.</td></tr> : null}
     </tbody></table></section>
+    {report.transaction_page && report.transaction_page.pages > 1 ? <nav aria-label="Transaction pagination" className="mt-5 flex flex-wrap gap-2">
+      <button disabled={page === 1} onClick={() => setPage(1)} className="rounded border px-3 py-2 disabled:opacity-40">First</button>
+      <button disabled={page === 1} onClick={() => setPage(page - 1)} className="rounded border px-3 py-2 disabled:opacity-40">Previous</button>
+      {Array.from({length: report.transaction_page.pages}, (_, index) => index + 1).slice(Math.max(page - 3, 0), Math.max(page - 3, 0) + 5).map((number) => <button key={number} onClick={() => setPage(number)} aria-current={number === page ? "page" : undefined} className={`rounded border px-3 py-2 ${number === page ? "bg-[var(--navy)] text-white" : ""}`}>{number}</button>)}
+      <button disabled={page === report.transaction_page.pages} onClick={() => setPage(page + 1)} className="rounded border px-3 py-2 disabled:opacity-40">Next</button>
+      <button disabled={page === report.transaction_page.pages} onClick={() => setPage(report.transaction_page!.pages)} className="rounded border px-3 py-2 disabled:opacity-40">Last</button>
+      <span className="self-center text-sm text-[var(--navy-muted)]">{report.transaction_page.count} transactions</span>
+    </nav> : null}
   </main>;
 }

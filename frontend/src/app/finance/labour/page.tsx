@@ -11,6 +11,7 @@ import {
   Panel,
 } from "@/features/finance/components/FinanceUI";
 import { formatCurrency, formatDate, formatLabel } from "@/features/finance/utils/formatters";
+import { LabourWorkflowActions } from "@/features/finance/components/LabourWorkflowActions";
 
 export default async function FinanceLabourPage() {
   const [periods, labour, batches] = await Promise.all([
@@ -51,7 +52,8 @@ export default async function FinanceLabourPage() {
                   <th className="py-3 pr-4">Date</th>
                   <th className="py-3 pr-4">Scope</th>
                   <th className="py-3 pr-4">Batch</th>
-                  <th className="py-3 pr-4">Amount</th>
+                  <th className="py-3 pr-4">Amount / status</th>
+                  <th className="py-3 pr-4">Workflow</th>
                 </tr>
               </thead>
               <tbody>
@@ -64,7 +66,8 @@ export default async function FinanceLabourPage() {
                     <td className="py-4 pr-4">
                       {item.batch ? batchLabels.get(item.batch) ?? `Batch ${item.batch}` : "Shared"}
                     </td>
-                    <td className="py-4 pr-4">{formatCurrency(item.payment_amount)}</td>
+                    <td className="py-4 pr-4">{formatCurrency(item.payment_amount)}<div className="text-xs">{formatLabel(item.workflow_status)}</div></td>
+                    <td className="py-4 pr-4"><LabourWorkflowActions labour={item} /></td>
                   </tr>
                 ))}
               </tbody>
