@@ -290,10 +290,24 @@ export type BatchProfitabilityReport = {
   management_cost_breakdown: BatchManagementCostLine[];
   actual_result_basis: "actual_to_date" | "final_actual";
   result_interpretation: string;
-  forecast_revenue_at_completion: DecimalString;
-  forecast_cost_at_completion: DecimalString;
-  forecast_final_profit: DecimalString;
+  forecast_revenue_at_completion: DecimalString | null;
+  forecast_cost_at_completion: DecimalString | null;
+  forecast_final_profit: DecimalString | null;
   forecast_basis: string;
+  forecast_available: boolean;
+  forecast_missing_inputs: string[];
+  forecast_actual_revenue: DecimalString;
+  forecast_estimated_future_revenue: DecimalString | null;
+  forecast_costs_incurred: DecimalString;
+  forecast_estimated_remaining_cost: DecimalString | null;
+  forecast_expected_birds_sold: number | null;
+  forecast_assumptions: {
+    selling_price: DecimalString | null;
+    remaining_bird_mortality_percent: DecimalString | null;
+    remaining_feed_cost: DecimalString | null;
+    remaining_other_and_shared_cost: DecimalString | null;
+    estimated_at: string;
+  };
   allocation_trace: Array<{
     source_period: number;
     period_start: string;
@@ -352,6 +366,8 @@ export type BatchPortfolioSummary = {
   forecast_revenue_at_completion: DecimalString;
   forecast_cost_at_completion: DecimalString;
   forecast_final_profit: DecimalString;
+  forecast_available_batch_count: number;
+  forecast_unavailable_batch_count: number;
   fully_loaded_batch_profit: DecimalString;
   fully_loaded_margin_percent: DecimalString | null;
   birds_placed: number;
@@ -467,6 +483,7 @@ export type MonthlyReport = {
 };
 
 export type FinanceDashboard = {
+  generated_at: string;
   active_batches: number;
   active_batch_cost_exposure: DecimalString;
   closed_batch_profit: DecimalString;
@@ -477,17 +494,77 @@ export type FinanceDashboard = {
   overdue_receivables: DecimalString;
   supplier_payables: DecimalString;
   payroll_liabilities: DecimalString;
+  immediate_liabilities: DecimalString;
+  liquidity_gap: DecimalString;
+  cash_coverage_percent: DecimalString | null;
+  collection_rate_percent: DecimalString | null;
+  overdue_receivables_percent: DecimalString | null;
   inventory_value: DecimalString;
   fixed_asset_carrying_amount: DecimalString;
   poultry_wip_management_cost: DecimalString;
-  active_batch_forecast_profit: DecimalString;
+  active_batch_forecast_profit: DecimalString | null;
   active_batch_forecast_margin_percent: DecimalString | null;
+  forecast_loss_batch_count: number;
+  total_assets: DecimalString;
+  total_liabilities: DecimalString;
+  net_assets: DecimalString;
   low_stock_count: number;
   expiring_stock_count: number;
   period_status: "open" | "closed" | null;
   close_readiness: MonthlyReport["close_readiness"] | Record<string, never>;
   latest_month: MonthlyReport | null;
   warnings: FinanceWarning[];
+  overview: null | {
+    period_id: number;
+    period_start: string;
+    period_end: string;
+    period_status: "open" | "closed";
+    as_of_date: string;
+    total_sales: DecimalString;
+    cost_of_sales: DecimalString;
+    gross_profit: DecimalString;
+    operating_expenses: DecimalString;
+    operating_profit: DecimalString;
+    operating_expense_basis: string;
+    cash_available: DecimalString;
+    cash_basis: string;
+    customers_owe: DecimalString;
+    customers_overdue: DecimalString;
+    supplier_payables: DecimalString;
+    payroll_payables: DecimalString;
+    unpaid_bills_and_wages: DecimalString;
+    cash_needed_for_payments_due: DecimalString;
+    payment_due_range_start: string;
+    payment_due_range_end: string;
+    unfinished_batch_costs: DecimalString;
+    unfinished_batch_cost_basis: string;
+    cash_reconciliation: {
+      opening_cash: DecimalString;
+      operating_inflows: DecimalString;
+      financing_inflows: DecimalString;
+      investing_inflows: DecimalString;
+      cash_paid: DecimalString;
+      net_cash_movement: DecimalString;
+      closing_cash: DecimalString;
+      reconciles: boolean;
+    };
+  };
+  available_periods: Array<{
+    id: number;
+    period_start: string;
+    period_end: string;
+    status: "open" | "closed";
+  }>;
+  forecast: {
+    estimated_at: string;
+    available_batch_count: number;
+    unavailable_batch_count: number;
+    selected_batch_count: number;
+    expected_final_profit: DecimalString | null;
+    expected_final_revenue: DecimalString | null;
+    rows: BatchProfitabilityReport[];
+    basis: string;
+  };
 };
 
 export type ReceivableSale = {

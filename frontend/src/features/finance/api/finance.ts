@@ -31,8 +31,8 @@ function normalizeList<T>(data: T[] | PaginatedResponse<T>): T[] {
   return Array.isArray(data) ? data : data.results;
 }
 
-export async function getFinanceDashboard(returnTo: string): Promise<FinanceDashboard> {
-  return authenticatedBackendFetch<FinanceDashboard>(financeApiPaths.dashboard, {
+export async function getFinanceDashboard(returnTo: string, query = ""): Promise<FinanceDashboard> {
+  return authenticatedBackendFetch<FinanceDashboard>(financeApiPaths.dashboard + query, {
     returnTo,
     cache: "no-store",
   });

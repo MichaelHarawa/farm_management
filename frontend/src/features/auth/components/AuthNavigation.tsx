@@ -135,7 +135,7 @@ export function AuthNavigation({
       document.removeEventListener("visibilitychange", revalidateVisibleTab);
       window.clearInterval(sessionInterval);
     };
-  }, [initialUser]);
+  }, [initialUser, pathname]);
 
   useEffect(() => {
     if (typeof BroadcastChannel === "undefined") {

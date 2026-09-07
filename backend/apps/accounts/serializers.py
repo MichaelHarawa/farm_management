@@ -10,6 +10,18 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from .models import AccountAuditEvent, Role, RoleChoices, User
 
 
+def resolve_roles(role_slugs: list[str]) -> list[Role]:
+    """Return every requested system role, creating missing seed rows safely."""
+    role_labels = {choice.value: choice.label for choice in RoleChoices}
+    return [
+        Role.objects.get_or_create(
+            slug=slug,
+            defaults={"name": role_labels[slug], "is_system": True},
+        )[0]
+        for slug in dict.fromkeys(role_slugs)
+    ]
+
+
 class RoleSummarySerializer(
     serializers.ModelSerializer
 ):
@@ -86,9 +98,9 @@ class SystemUserSerializer(serializers.ModelSerializer):
         if not password:
             raise serializers.ValidationError({"password": "A temporary password is required."})
         user = User.objects.create_user(password=password, **validated_data)
-        user.roles.set(Role.objects.filter(slug__in=role_slugs))
+        user.roles.set(resolve_roles(role_slugs))
         self._link_employee(user, employee_id)
-        return user
+        return self._with_current_roles(user)
 
     def update(self, instance, validated_data):
         validated_data.pop("password", None)
@@ -98,9 +110,15 @@ class SystemUserSerializer(serializers.ModelSerializer):
             setattr(instance, field, value)
         instance.save()
         if role_slugs is not None:
-            instance.roles.set(Role.objects.filter(slug__in=role_slugs))
+            instance.roles.set(resolve_roles(role_slugs))
         self._link_employee(instance, employee_id)
-        return instance
+        return self._with_current_roles(instance)
+
+    @staticmethod
+    def _with_current_roles(user):
+        # The view loads users with prefetched roles. Return a newly loaded
+        # instance so PATCH responses can never serialize an old role cache.
+        return User.objects.prefetch_related("roles").get(pk=user.pk)
 
     def _link_employee(self, user, employee_id):
         if employee_id is None:

@@ -10,6 +10,7 @@ from rest_framework.response import Response
 from django.utils import timezone
 
 from apps.finance.models import AccountingPeriod, PeriodStatus
+from apps.finance.permissions import FinancePermission
 from apps.finance.services.expenditures import (
     batch_cost_records,
     create_batch_cost_transaction,
@@ -32,6 +33,7 @@ from apps.poultry.services.growth import (
     get_broiler_strain_for_batch,
     latest_growth_status,
 )
+from apps.poultry.services.dashboard import poultry_dashboard
 
 from .models import(
     Batch,
@@ -47,6 +49,7 @@ from .models import(
 
 from .serializers import(
     BatchDeliverySerializer,
+    BatchForecastAssumptionSerializer,
     BatchSerializer,
     BatchStatusTransitionSerializer,
     BatchWeightSampleSerializer,
@@ -63,6 +66,10 @@ class BatchViewset(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retrie
     queryset = Batch.objects.select_related("created_by")
     permission_classes = (IsAuthenticated,)
 
+    @action(detail=False, methods=["get"], url_path="dashboard")
+    def dashboard(self, request):
+        return Response(poultry_dashboard(request.query_params))
+
     def perform_create(self, serializer):
         batch = serializer.save(created_by=self.request.user)
         recalculate_batch_status(batch)
@@ -76,6 +83,8 @@ class BatchViewset(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retrie
     def get_serializer_class(self):
         if self.action == "confirm_delivery":
             return BatchDeliverySerializer
+        elif self.action == "forecast_assumptions":
+            return BatchForecastAssumptionSerializer
         elif self.action == "mark_delivered":
             return BatchStatusTransitionSerializer
         elif self.action in {"input_costs", "feed_input_costs"}:
@@ -93,6 +102,19 @@ class BatchViewset(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retrie
         elif self.action == "weight_samples":
             return BatchWeightSampleSerializer
         return BatchSerializer
+
+    @action(
+        detail=True,
+        methods=["patch"],
+        url_path="forecast-assumptions",
+        permission_classes=[FinancePermission],
+    )
+    def forecast_assumptions(self, request, pk=None):
+        batch = self.get_object()
+        serializer = self.get_serializer(batch, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
 
     @action(detail=True, methods=["post"], url_path="mark-delivered")
     def mark_delivered(self, request, pk=None):

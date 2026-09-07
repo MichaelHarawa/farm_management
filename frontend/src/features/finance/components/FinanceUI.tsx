@@ -89,13 +89,21 @@ export function MetricCard({
   label,
   value,
   detail,
+  tone = "default",
 }: {
   label: string;
   value: string;
   detail?: string;
+  tone?: "default" | "positive" | "warning" | "danger";
 }) {
+  const toneClass = {
+    default: "border-[var(--line)] bg-[var(--surface-cream)]",
+    positive: "border-[#94b89d] bg-[#edf6ef]",
+    warning: "border-[var(--gold)] bg-[var(--gold-soft)]",
+    danger: "border-[var(--danger)]/45 bg-red-50",
+  }[tone];
   return (
-    <div className="min-w-0 rounded-lg border border-[var(--line)] bg-[var(--surface-cream)] p-5 shadow-[var(--shadow-card)]">
+    <div className={`min-w-0 rounded-lg border p-5 shadow-[var(--shadow-card)] ${toneClass}`}>
       <p className="text-label text-[var(--navy-muted)]">{label}</p>
       <p className="font-display mt-3 max-w-full overflow-hidden break-words text-2xl font-bold leading-tight text-[var(--navy)] sm:text-3xl">
         {value}

@@ -1293,10 +1293,12 @@ def dashboard_warnings(period: AccountingPeriod | None = None) -> list[dict[str,
     return [finance_warning(**warning) for warning in warnings]
 
 
-def dashboard_indicators() -> dict:
-    latest_period = AccountingPeriod.objects.order_by("-period_start").first()
+def dashboard_indicators(filters=None) -> dict:
+    filters = filters or {}
+    requested_period = filters.get("period") if hasattr(filters, "get") else None
+    periods = AccountingPeriod.objects.order_by("-period_start")
+    latest_period = periods.filter(pk=requested_period).first() if requested_period else periods.first()
     active_batches = _active_production_batches()
-    active_cost_exposure = Decimal("0.00")
     closed_batch_profit = money(
         BatchProfitabilitySnapshot.objects.filter(
             final=True,
@@ -1306,10 +1308,6 @@ def dashboard_indicators() -> dict:
         )["total"]
     )
 
-    for batch in active_batches:
-        data = batch_profitability(batch)
-        active_cost_exposure += data["active_batch_cost_exposure"]
-
     receivable_total = money(
         Sales.objects.exclude(payment_status=PaymentStatus.CANCELLED).aggregate(
             total=Sum("balance")
@@ -1318,8 +1316,15 @@ def dashboard_indicators() -> dict:
 
     latest_report = monthly_profitability_report(latest_period) if latest_period else None
     active_reports = [batch_profitability(batch) for batch in active_batches]
-    forecast_profit = money(sum((row.get("forecast_final_profit", Decimal("0.00")) for row in active_reports), Decimal("0.00")))
-    forecast_revenue = money(sum((row.get("forecast_revenue_at_completion", Decimal("0.00")) for row in active_reports), Decimal("0.00")))
+    active_cost_exposure = money(sum((row["active_batch_cost_exposure"] for row in active_reports), Decimal("0.00")))
+    available_forecasts = [row for row in active_reports if row.get("forecast_available")]
+    forecast_profit = money(sum((row["forecast_final_profit"] for row in available_forecasts), Decimal("0.00")))
+    forecast_revenue = money(sum((row["forecast_revenue_at_completion"] for row in available_forecasts), Decimal("0.00")))
+    forecast_loss_batch_count = sum(
+        1
+        for row in available_forecasts
+        if row["forecast_final_profit"] < 0
+    )
     overdue_receivables = money(
         Sales.objects.exclude(payment_status=PaymentStatus.CANCELLED)
         .filter(balance__gt=0, due_date__lt=timezone.localdate())
@@ -1338,8 +1343,66 @@ def dashboard_indicators() -> dict:
     current_cash = latest_report["cash_flow"]["closing_cash"] if latest_report else Decimal("0.00")
     mtd_net = latest_report["other_costs"]["net_profit_after_recorded_tax"] if latest_report else Decimal("0.00")
     ytd_revenue = latest_report.get("comparatives", {}).get("ytd_revenue", Decimal("0.00")) if latest_report else Decimal("0.00")
+    supplier_payables = statement.get("supplier_payables", Decimal("0.00"))
+    payroll_liabilities = statement.get("payroll_and_statutory_liabilities", Decimal("0.00"))
+    immediate_liabilities = money(supplier_payables + payroll_liabilities)
+    liquidity_gap = money(current_cash - immediate_liabilities)
+    cash_needed = money(max(immediate_liabilities - current_cash, Decimal("0.00")))
+    collection_rate = (
+        latest_report.get("collections", {}).get("collection_rate_percent")
+        if latest_report
+        else None
+    )
+
+    overview = None
+    if latest_report:
+        gross_profit = latest_report["production"]["gross_profit"]
+        operating_profit = latest_report["operating_costs"]["operating_profit"]
+        overview = {
+            "period_id": latest_period.pk,
+            "period_start": latest_period.period_start,
+            "period_end": latest_period.period_end,
+            "period_status": latest_period.status,
+            "as_of_date": latest_report["as_of"],
+            "total_sales": latest_report["revenue"]["total_revenue"],
+            "cost_of_sales": latest_report["production"]["cost_of_goods_sold"],
+            "gross_profit": gross_profit,
+            "operating_expenses": money(gross_profit - operating_profit),
+            "operating_profit": operating_profit,
+            "operating_expense_basis": (
+                "Administration payroll and labour, administration consumables and depreciation, "
+                "selling and distribution, general operating expenses, and idle-capacity depreciation. "
+                "Finance costs and tax are excluded from operating profit."
+            ),
+            "cash_available": current_cash,
+            "cash_basis": "Posted receipts less posted cash payments through the as-of date.",
+            "customers_owe": receivable_total,
+            "customers_overdue": overdue_receivables,
+            "supplier_payables": supplier_payables,
+            "payroll_payables": payroll_liabilities,
+            "unpaid_bills_and_wages": immediate_liabilities,
+            "cash_needed_for_payments_due": cash_needed,
+            "payment_due_range_start": latest_period.period_start,
+            "payment_due_range_end": latest_report["as_of"],
+            "unfinished_batch_costs": statement.get("poultry_wip_management_cost", Decimal("0.00")),
+            "unfinished_batch_cost_basis": (
+                "Recorded production costs allocated to birds still on farm at the reporting cutoff. "
+                "This is work in progress, not a loss."
+            ),
+            "cash_reconciliation": {
+                "opening_cash": latest_report["cash_flow"]["opening_cash"],
+                "operating_inflows": latest_report["cash_flow"]["operating"]["inflows"],
+                "financing_inflows": latest_report["cash_flow"]["financing"]["inflows"],
+                "investing_inflows": latest_report["cash_flow"]["investing"]["inflows"],
+                "cash_paid": latest_report["cash_flow"]["cash_paid"],
+                "net_cash_movement": latest_report["cash_flow"]["net_cash_movement"],
+                "closing_cash": latest_report["cash_flow"]["closing_cash"],
+                "reconciles": latest_report["cash_flow"]["reconciles"],
+            },
+        }
 
     return {
+        "generated_at": timezone.now(),
         "active_batches": active_batches.count(),
         "active_batch_cost_exposure": active_cost_exposure,
         "closed_batch_profit": closed_batch_profit,
@@ -1348,18 +1411,52 @@ def dashboard_indicators() -> dict:
         "mtd_net_result": mtd_net,
         "ytd_revenue": ytd_revenue,
         "overdue_receivables": overdue_receivables,
-        "supplier_payables": statement.get("supplier_payables", Decimal("0.00")),
-        "payroll_liabilities": statement.get("payroll_and_statutory_liabilities", Decimal("0.00")),
+        "supplier_payables": supplier_payables,
+        "payroll_liabilities": payroll_liabilities,
+        "immediate_liabilities": immediate_liabilities,
+        "liquidity_gap": liquidity_gap,
+        "cash_coverage_percent": percent(current_cash, immediate_liabilities),
+        "collection_rate_percent": collection_rate,
+        "overdue_receivables_percent": percent(overdue_receivables, receivable_total),
         "inventory_value": statement.get("consumable_inventory", Decimal("0.00")),
         "fixed_asset_carrying_amount": statement.get("fixed_assets_net", Decimal("0.00")),
         "poultry_wip_management_cost": statement.get("poultry_wip_management_cost", Decimal("0.00")),
-        "active_batch_forecast_profit": forecast_profit,
-        "active_batch_forecast_margin_percent": percent(forecast_profit, forecast_revenue),
+        "active_batch_forecast_profit": forecast_profit if available_forecasts else None,
+        "active_batch_forecast_margin_percent": (
+            percent(forecast_profit, forecast_revenue) if available_forecasts else None
+        ),
+        "forecast_loss_batch_count": forecast_loss_batch_count,
+        "forecast": {
+            "estimated_at": timezone.localdate(),
+            "available_batch_count": len(available_forecasts),
+            "unavailable_batch_count": len(active_reports) - len(available_forecasts),
+            "selected_batch_count": len(active_reports),
+            "expected_final_profit": forecast_profit if available_forecasts else None,
+            "expected_final_revenue": forecast_revenue if available_forecasts else None,
+            "rows": active_reports,
+            "basis": (
+                "Expected final profit = actual sales + estimated future sales - costs incurred "
+                "- estimated remaining feed and other/shared costs. Incomplete batches are excluded."
+            ),
+        },
+        "total_assets": statement.get("total_assets", Decimal("0.00")),
+        "total_liabilities": statement.get("total_liabilities", Decimal("0.00")),
+        "net_assets": statement.get("net_assets", Decimal("0.00")),
         "low_stock_count": low_stock_count,
         "expiring_stock_count": expiring_count,
         "period_status": latest_period.status if latest_period else None,
         "close_readiness": close,
         "latest_month": latest_report,
+        "overview": overview,
+        "available_periods": [
+            {
+                "id": period.pk,
+                "period_start": period.period_start,
+                "period_end": period.period_end,
+                "status": period.status,
+            }
+            for period in periods
+        ],
         "warnings": dashboard_warnings(latest_period),
     }
 

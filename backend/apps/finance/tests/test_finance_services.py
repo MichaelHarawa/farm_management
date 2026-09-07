@@ -260,6 +260,63 @@ class FinanceServiceTests(TestCase):
         self.assertEqual(confirm_response.data["status"], BatchStatus.ACTIVE)
         self.assertEqual(confirm_response.data["quantity"], 190)
 
+    def test_active_batch_forecast_requires_complete_inputs_instead_of_zero_defaults(self):
+        entry = aware(date(2026, 8, 1))
+        batch = Batch.objects.create(
+            batch_id="FORECAST-MISSING", bird_type="broilers", source=ChicksSource.PROTO,
+            entry_date=entry, expected_maturity_date=entry + timedelta(days=42),
+            quantity=100, actual_quantity_received=100, created_by=self.user,
+        )
+
+        report = batch_profitability(batch)
+
+        self.assertFalse(report["forecast_available"])
+        self.assertIsNone(report["forecast_final_profit"])
+        self.assertEqual(
+            set(report["forecast_missing_inputs"]),
+            {"selling_price", "mortality_assumption", "remaining_feed_cost", "remaining_other_cost"},
+        )
+
+    def test_active_batch_forecast_separates_actuals_from_estimates_without_double_counting(self):
+        entry = aware(date(2026, 8, 1))
+        batch = Batch.objects.create(
+            batch_id="FORECAST-COMPLETE", bird_type="broilers", source=ChicksSource.PROTO,
+            entry_date=entry, expected_maturity_date=entry + timedelta(days=42), quantity=100,
+            actual_quantity_received=100, target_selling_price=Decimal("5000.00"),
+            forecast_mortality_rate_percent=Decimal("10.00"),
+            estimated_remaining_feed_cost=Decimal("20000.00"),
+            estimated_remaining_other_cost=Decimal("10000.00"), created_by=self.user,
+        )
+        InputCosts.objects.create(
+            batch=batch, item="Chicks and starter feed", category="Inputs", quantity=1,
+            unit=1, unit_measurement="lot", unit_cost=Decimal("100000.00"),
+            purchase_date=entry - timedelta(days=3), notes="Valid pre-arrival batch cost",
+            created_by=self.user,
+        )
+        create_mortality_with_lifecycle(
+            batch_id=batch.pk, created_by=self.user, mortality_date=entry + timedelta(days=5),
+            quantity_dead=10, age_in_days=5, suspected_cause="Stress",
+            description="Forecast test", action_taken="Reviewed", reported_by_name="Manager",
+        )
+        create_sale_with_lifecycle(
+            batch_id=batch.pk, created_by=self.user, sale_date=entry + timedelta(days=30),
+            product_type=ProductType.LIVE_CHICKEN, quantity_sold=20,
+            unit_price=Decimal("4000.00"), buyer_name="Buyer", buyer_type=BuyerType.RETAIL,
+            payment_status=PaymentStatus.UNPAID, payment_method=PaymentMethod.CREDIT,
+            amount_paid=Decimal("0.00"), sold_by_name="Manager", notes="Partial flock sale",
+        )
+
+        report = batch_profitability(batch)
+
+        self.assertTrue(report["forecast_available"])
+        self.assertEqual(report["remaining_live_birds"], 70)
+        self.assertEqual(report["forecast_expected_birds_sold"], 63)
+        self.assertEqual(report["forecast_actual_revenue"], Decimal("80000.00"))
+        self.assertEqual(report["forecast_estimated_future_revenue"], Decimal("315000.00"))
+        self.assertEqual(report["forecast_costs_incurred"], Decimal("100000.00"))
+        self.assertEqual(report["forecast_estimated_remaining_cost"], Decimal("30000.00"))
+        self.assertEqual(report["forecast_final_profit"], Decimal("265000.00"))
+
     def test_booked_batches_do_not_enter_production_finance(self):
         today = timezone.localdate()
         period = AccountingPeriod.objects.create(
@@ -1424,7 +1481,7 @@ class FinancePermissionTests(TestCase):
             period_end=date(2026, 1, 31),
         )
         for role in RoleChoices:
-            Role.objects.create(slug=role, name=role.label)
+            Role.objects.get_or_create(slug=role, defaults={"name": role.label})
 
     def user_with_role(self, username: str, role: RoleChoices):
         user = User.objects.create_user(

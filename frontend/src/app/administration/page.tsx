@@ -33,6 +33,8 @@ export default function AdministrationPage() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [form, setForm] = useState(initialForm);
   const [showCreate, setShowCreate] = useState(false);
+  const [editingUser, setEditingUser] = useState<SystemUser | null>(null);
+  const [roleDraft, setRoleDraft] = useState<string[]>([]);
   const [history, setHistory] = useState<{ user: SystemUser; events: AuditEvent[] } | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -81,6 +83,31 @@ export default function AdministrationPage() {
     finally { setBusy(false); }
   };
 
+  const openRoleEditor = (user: SystemUser) => {
+    setEditingUser(user);
+    setRoleDraft(user.roles.map((role) => role.slug));
+    setError(null);
+  };
+
+  const saveRoles = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!editingUser) return;
+    setBusy(true);
+    try {
+      const updatedUser = await clientApiFetch<SystemUser>(`/api/administration/users/${editingUser.id}/`, {
+        method: "PATCH",
+        body: JSON.stringify({ role_slugs: roleDraft }),
+      });
+      setUsers((currentUsers) => currentUsers.map((user) => user.id === updatedUser.id ? updatedUser : user));
+      setEditingUser(null);
+      await load();
+    } catch (requestError) {
+      setError(getApiErrorMessage(requestError));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const resetPassword = async (user: SystemUser) => {
     const temporaryPassword = window.prompt(`Enter a temporary password for ${user.username} (at least 8 characters):`);
     if (!temporaryPassword) return;
@@ -105,7 +132,7 @@ export default function AdministrationPage() {
       <section className="mt-8 overflow-x-auto rounded-xl border border-[var(--line)] bg-white"><table className="min-w-[1000px] w-full text-sm"><thead className="bg-[#f6f3eb] text-left"><tr><th className="p-3">User</th><th className="p-3">Roles</th><th className="p-3">Employee link</th><th className="p-3">Last login</th><th className="p-3">Status</th><th className="p-3">Actions</th></tr></thead><tbody>
         {loading ? <tr><td colSpan={6} className="p-8 text-center">Loading system users…</td></tr> : null}
         {!loading && !users.length ? <tr><td colSpan={6} className="p-8 text-center">No system users found.</td></tr> : null}
-        {users.map((user) => <tr key={user.id} className="border-t"><td className="p-3"><strong>{user.full_name}</strong><br/><span className="text-[var(--navy-muted)]">{user.username} · {user.email}</span></td><td className="p-3">{user.roles.map((role) => role.name).join(", ") || "No role"}</td><td className="p-3">{user.employee_number || "Not linked"}</td><td className="p-3">{user.last_login ? new Date(user.last_login).toLocaleString() : "Never"}</td><td className="p-3">{user.is_active ? "Active" : "Inactive"}</td><td className="p-3"><div className="flex flex-wrap gap-2"><button disabled={busy} onClick={() => void toggleActive(user)} className="rounded border px-3 py-2 font-bold">{user.is_active ? "Deactivate" : "Activate"}</button><button onClick={() => void resetPassword(user)} className="rounded border px-3 py-2 font-bold">Reset password</button><button onClick={() => void showHistory(user)} className="rounded border px-3 py-2 font-bold">Audit history</button></div></td></tr>)}
+        {users.map((user) => <tr key={user.id} className="border-t"><td className="p-3"><strong>{user.full_name}</strong><br/><span className="text-[var(--navy-muted)]">{user.username} · {user.email}</span></td><td className="p-3">{user.roles.map((role) => role.name).join(", ") || "No role"}</td><td className="p-3">{user.employee_number || "Not linked"}</td><td className="p-3">{user.last_login ? new Date(user.last_login).toLocaleString() : "Never"}</td><td className="p-3">{user.is_active ? "Active" : "Inactive"}</td><td className="p-3"><div className="flex flex-wrap gap-2"><button disabled={busy} onClick={() => openRoleEditor(user)} className="rounded border px-3 py-2 font-bold">Edit roles</button><button disabled={busy} onClick={() => void toggleActive(user)} className="rounded border px-3 py-2 font-bold">{user.is_active ? "Deactivate" : "Activate"}</button><button onClick={() => void resetPassword(user)} className="rounded border px-3 py-2 font-bold">Reset password</button><button onClick={() => void showHistory(user)} className="rounded border px-3 py-2 font-bold">Audit history</button></div></td></tr>)}
       </tbody></table></section>
     </div>
 
@@ -114,6 +141,16 @@ export default function AdministrationPage() {
       <label className="text-sm font-bold">Optional employee link<select value={form.employee_profile_id} onChange={(event) => setForm({ ...form, employee_profile_id: event.target.value })} className="form-input mt-2 w-full"><option value="">No employee link</option>{employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.employee_number}</option>)}</select></label>
     </div><fieldset className="mt-5"><legend className="text-sm font-bold">System roles</legend><div className="mt-2 grid gap-2 sm:grid-cols-2">{ROLE_OPTIONS.map((role) => <label key={role.slug} className="flex items-center gap-2 rounded border p-3"><input type="checkbox" checked={form.role_slugs.includes(role.slug)} onChange={(event) => setForm({ ...form, role_slugs: event.target.checked ? [...form.role_slugs, role.slug] : form.role_slugs.filter((slug) => slug !== role.slug) })}/>{role.name}</label>)}</div></fieldset><div className="mt-6 flex justify-end gap-3"><button type="button" onClick={() => setShowCreate(false)} className="rounded border px-5 py-3 font-bold">Cancel</button><button disabled={busy} className="finance-button text-[var(--navy)]">{busy ? "Creating…" : "Create user"}</button></div></form></div> : null}
 
+    {editingUser ? <div className="fixed inset-0 z-50 grid place-items-center bg-[#151f36]/45 p-4" role="dialog" aria-modal="true" aria-labelledby="role-editor-title"><form onSubmit={saveRoles} className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-2xl"><div className="flex items-start justify-between gap-4"><div><p className="text-label text-[var(--navy-muted)]">Access control</p><h2 id="role-editor-title" className="mt-2 text-2xl font-extrabold">Edit roles · {editingUser.username}</h2><p className="mt-2 text-sm text-[var(--navy-muted)]">Finance access is available to administrators, directors, farm managers, farm supervisors, and read-only stakeholders.</p></div><button type="button" onClick={() => setEditingUser(null)} aria-label="Close" className="text-2xl">×</button></div><fieldset className="mt-6"><legend className="sr-only">System roles</legend><div className="grid gap-3 sm:grid-cols-2">{ROLE_OPTIONS.map((role) => <label key={role.slug} className={`flex cursor-pointer items-center gap-3 rounded-xl border p-4 ${roleDraft.includes(role.slug) ? "border-[var(--gold)] bg-[var(--gold-soft)]" : "border-[var(--line)]"}`}><input type="checkbox" checked={roleDraft.includes(role.slug)} onChange={(event) => setRoleDraft(event.target.checked ? [...roleDraft, role.slug] : roleDraft.filter((slug) => slug !== role.slug))}/><span><strong className="block">{role.name}</strong><span className="mt-1 block text-xs text-[var(--navy-muted)]">{roleAccessDescription(role.slug)}</span></span></label>)}</div></fieldset><div className="mt-6 flex justify-end gap-3"><button type="button" onClick={() => setEditingUser(null)} className="rounded border px-5 py-3 font-bold">Cancel</button><button disabled={busy} className="finance-button">{busy ? "Saving…" : "Save roles"}</button></div></form></div> : null}
+
     {history ? <div className="fixed inset-0 z-50 grid place-items-center bg-[#151f36]/45 p-4" role="dialog" aria-modal="true"><section className="max-h-[80vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-6"><div className="flex justify-between"><h2 className="text-2xl font-extrabold">Audit history · {history.user.username}</h2><button onClick={() => setHistory(null)} aria-label="Close" className="text-2xl">×</button></div><div className="mt-5 grid gap-3">{history.events.map((event) => <article key={event.id} className="rounded border p-4"><strong>{event.action.replaceAll("_", " ")}</strong><p className="text-sm text-[var(--navy-muted)]">{new Date(event.created_at).toLocaleString()} by {event.performed_by}</p></article>)}{!history.events.length ? <p>No account changes recorded.</p> : null}</div></section></div> : null}
   </main>;
+}
+
+function roleAccessDescription(slug: string): string {
+  if (slug === "admin") return "All system and account controls.";
+  if (slug === "director" || slug === "farm_manager") return "Finance management and period close.";
+  if (slug === "farm_supervisor") return "Finance records and day-to-day entries.";
+  if (slug === "stake_holder") return "Read-only finance reports.";
+  return "Poultry operations without finance access.";
 }

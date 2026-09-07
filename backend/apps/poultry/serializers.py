@@ -52,6 +52,9 @@ class BatchSerializer(serializers.ModelSerializer):
             "closure_reason",
             "profitability_finalized_at",
             "target_selling_price",
+            "forecast_mortality_rate_percent",
+            "estimated_remaining_feed_cost",
+            "estimated_remaining_other_cost",
             "closure_notes",
             "created_at",
             "updated_at",
@@ -312,6 +315,22 @@ class InputCostsSerializer(serializers.ModelSerializer):
         if not obj.expenditure_id:
             return []
         return [str(row.funding_source) for row in obj.expenditure.funding_allocations.select_related("funding_source")]
+
+
+class BatchForecastAssumptionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Batch
+        fields = (
+            "target_selling_price",
+            "forecast_mortality_rate_percent",
+            "estimated_remaining_feed_cost",
+            "estimated_remaining_other_cost",
+        )
+
+    def validate_target_selling_price(self, value):
+        if value is not None and value <= 0:
+            raise serializers.ValidationError("Enter a selling price greater than zero.")
+        return value
 
 class SalesSerializer(serializers.ModelSerializer):
     created_by_name = serializers.SerializerMethodField()

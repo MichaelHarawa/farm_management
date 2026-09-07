@@ -2,9 +2,14 @@ import { BatchList } from "@/features/poultry/components/BatchList";
 import { BookChicksDialog } from "@/features/poultry/components/AddBatchDialog";
 import { getPoultryBatches } from "@/features/poultry/api/batches";
 import Link from "next/link";
+import { getOptionalCurrentUser } from "@/features/auth/server/current-user";
+import { canAccessFinance } from "@/features/auth/utils/permissions";
 
 export default async function PoultryPage() {
-  const batches = await getPoultryBatches("/poultry");
+  const [batches, user] = await Promise.all([
+    getPoultryBatches("/poultry"),
+    getOptionalCurrentUser(),
+  ]);
   const productionBatches = batches.filter(
     (batch) => batch.status !== "booked" && batch.status !== "delivered"
   );
@@ -86,9 +91,9 @@ export default async function PoultryPage() {
             />
             <RegisterSignal
               label="FINANCIAL WORKSPACE"
-              value="Finance Control"
-              detail="Open workforce, payroll, and profitability"
-              href="/finance"
+              value={canAccessFinance(user) ? "Finance Control" : "Restricted by Role"}
+              detail={canAccessFinance(user) ? "Open workforce, payroll, and profitability" : "Ask an administrator for a finance-enabled role"}
+              href={canAccessFinance(user) ? "/finance" : undefined}
             />
             <RegisterSignal
               label="OPERATIONS GUIDE"

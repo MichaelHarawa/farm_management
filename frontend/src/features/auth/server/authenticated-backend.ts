@@ -81,6 +81,13 @@ export async function authenticatedBackendFetch<T>(
       redirect(buildLoginPath(returnTo));
     }
 
+    if (
+      error instanceof BackendApiError &&
+      error.status === 403
+    ) {
+      redirect("/access-denied");
+    }
+
     throw error;
   }
 }

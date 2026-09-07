@@ -128,12 +128,12 @@ export default async function FinanceBatchProfitabilityPage({ params }: PageProp
         </Panel>
 
         <Panel title="Actual-To-Date And Forecast">
-          <Rows rows={[
-            ["Actual management net position", formatCurrency(report.management_net_position)],
-            ["Forecast revenue at completion", formatCurrency(report.forecast_revenue_at_completion)],
-            ["Forecast cost at completion", formatCurrency(report.forecast_cost_at_completion)],
-            ["Forecast final profit", formatCurrency(report.forecast_final_profit)],
-          ]} />
+          {report.forecast_available ? <Rows rows={[
+              ["Actual management net position", formatCurrency(report.management_net_position)],
+              ["Forecast revenue at completion", formatCurrency(report.forecast_revenue_at_completion)],
+              ["Forecast cost at completion", formatCurrency(report.forecast_cost_at_completion)],
+              ["Forecast final profit", formatCurrency(report.forecast_final_profit)],
+            ]} /> : <p className="font-bold">Forecast unavailable — add selling price and remaining cost estimates.</p>}
           <p className="mt-3 text-xs leading-5 text-[var(--navy-muted)]">
             {report.result_interpretation} {report.forecast_basis}
           </p>

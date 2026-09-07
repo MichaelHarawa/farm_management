@@ -731,6 +731,13 @@ def _attach_management_costs(rows: list[dict], batches: list[Batch]) -> list[dic
                     "forecast_cost_at_completion": row["total_attributed_cost"],
                     "forecast_final_profit": row["management_net_position"],
                     "forecast_basis": "Closed-batch actual result; no run-rate projection applied.",
+                    "forecast_available": True,
+                    "forecast_missing_inputs": [],
+                    "forecast_actual_revenue": row["revenue"],
+                    "forecast_estimated_future_revenue": ZERO,
+                    "forecast_costs_incurred": row["total_attributed_cost"],
+                    "forecast_estimated_remaining_cost": ZERO,
+                    "forecast_expected_birds_sold": 0,
                     "allocation_trace": [],
                 }
             )
@@ -774,30 +781,55 @@ def _attach_management_costs(rows: list[dict], batches: list[Batch]) -> list[dic
         )
         net_position = money(row["revenue"] - total_cost)
         batch = next(batch for batch in batches if batch.pk == row["batch"])
-        cycle_days = max((batch.expected_maturity_date.date() - batch.entry_date.date()).days, 1)
-        elapsed_days = max((min(timezone.localdate(), batch.expected_maturity_date.date()) - batch.entry_date.date()).days, 1)
-        progress = Decimal("1.00") if batch.status == BatchStatus.CLOSED else min(
-            Decimal(elapsed_days) / Decimal(cycle_days), Decimal("1.00")
-        )
-        forecast_production_cost = money(
-            row["total_production_cost"] if progress == Decimal("1.00")
-            else row["total_production_cost"] / progress
-        )
-        bird_units = row["valid_bird_units_sold"]
-        average_bird_price = (
-            row["revenue"] / Decimal(bird_units) if bird_units else ZERO
-        )
-        forecast_saleable_units = max(row["birds_placed"] - row["mortality"], 0)
-        forecast_revenue = money(
-            row["revenue"] if batch.status == BatchStatus.CLOSED or not average_bird_price
-            else average_bird_price * Decimal(forecast_saleable_units)
-        )
-        forecast_overhead = money(
-            total_selling + administration + finance_cost + tax
-            if progress == Decimal("1.00")
-            else (total_selling + administration + finance_cost + tax) / progress
-        )
-        forecast_profit = money(forecast_revenue - forecast_production_cost - forecast_overhead)
+        remaining_birds = row["remaining_live_birds"]
+        missing_inputs = []
+        expected_birds_sold = None
+        estimated_future_revenue = None
+        estimated_remaining_cost = None
+        forecast_revenue = None
+        forecast_cost = None
+        forecast_profit = None
+        if batch.status == BatchStatus.CLOSED:
+            forecast_available = True
+            expected_birds_sold = 0
+            estimated_future_revenue = ZERO
+            estimated_remaining_cost = ZERO
+            forecast_revenue = row["revenue"]
+            forecast_cost = total_cost
+            forecast_profit = net_position
+            forecast_basis = "Completed-batch actual result; no future sales or remaining costs estimated."
+        else:
+            if remaining_birds:
+                if not batch.target_selling_price:
+                    missing_inputs.append("selling_price")
+                if batch.forecast_mortality_rate_percent is None:
+                    missing_inputs.append("mortality_assumption")
+            if batch.estimated_remaining_feed_cost is None:
+                missing_inputs.append("remaining_feed_cost")
+            if batch.estimated_remaining_other_cost is None:
+                missing_inputs.append("remaining_other_cost")
+            forecast_available = not missing_inputs
+            forecast_basis = (
+                "Actual sales plus expected sales of currently live birds after the stated mortality assumption, "
+                "less costs incurred and the entered remaining feed and other/shared costs."
+            )
+        if forecast_available and batch.status != BatchStatus.CLOSED:
+            mortality_rate = Decimal(batch.forecast_mortality_rate_percent or 0)
+            expected_birds_sold = int(
+                Decimal(remaining_birds)
+                * (Decimal("100.00") - mortality_rate)
+                / Decimal("100.00")
+            )
+            estimated_future_revenue = money(
+                Decimal(expected_birds_sold) * Decimal(batch.target_selling_price or 0)
+            )
+            estimated_remaining_cost = money(
+                Decimal(batch.estimated_remaining_feed_cost or 0)
+                + Decimal(batch.estimated_remaining_other_cost or 0)
+            )
+            forecast_revenue = money(row["revenue"] + estimated_future_revenue)
+            forecast_cost = money(total_cost + estimated_remaining_cost)
+            forecast_profit = money(forecast_revenue - forecast_cost)
         row.update(
             {
                 "central_selling_cost": central_selling,
@@ -819,9 +851,23 @@ def _attach_management_costs(rows: list[dict], batches: list[Batch]) -> list[dic
                     else "Final actual result for the completed batch."
                 ),
                 "forecast_revenue_at_completion": forecast_revenue,
-                "forecast_cost_at_completion": money(forecast_production_cost + forecast_overhead),
+                "forecast_cost_at_completion": forecast_cost,
                 "forecast_final_profit": forecast_profit,
-                "forecast_basis": "Run-rate projection from lifecycle progress and realized bird price; review before decisions.",
+                "forecast_available": forecast_available,
+                "forecast_missing_inputs": missing_inputs,
+                "forecast_actual_revenue": row["revenue"],
+                "forecast_estimated_future_revenue": estimated_future_revenue,
+                "forecast_costs_incurred": total_cost,
+                "forecast_estimated_remaining_cost": estimated_remaining_cost,
+                "forecast_expected_birds_sold": expected_birds_sold,
+                "forecast_assumptions": {
+                    "selling_price": batch.target_selling_price,
+                    "remaining_bird_mortality_percent": batch.forecast_mortality_rate_percent,
+                    "remaining_feed_cost": batch.estimated_remaining_feed_cost,
+                    "remaining_other_and_shared_cost": batch.estimated_remaining_other_cost,
+                    "estimated_at": timezone.localdate(),
+                },
+                "forecast_basis": forecast_basis,
                 "allocation_trace": attributed.get("allocation_trace", []),
                 "management_cost_breakdown": [
                     {
@@ -1207,9 +1253,10 @@ def batch_portfolio_report(batches: Iterable[Batch]) -> dict:
     tax = total("allocated_tax")
     total_attributed_cost = total("total_attributed_cost")
     management_net_position = total("management_net_position")
-    forecast_revenue = total("forecast_revenue_at_completion")
-    forecast_cost = total("forecast_cost_at_completion")
-    forecast_profit = total("forecast_final_profit")
+    forecast_rows = [row for row in included_rows if row.get("forecast_available")]
+    forecast_revenue = money(sum((row["forecast_revenue_at_completion"] for row in forecast_rows), ZERO))
+    forecast_cost = money(sum((row["forecast_cost_at_completion"] for row in forecast_rows), ZERO))
+    forecast_profit = money(sum((row["forecast_final_profit"] for row in forecast_rows), ZERO))
     receivable = total("accounts_receivable")
     active_exposure = total("active_batch_cost_exposure")
 
@@ -1341,6 +1388,8 @@ def batch_portfolio_report(batches: Iterable[Batch]) -> dict:
             "forecast_revenue_at_completion": forecast_revenue,
             "forecast_cost_at_completion": forecast_cost,
             "forecast_final_profit": forecast_profit,
+            "forecast_available_batch_count": len(forecast_rows),
+            "forecast_unavailable_batch_count": len(included_rows) - len(forecast_rows),
             "fully_loaded_batch_profit": contribution_after_selling,
             "fully_loaded_margin_percent": percent(
                 contribution_after_selling,

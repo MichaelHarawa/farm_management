@@ -3,6 +3,8 @@ const POULTRY_ROOT = "/poultry-management";
 export const poultryApiPaths = {
   batches: `${POULTRY_ROOT}/`,
 
+  dashboard: `${POULTRY_ROOT}/dashboard`,
+
   batch: (batchId: number) =>
     `${POULTRY_ROOT}/${batchId}`,
 

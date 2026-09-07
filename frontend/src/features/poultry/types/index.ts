@@ -35,6 +35,9 @@ export type PoultryBatch = {
     | "selling"
     | "closed";
   target_selling_price: number | null;
+  forecast_mortality_rate_percent: number | null;
+  estimated_remaining_feed_cost: number | null;
+  estimated_remaining_other_cost: number | null;
   closure_notes: string;
   profitability_finalized_at: string | null;
   created_at: string;
@@ -232,6 +235,100 @@ export type PoultryFeedMetrics = {
   stage_feed_kg: Record<string, string>;
   same_timestamp_ordering: string;
   calculation_version: string;
+};
+
+export type PoultryDashboardBatch = {
+  id: number;
+  batch_id: string;
+  bird_type: BirdType;
+  status: PoultryBatch["status"];
+  entry_date: string;
+  age_days: number;
+  current_live_birds: number;
+  birds_sold_period: number;
+  sales_period: string;
+  recorded_costs_period: string;
+  actual_period_result: string;
+  feed_issued_period_kg: string;
+  mortality_period: number;
+  latest_growth: {
+    sampled_at: string;
+    sample_size: number;
+    age_in_days: number;
+    average_weight_g: number;
+    target_weight_g: number | null;
+    deviation_percent: number | null;
+    severity: "ok" | "watch" | "action" | "urgent";
+    message: string;
+  } | null;
+};
+
+export type PoultryDashboardResponse = {
+  generated_at: string;
+  filters: {
+    date_from: string;
+    date_to: string;
+    bird_type: string;
+    stage: string;
+    feed_stage: string;
+    batch_ids: number[];
+  };
+  available_feed_stages: string[];
+  available_batches: Array<{
+    id: number;
+    batch_id: string;
+    bird_type: BirdType;
+    status: PoultryBatch["status"];
+  }>;
+  calculation_basis: string;
+  overview: {
+    current_birds: number;
+    birds_sold: number;
+    sales: string;
+    cash_collections: string;
+    feed_issued_kg: string;
+    deaths: number;
+    mortality_rate_percent: string | null;
+    mortality_denominator: number;
+    latest_average_weight_g: number | null;
+    latest_weight_date: string | null;
+    latest_weight_sample_size: number | null;
+    feed_per_bird_day_g: string | null;
+    bird_days: string;
+    feed_conversion_ratio: string | null;
+    feed_conversion_note: string;
+  };
+  sales_growth: {
+    current_sales: string;
+    previous_sales: string;
+    change_percent: string | null;
+    message: string;
+    previous_period_start: string;
+    previous_period_end: string;
+  };
+  series: {
+    bucket: "day" | "week" | "month";
+    sales: Array<{ date: string; sales: string; cash_collections: string }>;
+    costs_and_profit: Array<{
+      date: string;
+      sales: string;
+      recorded_costs: string;
+      actual_period_result: string;
+    }>;
+    feed: Array<{ date: string; feed_issued_kg: string; by_stage: Record<string, string> }>;
+    growth: Array<{
+      batch: number;
+      batch_id: string;
+      sampled_at: string;
+      age_in_days: number;
+      average_weight_g: number;
+      sample_size: number;
+      target_weight_g: number | null;
+    }>;
+  };
+  cost_breakdown: Record<string, string>;
+  batches: PoultryDashboardBatch[];
+  alerts: Array<{ batch: number; batch_id: string; message: string }>;
 };
 
 export type PaginatedResponse<T> = {

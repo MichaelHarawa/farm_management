@@ -903,7 +903,7 @@ class DashboardView(APIView):
     permission_classes = (FinancePermission,)
 
     def get(self, request):
-        return Response(json_safe(dashboard_indicators()))
+        return Response(json_safe(dashboard_indicators(request.query_params)))
 
 
 class ReceivablesView(APIView):

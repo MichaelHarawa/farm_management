@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.core.validators import MinValueValidator
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models, transaction
 from django.utils import timezone
 
@@ -179,6 +179,30 @@ class Batch(models.Model):
         null=True,
         blank=True,
         validators=[MinValueValidator(Decimal("0.00"))],
+    )
+    forecast_mortality_rate_percent = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(Decimal("0.00")), MaxValueValidator(Decimal("100.00"))],
+        help_text="Expected mortality percentage among birds currently remaining.",
+    )
+    estimated_remaining_feed_cost = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MONEY_VALIDATOR],
+        help_text="Feed cost still expected before the batch finishes.",
+    )
+    estimated_remaining_other_cost = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MONEY_VALIDATOR],
+        help_text="Other batch and shared costs still expected before completion.",
     )
     closure_notes = models.TextField(blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)

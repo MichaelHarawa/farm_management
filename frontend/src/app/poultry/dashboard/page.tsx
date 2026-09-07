@@ -1,75 +1,49 @@
 import Link from "next/link";
-import {
-  getPoultryBatches,
-  getBatchSales,
-  getBatchMortality,
-  getBatchFeedUsage,
-} from "@/features/poultry/api/batches";
-import type { PoultryBatch, PoultrySale, PoultryMortality, PoultryFeedUsage } from "@/features/poultry/types";
+
+import { getPoultryDashboard } from "@/features/poultry/api/batches";
+
 import PoultryDashboardClient from "./PoultryDashboardClient";
 
-export default async function PoultryDashboardPage() {
-  const batches = await getPoultryBatches("/poultry/dashboard");
-  const productionBatches = batches.filter(
-    (b) => b.status !== "booked" && b.status !== "delivered"
+type SearchParams = Promise<Record<string, string | string[] | undefined>>;
+
+export default async function PoultryDashboardPage({ searchParams }: { searchParams: SearchParams }) {
+  const requested = await searchParams;
+  const query = new URLSearchParams();
+  Object.entries(requested).forEach(([key, value]) => {
+    (Array.isArray(value) ? value : value ? [value] : []).forEach((item) => query.append(key, item));
+  });
+  const dashboard = await getPoultryDashboard(
+    `/poultry/dashboard${query.size ? `?${query}` : ""}`,
+    query.size ? `?${query}` : ""
   );
 
-  // Fetch real data for all batches (live from DB via API)
-  const [salesArrays, mortArrays, feedArrays] = await Promise.all([
-    Promise.all(
-      batches.map(async (b) => {
-        try {
-          return await getBatchSales(b.id, "/poultry/dashboard");
-        } catch {
-          return [] as PoultrySale[];
-        }
-      })
-    ),
-    Promise.all(
-      batches.map(async (b) => {
-        try {
-          return await getBatchMortality(b.id, "/poultry/dashboard");
-        } catch {
-          return [] as PoultryMortality[];
-        }
-      })
-    ),
-    Promise.all(
-      batches.map(async (b) => {
-        try {
-          return await getBatchFeedUsage(b.id, "/poultry/dashboard");
-        } catch {
-          return [] as PoultryFeedUsage[];
-        }
-      })
-    ),
-  ]);
-
-  const allSales = salesArrays.flat();
-  const allMortalities = mortArrays.flat();
-  const allFeedUsages = feedArrays.flat();
-
   return (
-    <main className="min-h-screen bg-[#f6f3eb] text-[#151926]">
+    <main className="min-h-screen bg-[var(--page-cream)] text-[var(--navy)]">
       <div className="mx-auto max-w-7xl px-5 py-8 sm:px-8">
-        <div className="mb-6 flex items-center justify-between">
+        <div className="mb-7 flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <Link href="/poultry" className="text-sm font-bold uppercase tracking-wide text-[#151926] hover:underline">
+            <Link
+              href="/poultry"
+              className="text-sm font-bold uppercase tracking-wide hover:underline"
+            >
               ← Back to Poultry Register
             </Link>
-            <h1 className="mt-2 text-4xl font-extrabold tracking-[-0.02em]">Flock Dashboard</h1>
-            <p className="text-[#747b8d]">Aggregated visuals across batches • Sales, mortality, feed, growth &amp; more</p>
+            <p className="text-label mt-6 text-[var(--navy-muted)]">
+              Poultry Intelligence / Live Operations
+            </p>
+            <h1 className="font-display mt-3 text-5xl leading-none">
+              Poultry dashboard.
+            </h1>
+            <p className="mt-4 max-w-3xl text-[var(--navy-muted)]">
+              Period activity, current flock balances, growth, feed, sales, and batch economics in one operating view.
+            </p>
           </div>
-          <Link href="/poultry" className="rounded-lg bg-[#151f36] px-4 py-2 text-sm font-bold text-white">View All Batches</Link>
+          <Link href="/poultry" className="finance-button whitespace-nowrap">
+            View all batches
+          </Link>
         </div>
 
-        <PoultryDashboardClient
-          batches={batches}
-          productionBatches={productionBatches}
-          allSales={allSales}
-          allMortalities={allMortalities}
-          allFeedUsages={allFeedUsages}
-        />
+        <PoultryDashboardClient dashboard={dashboard} />
       </div>
     </main>
   );

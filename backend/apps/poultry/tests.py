@@ -6,6 +6,7 @@ from datetime import date, datetime, time, timedelta
 from django.contrib.auth import get_user_model
 from django.test import SimpleTestCase, TestCase
 from django.utils import timezone
+from rest_framework.test import APIClient
 
 from .models import (
     Batch, BuyerType, ChicksSource, FeedSource, FeedType, FeedUsage,
@@ -214,3 +215,81 @@ class DatedFeedMetricsTests(TestCase):
         )
         with self.assertRaises(Exception):
             self.feed(self.arrival + timedelta(hours=2))
+
+
+class PoultryDashboardTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(username="dashboard-user")
+        self.arrival = timezone.now() - timedelta(days=10)
+        self.batch = Batch.objects.create(
+            batch_id="DASHBOARD-1",
+            bird_type="broilers",
+            source=ChicksSource.PROTO,
+            entry_date=self.arrival,
+            expected_maturity_date=self.arrival + timedelta(days=35),
+            quantity=100,
+            actual_quantity_received=100,
+            created_by=self.user,
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(self.user)
+
+    def test_dashboard_uses_bird_balance_and_excludes_non_bird_sales(self):
+        Mortality.objects.create(
+            batch=self.batch,
+            mortality_date=self.arrival + timedelta(days=2),
+            quantity_dead=5,
+            age_in_days=2,
+            suspected_cause="Stress",
+            description="Test mortality",
+            action_taken="Reviewed",
+            reported_by_name="Manager",
+            created_by=self.user,
+        )
+        create_sale_with_lifecycle(
+            batch_id=self.batch.pk,
+            created_by=self.user,
+            sale_date=self.arrival + timedelta(days=8),
+            product_type=ProductType.LIVE_CHICKEN,
+            quantity_sold=10,
+            unit_price=Decimal("5000.00"),
+            buyer_name="Buyer",
+            buyer_type=BuyerType.RETAIL,
+            payment_status=PaymentStatus.PARTIAL,
+            payment_method=PaymentMethod.CASH,
+            amount_paid=Decimal("30000.00"),
+            sold_by_name="Manager",
+            notes="Bird sale",
+        )
+        create_sale_with_lifecycle(
+            batch_id=self.batch.pk,
+            created_by=self.user,
+            sale_date=self.arrival + timedelta(days=9),
+            product_type=ProductType.MANURE,
+            quantity_sold=20,
+            unit_price=Decimal("100.00"),
+            buyer_name="Buyer",
+            buyer_type=BuyerType.RETAIL,
+            payment_status=PaymentStatus.PAID,
+            payment_method=PaymentMethod.CASH,
+            amount_paid=Decimal("2000.00"),
+            sold_by_name="Manager",
+            notes="Manure sale",
+        )
+
+        response = self.client.get("/api/v1/poultry-management/dashboard")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        row = response.data["batches"][0]
+        self.assertEqual(row["current_live_birds"], 85)
+        self.assertEqual(row["birds_sold"], 10)
+        self.assertEqual(row["mortality"], 5)
+        self.assertEqual(Decimal(row["total_sales"]), Decimal("52000.00"))
+        self.assertEqual(Decimal(row["amount_collected"]), Decimal("32000.00"))
+        self.assertEqual(Decimal(response.data["overview"]["sales"]), Decimal("52000.00"))
+        self.assertEqual(
+            Decimal(response.data["overview"]["cash_collections"]),
+            Decimal("32000.00"),
+        )
+        self.assertEqual(response.data["overview"]["deaths"], 5)
+        self.assertIn("mortality", response.data["calculation_basis"].lower())

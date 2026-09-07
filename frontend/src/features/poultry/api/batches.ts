@@ -9,6 +9,7 @@ import type {
   InputCost,
   PaginatedResponse,
   PoultryBatch,
+  PoultryDashboardResponse,
   PoultryFeedMetrics,
   PoultryFeedUsage,
   PoultryMortality,
@@ -45,6 +46,16 @@ export async function getPoultryBatches(
   );
 
   return normalizeList(data);
+}
+
+export async function getPoultryDashboard(
+  returnTo: string,
+  query = ""
+): Promise<PoultryDashboardResponse> {
+  return authenticatedBackendFetch<PoultryDashboardResponse>(
+    `${poultryApiPaths.dashboard}${query}`,
+    { returnTo, cache: "no-store" }
+  );
 }
 
 export async function getPoultryBatch(
