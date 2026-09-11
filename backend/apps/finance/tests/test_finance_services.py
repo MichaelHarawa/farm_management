@@ -51,7 +51,11 @@ from apps.finance.services.profitability import (
     batch_profitability,
     create_final_snapshot,
 )
-from apps.finance.services.reporting import dashboard_indicators, monthly_profitability_report
+from apps.finance.services.reporting import (
+    dashboard_indicators,
+    monthly_profitability_report,
+    receivables_report,
+)
 from apps.poultry.models import (
     Batch,
     BatchStatus,
@@ -430,6 +434,24 @@ class FinanceServiceTests(TestCase):
 
         self.assertEqual(sale.balance, Decimal("150.00"))
         self.assertEqual(sale.payment_status, PaymentStatus.PARTIAL)
+
+    def test_receivables_report_includes_follow_up_person(self):
+        batch = self.batch()
+        create_sale_with_lifecycle(
+            batch_id=batch.id,
+            created_by=self.user,
+            **self.sale_payload(
+                quantity_sold=2,
+                unit_price=Decimal("100.00"),
+                amount_paid=Decimal("50.00"),
+                payment_status=PaymentStatus.PARTIAL,
+                receivable_follow_up_name="  Grace Phiri  ",
+            ),
+        )
+
+        report = receivables_report()
+
+        self.assertEqual(report["results"][0]["receivable_follow_up_name"], "Grace Phiri")
 
     def test_payroll_snapshot_does_not_change_after_salary_update(self):
         period = AccountingPeriod.objects.create(

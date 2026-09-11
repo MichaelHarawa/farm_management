@@ -1693,6 +1693,161 @@ def batch_revenue_utilization(batch: Batch) -> dict:
     }
 
 
+def batch_expenditure_funding_mix(batch: Batch, *, include_transactions: bool = True) -> dict:
+    """Explain which cash sources paid expenditures carried by a batch."""
+    cost_allocations = (
+        CostAllocation.objects.filter(
+            batch=batch,
+            expenditure__status=ExpenditureStatus.POSTED,
+        )
+        .select_related("expenditure", "expenditure__category")
+        .prefetch_related(
+            "expenditure__cost_allocations",
+            "expenditure__funding_allocations__funding_source__batch",
+        )
+        .order_by("expenditure__expenditure_date", "expenditure_id", "pk")
+    )
+
+    total_batch_cost = ZERO
+    total_paid_for_batch = ZERO
+    own_batch_sales = ZERO
+    other_batch_sales = ZERO
+    other_sources = ZERO
+    sources: dict[int, dict] = {}
+    transactions = []
+
+    for cost_allocation in cost_allocations:
+        expenditure = cost_allocation.expenditure
+        batch_cost = money(cost_allocation.allocated_amount)
+        total_batch_cost += batch_cost
+        total_expenditure_allocations = money(
+            sum(
+                (
+                    allocation.allocated_amount
+                    for allocation in expenditure.cost_allocations.all()
+                ),
+                ZERO,
+            )
+        )
+        if total_expenditure_allocations <= ZERO:
+            continue
+        batch_share = batch_cost / total_expenditure_allocations
+
+        for funding_allocation in expenditure.funding_allocations.all():
+            source = funding_allocation.funding_source
+            attributed_amount = money(funding_allocation.amount * batch_share)
+            if attributed_amount <= ZERO:
+                continue
+
+            if source.source_type == FundingSourceType.BATCH_COLLECTION:
+                source_group = (
+                    "own_batch_sales"
+                    if source.batch_id == batch.pk
+                    else "other_batch_sales"
+                )
+                source_label = (
+                    f"{source.batch.batch_id} sales collections"
+                    if source.batch_id
+                    else "Unassigned batch sales collections"
+                )
+            else:
+                source_group = "other_sources"
+                source_label = str(source)
+
+            total_paid_for_batch += attributed_amount
+            if source_group == "own_batch_sales":
+                own_batch_sales += attributed_amount
+            elif source_group == "other_batch_sales":
+                other_batch_sales += attributed_amount
+            else:
+                other_sources += attributed_amount
+
+            source_row = sources.setdefault(
+                source.pk,
+                {
+                    "funding_source_id": source.pk,
+                    "source_type": source.source_type,
+                    "source_type_label": source.get_source_type_display(),
+                    "source_group": source_group,
+                    "source_label": source_label,
+                    "source_batch_id": source.batch_id,
+                    "source_batch_code": source.batch.batch_id if source.batch_id else None,
+                    "amount": ZERO,
+                },
+            )
+            source_row["amount"] += attributed_amount
+
+            if include_transactions:
+                transactions.append(
+                    {
+                        "cost_allocation_id": cost_allocation.pk,
+                        "funding_allocation_id": funding_allocation.pk,
+                        "expenditure_id": expenditure.pk,
+                        "expenditure_reference": expenditure.expenditure_reference,
+                        "expenditure_date": expenditure.expenditure_date,
+                        "description": expenditure.description,
+                        "category": (
+                            expenditure.category.name
+                            if expenditure.category_id
+                            else "Uncategorized"
+                        ),
+                        "total_expenditure": money(expenditure.amount),
+                        "batch_cost_amount": batch_cost,
+                        "funding_payment_amount": money(funding_allocation.amount),
+                        "attributed_amount": attributed_amount,
+                        "source_group": source_group,
+                        "source_type": source.source_type,
+                        "source_label": source_label,
+                        "source_batch_id": source.batch_id,
+                        "source_batch_code": (
+                            source.batch.batch_id if source.batch_id else None
+                        ),
+                        "allocation_date": funding_allocation.allocation_date,
+                    }
+                )
+
+    total_batch_cost = money(total_batch_cost)
+    total_paid_for_batch = money(total_paid_for_batch)
+    own_batch_sales = money(own_batch_sales)
+    other_batch_sales = money(other_batch_sales)
+    other_sources = money(other_sources)
+    source_rows = []
+    for row in sources.values():
+        amount = money(row["amount"])
+        source_rows.append(
+            {
+                **row,
+                "amount": amount,
+                "percent": percent(amount, total_paid_for_batch),
+            }
+        )
+    source_rows.sort(key=lambda row: (-row["amount"], row["source_label"]))
+
+    return {
+        "batch_id": batch.pk,
+        "batch_code": batch.batch_id,
+        "total_batch_expenditure": total_batch_cost,
+        "total_paid_for_batch": total_paid_for_batch,
+        "unpaid_or_unassigned": money(
+            max(total_batch_cost - total_paid_for_batch, ZERO)
+        ),
+        "funding_coverage_percent": percent(total_paid_for_batch, total_batch_cost),
+        "own_batch_sales": own_batch_sales,
+        "own_batch_sales_percent": percent(own_batch_sales, total_paid_for_batch),
+        "other_batch_sales": other_batch_sales,
+        "other_batch_sales_percent": percent(other_batch_sales, total_paid_for_batch),
+        "other_sources": other_sources,
+        "other_sources_percent": percent(other_sources, total_paid_for_batch),
+        "sources": source_rows,
+        "transactions": transactions,
+        "basis": (
+            "Funding follows posted cash allocations. When one expenditure benefits "
+            "multiple batches, each funding source is attributed in proportion to "
+            "that batch's share of the expenditure cost allocation."
+        ),
+    }
+
+
 def validate_funding_allocations(expenditure: Expenditure, allocations_data: list[dict]) -> None:
     """
     Validates that funding allocations for an expenditure do not overspend

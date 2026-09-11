@@ -45,5 +45,8 @@ export const financeApiPaths = {
   fundingSources: `${FINANCE_ROOT}/funding-sources`,
   batchRevenueUtilization: (batchId: number) =>
     `${FINANCE_ROOT}/reports/batches/${batchId}/revenue-utilization`,
+  batchFundingMix: (batchId: number) =>
+    `${FINANCE_ROOT}/reports/batches/${batchId}/funding-mix`,
+  batchFundingMixList: `${FINANCE_ROOT}/reports/batch-funding-mix`,
   crossBatchFinancing: `${FINANCE_ROOT}/reports/cross-batch-financing`,
 } as const;

@@ -78,6 +78,7 @@ export function AddSaleForm({ batchId }: AddSaleFormProps) {
       payment_status: "partial",
       payment_method: "cash",
       amount_paid: 0,
+      receivable_follow_up_name: "",
       sold_by_name: "",
       notes: "Recorded through Farmnotes.",
     },
@@ -138,6 +139,11 @@ export function AddSaleForm({ batchId }: AddSaleFormProps) {
         values.buyer_type === "other" ? values.buyer_type_other.trim() : "",
       amount_paid: submittedAmountPaid,
       balance: Math.max(submittedSaleTotal - submittedAmountPaid, 0),
+      receivable_follow_up_name:
+        values.payment_status !== "cancelled" &&
+        submittedSaleTotal - submittedAmountPaid > 0
+          ? values.receivable_follow_up_name.trim()
+          : "",
     };
 
     try {
@@ -155,6 +161,7 @@ export function AddSaleForm({ batchId }: AddSaleFormProps) {
         payment_status: "partial",
         payment_method: "cash",
         amount_paid: 0,
+        receivable_follow_up_name: "",
         sold_by_name: "",
         notes: "Recorded through Farmnotes.",
       });
@@ -319,6 +326,22 @@ export function AddSaleForm({ batchId }: AddSaleFormProps) {
               {...register("amount_paid", {
                 valueAsNumber: true,
               })}
+              className="form-input"
+            />
+          </FormField>
+        ) : null}
+
+        {paymentStatus !== "paid" && paymentStatus !== "cancelled" ? (
+          <FormField
+            label="Receivables follow-up person"
+            error={errors.receivable_follow_up_name?.message}
+          >
+            <input
+              id="sale-receivable-follow-up-name"
+              type="text"
+              maxLength={200}
+              placeholder="Person responsible for collecting the balance"
+              {...register("receivable_follow_up_name")}
               className="form-input"
             />
           </FormField>

@@ -413,6 +413,12 @@ class Sales(models.Model):
         decimal_places=2,
         validators=[MONEY_VALIDATOR],
     )
+    receivable_follow_up_name = models.CharField(
+        max_length=200,
+        blank=True,
+        default="",
+        help_text="Person responsible for following up an outstanding sale balance.",
+    )
     sold_by_name = models.CharField(max_length=200)
     notes = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
@@ -527,6 +533,20 @@ class Sales(models.Model):
             and self.amount_paid > self.sale_total
         ):
             errors["amount_paid"] = "Amount paid cannot exceed the sale total."
+        self.receivable_follow_up_name = (
+            self.receivable_follow_up_name or ""
+        ).strip()
+        outstanding_balance = (
+            Decimal("0.00")
+            if self.payment_status == PaymentStatus.CANCELLED
+            else max(self.sale_total - self.amount_paid, Decimal("0.00"))
+        )
+        if outstanding_balance > Decimal("0.00") and len(
+            self.receivable_follow_up_name
+        ) < 2:
+            errors["receivable_follow_up_name"] = (
+                "Enter the person responsible for following up the remaining amount."
+            )
         if errors:
             raise ValidationError(errors)
 

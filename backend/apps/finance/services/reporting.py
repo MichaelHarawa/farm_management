@@ -1517,6 +1517,7 @@ def receivables_report(filters=None) -> dict:
             "batch": sale.batch_id,
             "batch_id": sale.batch.batch_id,
             "buyer_name": sale.buyer_name,
+            "receivable_follow_up_name": sale.receivable_follow_up_name,
             "sale_date": sale.sale_date,
             "due_date": sale.due_date,
             "age_days": max((today - sale.sale_date.date()).days, 0),

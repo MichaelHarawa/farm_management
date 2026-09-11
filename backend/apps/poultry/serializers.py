@@ -361,6 +361,7 @@ class SalesSerializer(serializers.ModelSerializer):
             "payment_method",
             "amount_paid",
             "balance",
+            "receivable_follow_up_name",
             "sold_by_name",
             "notes",
             "created_at",
@@ -416,6 +417,13 @@ class SalesSerializer(serializers.ModelSerializer):
         sale_total = (Decimal(quantity_sold) * unit_price).quantize(
             Decimal("0.01")
         )
+        receivable_follow_up_name = (
+            attrs.get(
+                "receivable_follow_up_name",
+                getattr(self.instance, "receivable_follow_up_name", ""),
+            )
+            or ""
+        ).strip()
 
         errors = {}
         due_date = attrs.get("due_date", getattr(self.instance, "due_date", None))
@@ -445,6 +453,19 @@ class SalesSerializer(serializers.ModelSerializer):
             and amount_paid > sale_total
         ):
             errors["amount_paid"] = "Amount paid cannot exceed sale total."
+        outstanding_balance = (
+            Decimal("0.00")
+            if payment_status == PaymentStatus.CANCELLED
+            else max(sale_total - amount_paid, Decimal("0.00"))
+        )
+        if outstanding_balance > Decimal("0.00"):
+            if len(receivable_follow_up_name) < 2:
+                errors["receivable_follow_up_name"] = (
+                    "Enter the person responsible for following up the remaining amount."
+                )
+            attrs["receivable_follow_up_name"] = receivable_follow_up_name
+        else:
+            attrs["receivable_follow_up_name"] = ""
         if errors:
             raise serializers.ValidationError(errors)
 

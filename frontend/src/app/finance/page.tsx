@@ -97,6 +97,7 @@ export default async function FinanceDashboardPage({ searchParams }: { searchPar
               <p className="text-sm leading-6 text-[var(--navy-muted)]">Compare one batch or a combination of batches using revenue, costs, shared allocations, mortality, collections, and final or provisional results.</p>
               <div className="mt-4 flex flex-wrap gap-3">
                 <Link href="/finance/batches" className="finance-button">Analyze batches</Link>
+                <Link href="/finance/revenue-usage" className="finance-button">Track funding &amp; expenditures</Link>
                 <Link href="/poultry/dashboard" className="rounded-lg border border-[var(--line)] px-5 py-3 font-bold">Open poultry dashboard</Link>
               </div>
             </Panel>

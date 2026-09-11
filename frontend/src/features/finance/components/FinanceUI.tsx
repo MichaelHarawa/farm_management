@@ -62,6 +62,7 @@ export function FinanceNav() {
     ["Overview", "/finance"],
     ["Sales & Receivables", "/finance/receivables"],
     ["Purchases & Payables", "/finance/expenditures"],
+    ["Funding & Use", "/finance/revenue-usage"],
     ["People & Payroll", "/finance/payroll"],
     ["Inventory", "/finance/consumables"],
     ["Assets", "/finance/assets"],

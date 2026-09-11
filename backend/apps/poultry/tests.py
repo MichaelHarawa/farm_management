@@ -31,6 +31,7 @@ def sale_payload(**overrides):
         "payment_status": PaymentStatus.PARTIAL,
         "payment_method": "cash",
         "amount_paid": "5000.00",
+        "receivable_follow_up_name": "Collections Officer",
         "sold_by_name": "Farm Manager",
         "notes": "Recorded through Farmnotes.",
     }
@@ -59,6 +60,26 @@ class SalesSerializerTests(SimpleTestCase):
 
         self.assertFalse(serializer.is_valid())
         self.assertIn("amount_paid", serializer.errors)
+
+    def test_sale_with_balance_requires_receivables_follow_up_person(self):
+        payload = sale_payload(payment_status=PaymentStatus.UNPAID)
+        payload["receivable_follow_up_name"] = ""
+
+        serializer = SalesSerializer(data=payload)
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("receivable_follow_up_name", serializer.errors)
+
+    def test_paid_sale_clears_receivables_follow_up_person(self):
+        serializer = SalesSerializer(
+            data=sale_payload(payment_status=PaymentStatus.PAID)
+        )
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertEqual(
+            serializer.validated_data["receivable_follow_up_name"],
+            "",
+        )
 
     def test_other_buyer_type_requires_and_preserves_manual_value(self):
         missing_other = SalesSerializer(

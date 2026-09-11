@@ -159,6 +159,7 @@ export type PoultrySale = {
   payment_method: PaymentMethod;
   amount_paid: number;
   balance: number;
+  receivable_follow_up_name: string;
   sold_by_name: string;
   notes: string;
   created_at: string;
@@ -381,6 +382,7 @@ export type CreateSalePayload = {
   payment_method: PaymentMethod;
   amount_paid: number;
   balance: number;
+  receivable_follow_up_name: string;
   sold_by_name: string;
   notes: string;
 };

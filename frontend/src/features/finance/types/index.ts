@@ -573,6 +573,7 @@ export type ReceivableSale = {
   batch: number;
   batch_id: string;
   buyer_name: string;
+  receivable_follow_up_name: string;
   sale_date: string;
   due_date: string | null;
   age_days: number;
@@ -717,6 +718,61 @@ export type CrossBatchFlow = {
   expenditure_desc: string;
   amount_funded: DecimalString;
   allocated_to_batch_id: number;
+  allocated_to_batch_code: string;
   allocated_amount: DecimalString;
   date: string;
+};
+
+export type BatchFundingMix = {
+  batch_id: number;
+  batch_code: string;
+  total_batch_expenditure: DecimalString;
+  total_paid_for_batch: DecimalString;
+  unpaid_or_unassigned: DecimalString;
+  funding_coverage_percent: DecimalString | null;
+  own_batch_sales: DecimalString;
+  own_batch_sales_percent: DecimalString | null;
+  other_batch_sales: DecimalString;
+  other_batch_sales_percent: DecimalString | null;
+  other_sources: DecimalString;
+  other_sources_percent: DecimalString | null;
+  basis: string;
+  transaction_page?: {
+    count: number;
+    page: number;
+    page_size: number;
+    pages: number;
+    next: number | null;
+    previous: number | null;
+  };
+  sources: Array<{
+    funding_source_id: number;
+    source_type: string;
+    source_type_label: string;
+    source_group: "own_batch_sales" | "other_batch_sales" | "other_sources";
+    source_label: string;
+    source_batch_id: number | null;
+    source_batch_code: string | null;
+    amount: DecimalString;
+    percent: DecimalString | null;
+  }>;
+  transactions: Array<{
+    cost_allocation_id: number;
+    funding_allocation_id: number;
+    expenditure_id: number;
+    expenditure_reference: string;
+    expenditure_date: string;
+    description: string;
+    category: string;
+    total_expenditure: DecimalString;
+    batch_cost_amount: DecimalString;
+    funding_payment_amount: DecimalString;
+    attributed_amount: DecimalString;
+    source_group: "own_batch_sales" | "other_batch_sales" | "other_sources";
+    source_type: string;
+    source_label: string;
+    source_batch_id: number | null;
+    source_batch_code: string | null;
+    allocation_date: string;
+  }>;
 };

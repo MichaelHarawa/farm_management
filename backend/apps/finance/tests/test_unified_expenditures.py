@@ -30,6 +30,7 @@ from apps.finance.services.expenditures import (
 from apps.finance.services.profitability import (
     available_batch_cash,
     available_funding_source_cash,
+    batch_expenditure_funding_mix,
     batch_profitability,
     cash_used_from_batch,
 )
@@ -201,6 +202,57 @@ class UnifiedExpenditureWorkflowTests(TestCase):
         self.assertEqual(cash_used_from_batch(self.batch_a), Decimal("400.00"))
         self.assertEqual(available_funding_source_cash(self.equity), Decimal("550.00"))
         self.assertEqual(cash_used_from_batch(self.batch_b), Decimal("0.00"))
+
+    def test_batch_funding_mix_splits_other_batch_sales_and_other_sources(self):
+        expenditure = Expenditure.objects.create(
+            expenditure_date=date(2026, 1, 20),
+            accounting_period=self.period,
+            amount=Decimal("100.00"),
+            category=self.feed,
+            accounting_nature=AccountingNature.DIRECT_COST,
+            description="Shared feed delivery",
+            origin=ExpenditureOrigin.FINANCE,
+            created_by=self.user,
+        )
+        post_expenditure(
+            expenditure_id=expenditure.pk,
+            user=self.user,
+            funding_rows=[
+                {
+                    "funding_source": self.batch_a_source.pk,
+                    "amount": "60.00",
+                    "classification": "reinvestment",
+                },
+                {
+                    "funding_source": self.equity.pk,
+                    "amount": "40.00",
+                    "classification": "working_capital",
+                },
+            ],
+            cost_rows=[
+                {"batch": self.batch_b.pk, "amount": "100.00"},
+            ],
+        )
+
+        report = batch_expenditure_funding_mix(self.batch_b)
+
+        self.assertEqual(report["total_batch_expenditure"], Decimal("100.00"))
+        self.assertEqual(report["total_paid_for_batch"], Decimal("100.00"))
+        self.assertEqual(report["other_batch_sales"], Decimal("60.00"))
+        self.assertEqual(report["other_batch_sales_percent"], Decimal("60.00"))
+        self.assertEqual(report["other_sources"], Decimal("40.00"))
+        self.assertEqual(report["other_sources_percent"], Decimal("40.00"))
+        self.assertEqual(len(report["transactions"]), 2)
+
+        client = APIClient()
+        client.force_authenticate(self.user)
+        response = client.get("/api/v1/finance/reports/cross-batch-financing")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["results"][0]["amount_funded"], "60.00")
+        self.assertEqual(
+            response.data["results"][0]["allocated_to_batch_code"],
+            self.batch_b.batch_id,
+        )
 
     def test_credit_cost_is_incurred_then_paid_without_duplicate(self):
         detail = create_batch_cost_transaction(

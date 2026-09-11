@@ -195,6 +195,10 @@ def create_sale_with_lifecycle(*, batch_id: int, created_by, **data) -> Sales:
         if not sale.sale_id:
             sale.sale_id = sale.next_sale_id()
         sale.sync_payment_fields()
+        if sale.balance > Decimal("0.00") and not (
+            sale.receivable_follow_up_name or ""
+        ).strip():
+            sale.receivable_follow_up_name = (sale.sold_by_name or "").strip()
         sale.full_clean()
         sale.save()
         assert_non_negative_bird_balance(batch)

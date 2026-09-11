@@ -4,7 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from django.db import transaction
-from django.db.models import F, Q, Sum
+from django.db.models import Q, Sum
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import mixins, status, viewsets
@@ -980,6 +980,7 @@ from .serializers import (
     BatchRevenueUtilizationSerializer,
 )
 from .services.profitability import (
+    batch_expenditure_funding_mix,
     batch_revenue_utilization,
     validate_funding_allocations,
     available_batch_cash,
@@ -1274,48 +1275,118 @@ class BatchRevenueUtilizationListView(APIView):
         return paginator.get_paginated_response(json_safe(results))
 
 
-class CrossBatchFinancingReportView(APIView):
-    """Simple cross-batch financing flows: which batch collections funded expenditures allocated to other batches."""
+class BatchFundingMixView(APIView):
+    permission_classes = (FinancePermission,)
+
+    def get(self, request, batch_id: int):
+        batch = get_object_or_404(Batch, pk=batch_id)
+        data = batch_expenditure_funding_mix(batch)
+        transactions = data["transactions"]
+        try:
+            page_number = max(int(request.query_params.get("page", 1)), 1)
+            page_size = min(max(int(request.query_params.get("page_size", 20)), 1), 100)
+        except (TypeError, ValueError):
+            raise ValidationError({"page": "Page and page_size must be positive integers."})
+        transaction_count = len(transactions)
+        page_count = max((transaction_count + page_size - 1) // page_size, 1)
+        page_number = min(page_number, page_count)
+        start = (page_number - 1) * page_size
+        data["transactions"] = transactions[start:start + page_size]
+        data["transaction_page"] = {
+            "count": transaction_count,
+            "page": page_number,
+            "page_size": page_size,
+            "pages": page_count,
+            "next": page_number + 1 if page_number < page_count else None,
+            "previous": page_number - 1 if page_number > 1 else None,
+        }
+        return Response(json_safe(data))
+
+
+class BatchFundingMixListView(APIView):
     permission_classes = (FinancePermission,)
 
     def get(self, request):
-        flows_queryset = FundingAllocation.objects.filter(
-            expenditure__status=ExpenditureStatus.POSTED,
-            funding_source__source_type=FundingSourceType.BATCH_COLLECTION,
-            expenditure__cost_allocations__batch__isnull=False,
-        ).exclude(
-            funding_source__batch_id=F("expenditure__cost_allocations__batch_id")
-        ).values(
-            "funding_source__batch_id",
-            "funding_source__batch__batch_id",
-            "expenditure_id",
-            "expenditure__description",
-            "amount",
-            "expenditure__cost_allocations__batch_id",
-            "expenditure__cost_allocations__allocated_amount",
-            "allocation_date",
-        )
+        queryset = Batch.objects.all().order_by("-entry_date", "-pk")
+        search = request.query_params.get("search", "").strip()
+        if search:
+            queryset = queryset.filter(batch_id__icontains=search)
+        paginator = FinanceRegisterPagination()
+        page = paginator.paginate_queryset(queryset, request, view=self)
+        results = [
+            batch_expenditure_funding_mix(batch, include_transactions=False)
+            for batch in page
+        ]
+        return paginator.get_paginated_response(json_safe(results))
+
+
+class CrossBatchFinancingReportView(APIView):
+    """Batch sales used for costs carried by another batch."""
+    permission_classes = (FinancePermission,)
+
+    def get(self, request):
         batch_id = request.query_params.get("batch")
-        if batch_id:
-            flows_queryset = flows_queryset.filter(
-                Q(funding_source__batch_id=batch_id)
-                | Q(expenditure__cost_allocations__batch_id=batch_id)
+        cost_allocations = (
+            CostAllocation.objects.filter(
+                expenditure__status=ExpenditureStatus.POSTED,
+                expenditure__funding_allocations__funding_source__source_type=(
+                    FundingSourceType.BATCH_COLLECTION
+                ),
             )
+            .select_related("batch", "expenditure")
+            .prefetch_related(
+                "expenditure__cost_allocations",
+                "expenditure__funding_allocations__funding_source__batch",
+            )
+            .distinct()
+        )
+        flows = []
+        for cost_allocation in cost_allocations:
+            expenditure = cost_allocation.expenditure
+            allocated_total = sum(
+                (
+                    row.allocated_amount
+                    for row in expenditure.cost_allocations.all()
+                ),
+                Decimal("0.00"),
+            )
+            if allocated_total <= Decimal("0.00"):
+                continue
+            cost_share = cost_allocation.allocated_amount / allocated_total
+            for funding in expenditure.funding_allocations.all():
+                source = funding.funding_source
+                if (
+                    source.source_type != FundingSourceType.BATCH_COLLECTION
+                    or not source.batch_id
+                    or source.batch_id == cost_allocation.batch_id
+                ):
+                    continue
+                if batch_id and str(source.batch_id) != batch_id and str(
+                    cost_allocation.batch_id
+                ) != batch_id:
+                    continue
+                flows.append(
+                    {
+                        "funding_batch_id": source.batch_id,
+                        "funding_batch_code": source.batch.batch_id,
+                        "expenditure_id": expenditure.pk,
+                        "expenditure_desc": expenditure.description,
+                        "amount_funded": (
+                            funding.amount * cost_share
+                        ).quantize(Decimal("0.01")),
+                        "allocated_to_batch_id": cost_allocation.batch_id,
+                        "allocated_to_batch_code": cost_allocation.batch.batch_id,
+                        "allocated_amount": cost_allocation.allocated_amount,
+                        "date": funding.allocation_date,
+                    }
+                )
         ordering = request.query_params.get("ordering", "-allocation_date")
         allowed_ordering = {"allocation_date", "-allocation_date", "amount", "-amount"}
         if ordering not in allowed_ordering:
             ordering = "-allocation_date"
-        flows_queryset = flows_queryset.order_by(ordering, "-pk")
+        reverse = ordering.startswith("-")
+        ordering_key = "date" if "allocation_date" in ordering else "amount_funded"
+        flows.sort(key=lambda row: row[ordering_key], reverse=reverse)
         paginator = FinanceRegisterPagination()
-        page = paginator.paginate_queryset(flows_queryset, request, view=self)
-        flows = [{
-            "funding_batch_id": row["funding_source__batch_id"],
-            "funding_batch_code": row["funding_source__batch__batch_id"],
-            "expenditure_id": row["expenditure_id"],
-            "expenditure_desc": row["expenditure__description"],
-            "amount_funded": str(row["amount"]),
-            "allocated_to_batch_id": row["expenditure__cost_allocations__batch_id"],
-            "allocated_amount": str(row["expenditure__cost_allocations__allocated_amount"]),
-            "date": str(row["allocation_date"]),
-        } for row in page]
-        return paginator.get_paginated_response(flows)
+        page = paginator.paginate_queryset(flows, request, view=self)
+        return paginator.get_paginated_response(json_safe(page))

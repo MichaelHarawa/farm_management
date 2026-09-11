@@ -114,9 +114,12 @@ export default function FinanceExpendituresClient() {
   return (
     <div className="p-8 max-w-6xl mx-auto">
       <Link href="/finance" className="mb-5 inline-block text-sm font-bold underline">← Finance Dashboard</Link>
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
         <h1 className="text-3xl font-extrabold">Expenditures</h1>
-        <Link href="/finance/expenditures/new" className="finance-button">+ New Expenditure</Link>
+        <div className="flex flex-wrap gap-3">
+          <Link href="/finance/revenue-usage" className="rounded-lg border border-[#151f36] bg-white px-5 py-3 font-bold text-[#151f36]">Track funding &amp; use</Link>
+          <Link href="/finance/expenditures/new" className="finance-button">+ New Expenditure</Link>
+        </div>
       </div>
 
       <div className="mb-4 flex flex-wrap gap-2">
@@ -232,7 +235,7 @@ export default function FinanceExpendituresClient() {
         Each row is one authoritative transaction. Beneficiaries affect profitability; payment sources affect cash and Revenue Usage.
       </p>
       <div className="mt-2">
-        <Link href="/finance/revenue-usage" className="text-sm underline">View Revenue Usage + Cross-Batch Report →</Link>
+        <Link href="/finance/revenue-usage" className="font-bold underline">View funding sources, batch use, and cross-batch financing →</Link>
       </div>
     </div>
   );

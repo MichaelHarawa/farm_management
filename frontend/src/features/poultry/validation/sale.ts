@@ -45,6 +45,11 @@ export const saleSchema = z
       .int("Amount paid must be a whole number.")
       .min(0, "Amount paid cannot be negative."),
 
+    receivable_follow_up_name: z
+      .string()
+      .trim()
+      .max(200, "Follow-up person cannot exceed 200 characters."),
+
     sold_by_name: z
       .string()
       .trim()
@@ -79,6 +84,17 @@ export const saleSchema = z
         code: "custom",
         path: ["amount_paid"],
         message: "Amount paid cannot exceed the sale total.",
+      });
+    }
+
+    const leavesReceivable =
+      values.payment_status !== "cancelled" &&
+      (values.payment_status === "paid" ? 0 : saleTotal - values.amount_paid) > 0;
+    if (leavesReceivable && values.receivable_follow_up_name.length < 2) {
+      context.addIssue({
+        code: "custom",
+        path: ["receivable_follow_up_name"],
+        message: "Enter the person responsible for following up the remaining amount.",
       });
     }
   });

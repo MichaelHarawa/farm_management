@@ -379,6 +379,10 @@ function saleDetail(sale: PoultrySale): TableRowDetail {
       },
       { label: "Payment Status", value: formatLabel(sale.payment_status) },
       { label: "Payment Method", value: formatLabel(sale.payment_method) },
+      {
+        label: "Receivables Follow-up",
+        value: sale.receivable_follow_up_name || "Not applicable",
+      },
       { label: "Sold By", value: sale.sold_by_name },
       { label: "Notes", value: sale.notes },
     ],
@@ -1838,7 +1842,7 @@ function SalesTab({ batch, sales, metrics, followUpSale }: SalesTabProps) {
           <div className="mx-0 mb-8 ml-0 mr-10 flex flex-col gap-4 rounded-lg bg-[#fff4c6] px-5 py-4 sm:mx-0 sm:flex-row sm:items-center sm:justify-between">
             <p className="font-bold">
               Follow up: {formatCurrency(followUpSale.balance)} remains due on{" "}
-              {followUpSale.sale_id}.
+              {followUpSale.sale_id}. Responsible: {followUpSale.receivable_follow_up_name}.
             </p>
             <Link
               href={`/finance/receivables?batch=${batch.id}&sale=${encodeURIComponent(followUpSale.sale_id)}`}

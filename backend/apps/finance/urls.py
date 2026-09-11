@@ -24,6 +24,8 @@ from .views import (
     MonthlyReportView,
     BatchRevenueUtilizationView,
     BatchRevenueUtilizationListView,
+    BatchFundingMixListView,
+    BatchFundingMixView,
     CrossBatchFinancingReportView,
     PayrollEntryViewSet,
     ReceivablesView,
@@ -128,5 +130,15 @@ urlpatterns = [
         "reports/cross-batch-financing",
         CrossBatchFinancingReportView.as_view(),
         name="cross-batch-financing",
+    ),
+    path(
+        "reports/batches/<int:batch_id>/funding-mix",
+        BatchFundingMixView.as_view(),
+        name="batch-funding-mix",
+    ),
+    path(
+        "reports/batch-funding-mix",
+        BatchFundingMixListView.as_view(),
+        name="batch-funding-mix-list",
     ),
 ]

@@ -29,9 +29,9 @@ class InputCostsAdmin(admin.ModelAdmin):
 
 @admin.register(Sales)
 class SalesAdmin(admin.ModelAdmin):
-    list_display = ("sale_id", "batch", "product_type", "sale_total", "balance", "payment_status")
+    list_display = ("sale_id", "batch", "product_type", "sale_total", "balance", "payment_status", "receivable_follow_up_name")
     list_filter = ("product_type", "payment_status", "sale_date")
-    search_fields = ("sale_id", "batch__batch_id", "buyer_name")
+    search_fields = ("sale_id", "batch__batch_id", "buyer_name", "receivable_follow_up_name")
     autocomplete_fields = ("batch", "created_by")
 
 
