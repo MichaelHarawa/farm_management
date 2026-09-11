@@ -1,5 +1,5 @@
 "use client";
-/* eslint-disable @typescript-eslint/no-explicit-any, react-hooks/set-state-in-effect */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -8,6 +8,10 @@ import Link from "next/link";
 import { clientApiFetch } from "@/lib/client-api";
 import { getApiErrorMessage } from "@/lib/errors";
 import type { FundingSource } from "@/features/finance/types";
+import {
+  FundingSourcePicker,
+  fundingSourceDisplayLabel,
+} from "@/features/finance/components/FundingSourcePicker";
 
 type FundingRow = { funding_source: number | ""; source_query: string; amount: string; classification: string };
 type CostRow = { batch: number | ""; amount: string };
@@ -15,9 +19,6 @@ type CostRow = { batch: number | ""; amount: string };
 type PoultryBatch = { id: number; batch_id: string; status?: string };
 
 const expenditureKey = () => globalThis.crypto?.randomUUID?.() ?? `expense-${Date.now()}-${Math.random()}`;
-
-const fundingSourceLabel = (source: FundingSource) =>
-  `${source.display_name || source.description || source.source_type}${source.batch_code ? ` — ${source.batch_code}` : ""} — MWK ${Number(source.available_balance || 0).toLocaleString()} available`;
 
 export default function NewExpenditurePage() {
   const router = useRouter();
@@ -47,7 +48,6 @@ export default function NewExpenditurePage() {
     { batch: "", amount: "" },
   ]);
 
-  const [fundingSources, setFundingSources] = useState<FundingSource[]>([]);
   const [batches, setBatches] = useState<PoultryBatch[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
   const [batchSearch, setBatchSearch] = useState("");
@@ -86,26 +86,15 @@ export default function NewExpenditurePage() {
     Math.abs(totalAmount - costTotal) < 0.01
   );
 
-  // Fetch sources and batches
+  // Fetch form reference data. Funding sources are searched on demand.
   useEffect(() => {
     (async () => {
       try {
-        const [fs, bsRaw, cats] = await Promise.all([
-          clientApiFetch<FundingSource[]>("/api/finance/funding-sources").catch(() => []),
+        const [bsRaw, cats] = await Promise.all([
           clientApiFetch<any>("/api/poultry/batches").catch(() => []),
           clientApiFetch<any>("/api/finance/expenditure-categories").catch(() => []),
         ]);
         const bs = Array.isArray(bsRaw) ? bsRaw : (bsRaw?.results || []);
-        setFundingSources(fs);
-        const preferred = fs.length === 1 ? fs[0] : undefined;
-        if (preferred) {
-          setFundingRows([{
-            funding_source: preferred.id,
-            source_query: fundingSourceLabel(preferred),
-            amount: "",
-            classification: "reinvestment",
-          }]);
-        }
         setBatches(bs);  // include all non-deleted: active, closed, historical etc.
         setCategories(Array.isArray(cats) ? cats : (cats?.results || []));
       } catch {
@@ -113,22 +102,6 @@ export default function NewExpenditurePage() {
       }
     })();
   }, []);
-
-  useEffect(() => {
-    if (totalAmount <= 0 || fundingSources.length <= 1 || fundingRows[0]?.funding_source) return;
-    const contextBatch = Number(new URLSearchParams(window.location.search).get("batch"));
-    const preferred = fundingSources.find(
-      (source) => source.batch === contextBatch && Number(source.available_balance || 0) >= totalAmount,
-    );
-    if (preferred) {
-      setFundingRows([{
-        funding_source: preferred.id,
-        source_query: fundingSourceLabel(preferred),
-        amount: form.amount,
-        classification: "reinvestment",
-      }]);
-    }
-  }, [form.amount, fundingRows, fundingSources, totalAmount]);
 
   const filteredBatches = useMemo(() => {
     const q = batchSearch.toLowerCase().trim();
@@ -204,10 +177,8 @@ export default function NewExpenditurePage() {
         method: "POST",
         body: JSON.stringify({ funding_source: source.id, amount: newFunds.amount, reference: newFunds.reference }),
       });
-      const refreshed = await clientApiFetch<FundingSource[]>("/api/finance/funding-sources");
-      setFundingSources(refreshed);
-      const fundedSource = refreshed.find((item) => item.id === source.id);
-      if (fundedSource) setFundingRows([{ funding_source: fundedSource.id, source_query: fundingSourceLabel(fundedSource), amount: "", classification: "reinvestment" }]);
+      const fundedSource = await clientApiFetch<FundingSource>(`/api/finance/funding-sources/${source.id}`);
+      setFundingRows([{ funding_source: fundedSource.id, source_query: fundingSourceDisplayLabel(fundedSource), amount: "", classification: "reinvestment" }]);
       setShowFundingReceipt(false);
     } catch (requestError) {
       setError(getApiErrorMessage(requestError));
@@ -433,26 +404,18 @@ export default function NewExpenditurePage() {
 
           {fundingRows.map((row, idx) => (
             <div key={idx} className="flex flex-wrap gap-2 mb-2 items-end">
-              <input
-                aria-label="Where was this expenditure paid from?"
-                list={`funding-options-${idx}`}
-                value={row.source_query}
-                placeholder="Search batch, owner, farm, or loan cash…"
-                onChange={(e) => {
-                  const selected = fundingSources.find((source) => fundingSourceLabel(source) === e.target.value);
-                  setFundingRows((current) => current.map((item, rowIndex) => rowIndex === idx ? {
+              <div className="min-w-72 flex-1">
+                <FundingSourcePicker
+                  ariaLabel={`Payment source ${idx + 1}`}
+                  value={row.funding_source}
+                  displayValue={row.source_query}
+                  onSelect={(selected) => setFundingRows((current) => current.map((item, rowIndex) => rowIndex === idx ? {
                     ...item,
-                    source_query: e.target.value,
+                    source_query: selected ? fundingSourceDisplayLabel(selected) : "",
                     funding_source: selected?.id || "",
-                  } : item));
-                }}
-                className="form-input w-72 text-sm"
-              />
-              <datalist id={`funding-options-${idx}`}>
-                {fundingSources.map((source) => (
-                  <option key={source.id} value={fundingSourceLabel(source)} />
-                ))}
-              </datalist>
+                  } : item))}
+                />
+              </div>
               <input
                 placeholder="Amount"
                 type="number"
@@ -476,7 +439,7 @@ export default function NewExpenditurePage() {
             </div>
           ))}
 
-          {fundingSources.length === 0 && <div className="rounded-lg bg-amber-50 p-4 text-sm text-amber-900"><p>No collected or contributed cash is currently available.</p><div className="mt-3 flex flex-wrap gap-3"><Link href="/finance/receivables" className="font-bold underline">Record sales payment</Link><button type="button" onClick={() => setShowFundingReceipt(true)} className="font-bold underline">Add owner or farm funds</button></div></div>}</> : <p className="rounded-lg bg-amber-50 p-4 text-sm text-amber-900">The cost will be posted as a payable. Add the actual payment source later without creating another expenditure.</p>}
+          </> : <p className="rounded-lg bg-amber-50 p-4 text-sm text-amber-900">The cost will be posted as a payable. Add the actual payment source later without creating another expenditure.</p>}
         </section>
 
         <section className="rounded-xl border border-[#d9d1bd] bg-white p-5">

@@ -6,6 +6,10 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import type { Expenditure, FundingSource } from "@/features/finance/types";
+import {
+  FundingSourcePicker,
+  fundingSourceDisplayLabel,
+} from "@/features/finance/components/FundingSourcePicker";
 import { formatCurrency, formatDate, formatLabel } from "@/features/finance/utils/formatters";
 import { clientApiFetch } from "@/lib/client-api";
 import { getApiErrorMessage } from "@/lib/errors";
@@ -21,15 +25,11 @@ type NewFundingSource = {
 
 const blankRow = (): FundingRow => ({ funding_source: "", source_query: "", amount: "" });
 const paymentKey = () => globalThis.crypto?.randomUUID?.() ?? `payment-${Date.now()}-${Math.random()}`;
-const sourceLabel = (source: FundingSource) =>
-  `${source.display_name || source.description || source.source_type}${source.batch_code ? ` — ${source.batch_code}` : ""} — ${formatCurrency(source.available_balance || 0)} available`;
-
 export default function ExpenditureDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const expenditureId = Number(params.id);
   const [expenditure, setExpenditure] = useState<Expenditure | null>(null);
-  const [sources, setSources] = useState<FundingSource[]>([]);
   const [rows, setRows] = useState<FundingRow[]>([blankRow()]);
   const [idempotencyKey, setIdempotencyKey] = useState(paymentKey);
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().slice(0, 10));
@@ -46,12 +46,8 @@ export default function ExpenditureDetailPage() {
 
   const load = async () => {
     try {
-      const [record, availableSources] = await Promise.all([
-        clientApiFetch<Expenditure>(`/api/finance/expenditures/${expenditureId}`),
-        clientApiFetch<FundingSource[]>("/api/finance/funding-sources"),
-      ]);
+      const record = await clientApiFetch<Expenditure>(`/api/finance/expenditures/${expenditureId}`);
       setExpenditure(record);
-      setSources(availableSources);
       if (record.payment_status === "historical_unassigned") {
         setNewSource((current) => ({
           ...current,
@@ -59,14 +55,14 @@ export default function ExpenditureDetailPage() {
         }));
       }
       if (record.status === "draft" && record.funding_allocations?.length) {
-        setRows(record.funding_allocations.map((allocation) => {
-          const source = availableSources.find((item) => item.id === allocation.funding_source);
-          return { funding_source: allocation.funding_source, source_query: source ? sourceLabel(source) : `Funding source #${allocation.funding_source}`, amount: String(allocation.amount) };
-        }));
+        setRows(record.funding_allocations.map((allocation) => ({
+          funding_source: allocation.funding_source,
+          source_query: allocation.funding_source_display || `Funding source #${allocation.funding_source}`,
+          amount: String(allocation.amount),
+        })));
       } else {
         const balance = Number(record.balance_due ?? record.amount);
-        const first = availableSources.length === 1 ? availableSources[0] : undefined;
-        setRows([{ funding_source: first?.id || "", source_query: first ? sourceLabel(first) : "", amount: balance > 0 ? String(balance) : "" }]);
+        setRows([{ funding_source: "", source_query: "", amount: balance > 0 ? String(balance) : "" }]);
       }
     } catch (requestError) {
       setError(getApiErrorMessage(requestError));
@@ -109,9 +105,7 @@ export default function ExpenditureDetailPage() {
           notes: isHistoricalAssignment ? "Historical source-of-funds reconciliation." : "",
         }),
       });
-      const refreshedSources = await clientApiFetch<FundingSource[]>("/api/finance/funding-sources");
-      const fundedSource = refreshedSources.find((source) => source.id === createdSource.id);
-      setSources(refreshedSources);
+      const fundedSource = await clientApiFetch<FundingSource>(`/api/finance/funding-sources/${createdSource.id}`);
       if (fundedSource) {
         setRows((current) => {
           const emptyIndex = current.findIndex((row) => !row.funding_source);
@@ -125,7 +119,7 @@ export default function ExpenditureDetailPage() {
           );
           const fundedRow = {
             funding_source: fundedSource.id,
-            source_query: sourceLabel(fundedSource),
+            source_query: fundingSourceDisplayLabel(fundedSource),
             amount: suggestedAmount > 0 ? String(suggestedAmount) : "",
           };
           if (emptyIndex >= 0) {
@@ -236,8 +230,18 @@ export default function ExpenditureDetailPage() {
           <div className="mt-4 grid gap-3">
             {rows.map((row, index) => (
               <div key={index} className="flex flex-wrap gap-3">
-                <input aria-label={`Funding source ${index + 1}`} list={`detail-funding-${index}`} value={row.source_query} onChange={(event) => { const selected = sources.find((source) => sourceLabel(source) === event.target.value); setRows((current) => current.map((item, rowIndex) => rowIndex === index ? { ...item, source_query: event.target.value, funding_source: selected?.id || "" } : item)); }} className="form-input min-w-72 flex-1" placeholder="Search batch revenue, equity, farm cash, or loan…" />
-                <datalist id={`detail-funding-${index}`}>{sources.map((source) => <option key={source.id} value={sourceLabel(source)} />)}</datalist>
+                <div className="min-w-72 flex-1">
+                  <FundingSourcePicker
+                    ariaLabel={`Funding source ${index + 1}`}
+                    value={row.funding_source}
+                    displayValue={row.source_query}
+                    onSelect={(selected) => setRows((current) => current.map((item, rowIndex) => rowIndex === index ? {
+                      ...item,
+                      source_query: selected ? fundingSourceDisplayLabel(selected) : "",
+                      funding_source: selected?.id || "",
+                    } : item))}
+                  />
+                </div>
                 <input aria-label={`Payment amount ${index + 1}`} type="number" min="0.01" step="0.01" value={row.amount} onChange={(event) => setRows((current) => current.map((item, rowIndex) => rowIndex === index ? { ...item, amount: event.target.value } : item))} className="form-input w-40" placeholder="Amount" />
                 {rows.length > 1 ? <button type="button" onClick={() => setRows((current) => current.filter((_, rowIndex) => rowIndex !== index))} className="font-bold text-red-700">Remove</button> : null}
               </div>
@@ -261,7 +265,6 @@ export default function ExpenditureDetailPage() {
             </div>
             {canRecordPayment ? <label className="text-sm font-bold">Payment date<input type="date" value={paymentDate} onChange={(event) => setPaymentDate(event.target.value)} className="form-input mt-2 block" /></label> : null}
           </div>
-          {sources.length === 0 ? <p className="mt-4 rounded-lg bg-amber-50 p-4 text-sm text-amber-900">No active cash source has a positive balance. Record a collection or funding receipt first.</p> : null}
         </section>
       ) : null}
 

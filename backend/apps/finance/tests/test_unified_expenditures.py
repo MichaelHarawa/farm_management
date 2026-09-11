@@ -162,6 +162,32 @@ class UnifiedExpenditureWorkflowTests(TestCase):
         self.assertEqual(batch_profitability(self.batch_a)["direct_batch_cost"], Decimal("200.00"))
         self.assertEqual(len(batch_cost_records(self.batch_a)), 1)
 
+    def test_funding_source_search_is_paginated_and_selective(self):
+        client = APIClient()
+        client.force_authenticate(self.user)
+
+        batch_response = client.get(
+            "/api/v1/finance/funding-sources",
+            {"search": self.batch_a.batch_id, "page_size": 1},
+        )
+        equity_response = client.get(
+            "/api/v1/finance/funding-sources",
+            {"source_type": FundingSourceType.OWNER_CAPITAL},
+        )
+
+        self.assertEqual(batch_response.status_code, 200)
+        self.assertEqual(batch_response.data["count"], 1)
+        self.assertEqual(
+            batch_response.data["results"][0]["batch_code"],
+            self.batch_a.batch_id,
+        )
+        self.assertEqual(equity_response.status_code, 200)
+        self.assertEqual(equity_response.data["count"], 1)
+        self.assertEqual(
+            equity_response.data["results"][0]["source_type"],
+            FundingSourceType.OWNER_CAPITAL,
+        )
+
     def test_cross_batch_equity_and_split_funding_keep_dimensions_separate(self):
         cross = create_batch_cost_transaction(
             batch=self.batch_b,

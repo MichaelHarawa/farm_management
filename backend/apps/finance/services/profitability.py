@@ -1582,6 +1582,73 @@ def available_funding_source_cash(source: FundingSource) -> Decimal:
     return money(received - used - payroll_used)
 
 
+def funding_source_available_balances(sources: Iterable[FundingSource]) -> dict[int, Decimal]:
+    """Calculate balances for many funding sources without per-source queries."""
+    source_rows = list(sources)
+    source_ids = [source.pk for source in source_rows]
+    batch_ids = [
+        source.batch_id
+        for source in source_rows
+        if source.source_type == FundingSourceType.BATCH_COLLECTION and source.batch_id
+    ]
+    if not source_ids:
+        return {}
+
+    collected_by_batch = {
+        row["sale__batch_id"]: money(row["total"])
+        for row in SalePayment.objects.filter(
+            sale__batch_id__in=batch_ids,
+            status=SalePaymentStatus.POSTED,
+        )
+        .values("sale__batch_id")
+        .annotate(total=Sum("amount"))
+    }
+    received_by_source = {
+        row["funding_source_id"]: money(row["total"])
+        for row in FundingReceipt.objects.filter(
+            funding_source_id__in=source_ids,
+            status=FundingReceiptStatus.POSTED,
+        )
+        .values("funding_source_id")
+        .annotate(total=Sum("amount"))
+    }
+    expenditure_used = {
+        row["funding_source_id"]: money(row["total"])
+        for row in FundingAllocation.objects.filter(
+            funding_source_id__in=source_ids,
+            expenditure__status=ExpenditureStatus.POSTED,
+        )
+        .values("funding_source_id")
+        .annotate(total=Sum("amount"))
+    }
+
+    from ..models import PayrollPaymentFunding, PayrollPaymentStatus
+
+    payroll_used = {
+        row["funding_source_id"]: money(row["total"])
+        for row in PayrollPaymentFunding.objects.filter(
+            funding_source_id__in=source_ids,
+            payment__status=PayrollPaymentStatus.POSTED,
+        )
+        .values("funding_source_id")
+        .annotate(total=Sum("amount"))
+    }
+
+    balances = {}
+    for source in source_rows:
+        received = (
+            collected_by_batch.get(source.batch_id, ZERO)
+            if source.source_type == FundingSourceType.BATCH_COLLECTION
+            else received_by_source.get(source.pk, ZERO)
+        )
+        balances[source.pk] = money(
+            received
+            - expenditure_used.get(source.pk, ZERO)
+            - payroll_used.get(source.pk, ZERO)
+        )
+    return balances
+
+
 def batch_revenue_utilization(batch: Batch) -> dict:
     """
     Returns a summary of how a batch's collected revenue has been used.

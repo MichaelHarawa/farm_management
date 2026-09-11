@@ -700,6 +700,13 @@ export type FundingSource = {
   batch_code: string | null;
 };
 
+export type PaginatedFundingSources = {
+  count: number;
+  next: string | null;
+  previous: string | null;
+  results: FundingSource[];
+};
+
 export type FundingAllocationInput = {
   funding_source: number;
   amount: DecimalString;

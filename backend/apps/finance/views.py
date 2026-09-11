@@ -1117,17 +1117,66 @@ class ExpenditureViewSet(viewsets.ModelViewSet):
 
 
 class FundingSourceViewSet(viewsets.ModelViewSet):
-    queryset = FundingSource.objects.all()
+    queryset = FundingSource.objects.select_related("batch").all()
     serializer_class = FundingSourceSerializer
     permission_classes = (FinancePermission,)
 
     def list(self, request, *args, **kwargs):
-        sources = list(self.get_queryset().filter(is_active=True).select_related("batch"))
-        if request.query_params.get("include_empty") != "1":
-            from .services.profitability import available_funding_source_cash
+        queryset = self.get_queryset().filter(is_active=True)
+        search = request.query_params.get("search", "").strip()
+        if search:
+            search_filter = (
+                Q(description__icontains=search)
+                | Q(batch__batch_id__icontains=search)
+                | Q(source_type__icontains=search.replace(" ", "_"))
+            )
+            normalized_search = search.lower()
+            if normalized_search in {"batch", "batch sales", "sales", "revenue"}:
+                search_filter |= Q(source_type=FundingSourceType.BATCH_COLLECTION)
+            if normalized_search in {"owner", "owner equity", "equity", "capital"}:
+                search_filter |= Q(source_type=FundingSourceType.OWNER_CAPITAL)
+            if normalized_search in {"farm", "farm cash", "cash"}:
+                search_filter |= Q(source_type=FundingSourceType.GENERAL_FARM_CASH)
+            queryset = queryset.filter(search_filter)
 
-            sources = [source for source in sources if available_funding_source_cash(source) > 0]
-        return Response(self.get_serializer(sources, many=True).data)
+        requested_types = [
+            value.strip()
+            for raw_value in request.query_params.getlist("source_type")
+            for value in raw_value.split(",")
+            if value.strip()
+        ]
+        if requested_types:
+            valid_types = {choice for choice, _ in FundingSourceType.choices}
+            invalid_types = sorted(set(requested_types) - valid_types)
+            if invalid_types:
+                raise ValidationError(
+                    {"source_type": "Unknown source type(s): " + ", ".join(invalid_types)}
+                )
+            queryset = queryset.filter(source_type__in=requested_types)
+
+        batch_id = request.query_params.get("batch")
+        if batch_id:
+            queryset = queryset.filter(batch_id=batch_id)
+
+        sources = list(queryset.order_by("source_type", "batch__batch_id", "description", "pk"))
+        from .services.profitability import funding_source_available_balances
+
+        available_balances = funding_source_available_balances(sources)
+        if request.query_params.get("include_empty") != "1":
+            sources = [
+                source for source in sources if available_balances[source.pk] > 0
+            ]
+        paginator = FinanceRegisterPagination()
+        page = paginator.paginate_queryset(sources, request, view=self)
+        serializer = self.get_serializer(
+            page,
+            many=True,
+            context={
+                **self.get_serializer_context(),
+                "available_balances": available_balances,
+            },
+        )
+        return paginator.get_paginated_response(serializer.data)
 
 
 class FundingReceiptViewSet(

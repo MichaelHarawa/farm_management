@@ -6,6 +6,10 @@ import { useEffect, useState } from "react";
 import { useFieldArray, useForm, useWatch, type SubmitHandler } from "react-hook-form";
 
 import type { FundingSource } from "@/features/finance/types";
+import {
+  FundingSourcePicker,
+  fundingSourceDisplayLabel,
+} from "@/features/finance/components/FundingSourcePicker";
 import { clientApiFetch } from "@/lib/client-api";
 import { getApiErrorMessage } from "@/lib/errors";
 
@@ -61,12 +65,6 @@ function getDefaultValues(): InputCostFormValues {
   };
 }
 
-function fundingSourceLabel(source: FundingSource): string {
-  const sourceName = source.display_name || source.description || source.source_type;
-  const typeLabel = source.source_type.replaceAll("_", " ");
-  return `${sourceName} — ${typeLabel} — ${formatCurrency(Number(source.available_balance || 0))} available`;
-}
-
 type AddInputCostFormProps = {
   batchId: number;
   onSuccess?: () => void;
@@ -75,7 +73,6 @@ type AddInputCostFormProps = {
 export function AddInputCostForm({ batchId, onSuccess }: AddInputCostFormProps) {
   const router = useRouter();
   const [categories, setCategories] = useState<FinanceCategory[]>([]);
-  const [fundingSources, setFundingSources] = useState<FundingSource[]>([]);
   const [serverError, setServerError] = useState<string | null>(null);
   const [showAddFunds, setShowAddFunds] = useState(false);
   const [addFundsData, setAddFundsData] = useState({ source_type: "owner_capital", description: "", amount: "", reference: "" });
@@ -113,13 +110,9 @@ export function AddInputCostForm({ batchId, onSuccess }: AddInputCostFormProps) 
   );
 
   useEffect(() => {
-    void Promise.all([
-      clientApiFetch<FinanceCategory[]>("/api/finance/expenditure-categories"),
-      clientApiFetch<FundingSource[]>("/api/finance/funding-sources"),
-    ]).then(([categoryRows, sourceRows]) => {
-      setCategories(categoryRows);
-      setFundingSources(sourceRows);
-    }).catch((error) => setServerError(getApiErrorMessage(error)));
+    void clientApiFetch<FinanceCategory[]>("/api/finance/expenditure-categories")
+      .then(setCategories)
+      .catch((error) => setServerError(getApiErrorMessage(error)));
   }, []);
 
   useEffect(() => {
@@ -152,11 +145,9 @@ export function AddInputCostForm({ batchId, onSuccess }: AddInputCostFormProps) 
         method: "POST",
         body: JSON.stringify({ funding_source: created.id, amount: addFundsData.amount, reference: addFundsData.reference }),
       });
-      const refreshed = await clientApiFetch<FundingSource[]>("/api/finance/funding-sources");
-      setFundingSources(refreshed);
-      const fresh = refreshed.find((s) => s.id === created.id);
+      const fresh = await clientApiFetch<FundingSource>(`/api/finance/funding-sources/${created.id}`);
       if (fresh) {
-        const label = fundingSourceLabel(fresh);
+        const label = fundingSourceDisplayLabel(fresh);
         // Compute live total from current form values (avoid stale closures)
         const vals = getValues();
         const qty = Number(vals.quantity) || 0;
@@ -288,21 +279,15 @@ export function AddInputCostForm({ batchId, onSuccess }: AddInputCostFormProps) 
             </div>
             {fields.map((field, index) => (
               <div key={field.id} className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_10rem_auto] sm:items-center">
-                <input
-                  aria-label={`Funding source ${index + 1}`}
-                  list={`input-cost-funding-${index}`}
-                  placeholder="Search batch revenue, owner capital, farm cash, loan, grant or other…"
-                  {...register(`funding_allocations.${index}.source_query`)}
-                  onChange={(event) => {
-                    const selected = fundingSources.find((source) => fundingSourceLabel(source) === event.target.value);
-                    setValue(`funding_allocations.${index}.source_query`, event.target.value);
+                <FundingSourcePicker
+                  ariaLabel={`Funding source ${index + 1}`}
+                  value={fundingRows[index]?.funding_source || 0}
+                  displayValue={fundingRows[index]?.source_query || ""}
+                  onSelect={(selected) => {
+                    setValue(`funding_allocations.${index}.source_query`, selected ? fundingSourceDisplayLabel(selected) : "");
                     setValue(`funding_allocations.${index}.funding_source`, selected?.id || 0, { shouldValidate: true });
                   }}
-                  className="form-input"
                 />
-                <datalist id={`input-cost-funding-${index}`}>
-                  {fundingSources.map((source) => <option key={source.id} value={fundingSourceLabel(source)} />)}
-                </datalist>
                 <input
                   aria-label={`Funding amount ${index + 1}`}
                   type="number"
@@ -326,13 +311,6 @@ export function AddInputCostForm({ batchId, onSuccess }: AddInputCostFormProps) 
             </button>
             {errors.funding_allocations?.message ? (
               <p className="text-sm text-red-700">{errors.funding_allocations.message}</p>
-            ) : null}
-            {fundingSources.length === 0 ? (
-              <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
-                No active source has available cash. Record a sale payment or
-                <button type="button" onClick={() => { setAddFundsError(null); setShowAddFunds(true); }} className="font-bold underline mx-1">add owner/farm/loan/grant funds</button>
-                now.
-              </p>
             ) : null}
           </div>
         ) : (

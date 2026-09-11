@@ -720,6 +720,9 @@ class FundingSourceSerializer(serializers.ModelSerializer):
         read_only_fields = ["created_at", "updated_at", "available_balance"]
 
     def get_available_balance(self, obj):
+        available_balances = self.context.get("available_balances")
+        if available_balances is not None and obj.pk in available_balances:
+            return str(available_balances[obj.pk])
         from .services.profitability import available_funding_source_cash
         return str(available_funding_source_cash(obj))
 

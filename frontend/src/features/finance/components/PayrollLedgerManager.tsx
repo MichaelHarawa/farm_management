@@ -1,21 +1,24 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { clientApiFetch } from "@/lib/client-api";
 import type { PoultryBatch } from "@/features/poultry/types";
-import type { FundingSource, PayrollEntry } from "../types";
+import type { PayrollEntry } from "../types";
+import {
+  FundingSourcePicker,
+  fundingSourceDisplayLabel,
+} from "./FundingSourcePicker";
 import { formatCurrency, formatDate } from "../utils/formatters";
 
-type Row = { funding_source: string; amount: string };
+type Row = { funding_source: string; source_query: string; amount: string };
 type CostRow = { beneficiary_type: "batch" | "administration"; batch: string; amount: string };
 
 export function PayrollLedgerManager({ entries, batches }: { entries: PayrollEntry[]; batches: PoultryBatch[] }) {
   const router = useRouter();
   const [active, setActive] = useState<PayrollEntry | null>(null);
-  const [sources, setSources] = useState<FundingSource[]>([]);
-  const [funding, setFunding] = useState<Row[]>([{ funding_source: "", amount: "" }]);
+  const [funding, setFunding] = useState<Row[]>([{ funding_source: "", source_query: "", amount: "" }]);
   const [costs, setCosts] = useState<CostRow[]>([{ beneficiary_type: "administration", batch: "", amount: "" }]);
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState("Bank transfer");
@@ -23,12 +26,6 @@ export function PayrollLedgerManager({ entries, batches }: { entries: PayrollEnt
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().slice(0, 10));
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    clientApiFetch<FundingSource[] | { results: FundingSource[] }>("/api/finance/funding-sources")
-      .then((data) => setSources(Array.isArray(data) ? data : data.results))
-      .catch(() => setSources([]));
-  }, []);
 
   const updateFunding = (index: number, patch: Partial<Row>) =>
     setFunding((rows) => rows.map((row, rowIndex) => rowIndex === index ? { ...row, ...patch } : row));
@@ -87,7 +84,7 @@ export function PayrollLedgerManager({ entries, batches }: { entries: PayrollEnt
           <td className="py-4 pr-4">{formatCurrency(entry.amount_paid)} / {formatCurrency(entry.outstanding_salary)}</td>
           <td className="py-4 pr-4 capitalize">{entry.payment_status.replaceAll("_", " ")}</td>
           <td className="py-4"><button className="rounded-full bg-[var(--gold)] px-4 py-2 font-extrabold text-[var(--navy)]" onClick={() => {
-            setActive(entry); setAmount(entry.outstanding_salary); setCosts(entry.cost_allocation_plan?.length ? entry.cost_allocation_plan.map((row) => ({ ...row, batch: row.batch ? String(row.batch) : "" })) : [{ beneficiary_type: "administration", batch: "", amount: entry.total_employer_cost }]);
+            setActive(entry); setAmount(entry.outstanding_salary); setFunding([{ funding_source: "", source_query: "", amount: entry.outstanding_salary }]); setCosts(entry.cost_allocation_plan?.length ? entry.cost_allocation_plan.map((row) => ({ ...row, batch: row.batch ? String(row.batch) : "" })) : [{ beneficiary_type: "administration", batch: "", amount: entry.total_employer_cost }]);
           }}>Manage salary</button></td>
         </tr>)}</tbody>
       </table>
@@ -100,8 +97,8 @@ export function PayrollLedgerManager({ entries, batches }: { entries: PayrollEnt
         <section className="mt-6 border-t pt-5"><h3 className="font-extrabold">Record cash payment</h3>
           <div className="mt-3 grid gap-3 md:grid-cols-2"><input className="form-input" type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="Payment amount"/><input className="form-input" type="date" value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)}/><input className="form-input" value={method} onChange={(e) => setMethod(e.target.value)} placeholder="Payment method"/><input className="form-input" value={reference} onChange={(e) => setReference(e.target.value)} placeholder="External reference"/></div>
           <p className="mt-4 text-xs font-bold uppercase tracking-widest">Funding sources (must equal payment)</p>
-          {funding.map((row, index) => <div key={index} className="mt-2 grid gap-2 md:grid-cols-[1fr_180px_auto]"><select className="form-input" value={row.funding_source} onChange={(e) => updateFunding(index, { funding_source: e.target.value })}><option value="">Select source</option>{sources.filter((source) => source.is_active !== false).map((source) => <option key={source.id} value={source.id}>{source.display_name} — {formatCurrency(source.available_balance ?? "0")}</option>)}</select><input className="form-input" type="number" value={row.amount} onChange={(e) => updateFunding(index, { amount: e.target.value })} placeholder="Amount"/><button className="text-red-700" onClick={() => setFunding((rows) => rows.filter((_, i) => i !== index))}>Remove</button></div>)}
-          <button className="mt-3 underline" onClick={() => setFunding((rows) => [...rows, { funding_source: "", amount: "" }])}>Split across another source</button>
+          {funding.map((row, index) => <div key={index} className="mt-2 grid gap-2 md:grid-cols-[1fr_180px_auto]"><FundingSourcePicker ariaLabel={`Payroll funding source ${index + 1}`} value={row.funding_source} displayValue={row.source_query} onSelect={(selected) => updateFunding(index, { funding_source: selected ? String(selected.id) : "", source_query: selected ? fundingSourceDisplayLabel(selected) : "" })} /><input className="form-input" type="number" value={row.amount} onChange={(e) => updateFunding(index, { amount: e.target.value })} placeholder="Amount"/><button className="text-red-700" onClick={() => setFunding((rows) => rows.filter((_, i) => i !== index))}>Remove</button></div>)}
+          <button className="mt-3 underline" onClick={() => setFunding((rows) => [...rows, { funding_source: "", source_query: "", amount: "" }])}>Split across another source</button>
           <button disabled={busy || Number(active.outstanding_salary) <= 0} className="mt-4 block rounded-full bg-[var(--gold)] px-5 py-3 font-extrabold text-[var(--navy)] disabled:opacity-50" onClick={submitPayment}>Post payment</button>
         </section>
         <section className="mt-7 border-t pt-5"><h3 className="font-extrabold">Allocate salary cost (gross + employer costs)</h3><p className="text-sm text-[var(--navy-muted)]">Independent of which account funds the payment. Allocations must total {formatCurrency(active.total_employer_cost)}.</p>
