@@ -369,7 +369,11 @@ class PayrollEntryViewSet(viewsets.ModelViewSet):
         "employee",
         "employee__user",
         "created_by",
-    ).prefetch_related("payments__funding_allocations__funding_source")
+    ).prefetch_related(
+        "payments__funding_allocations__funding_source",
+        "payments__posted_by",
+        "payments__reversed_by",
+    )
 
     def perform_create(self, serializer):
         entry = serializer.save(created_by=self.request.user)
@@ -918,7 +922,7 @@ class SalePaymentsView(APIView):
 
     def get(self, request, sale_id: int):
         payments = SalePayment.objects.filter(sale_id=sale_id).select_related(
-            "sale__batch"
+            "sale__batch", "created_by", "reversed_by"
         )
         return Response(SalePaymentSerializer(payments, many=True).data)
 
@@ -930,7 +934,9 @@ class SalePaymentsView(APIView):
             created_by=request.user,
             **serializer.validated_data,
         )
-        payment = SalePayment.objects.select_related("sale__batch").get(pk=payment.pk)
+        payment = SalePayment.objects.select_related(
+            "sale__batch", "created_by", "reversed_by"
+        ).get(pk=payment.pk)
         return Response(
             SalePaymentSerializer(payment).data,
             status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
@@ -946,7 +952,9 @@ class SalePaymentReverseView(APIView):
             reason=request.data.get("reason", ""),
             reversed_by=request.user,
         )
-        payment = SalePayment.objects.select_related("sale__batch").get(pk=payment.pk)
+        payment = SalePayment.objects.select_related(
+            "sale__batch", "created_by", "reversed_by"
+        ).get(pk=payment.pk)
         return Response(SalePaymentSerializer(payment).data)
 
 
@@ -1004,8 +1012,11 @@ class ExpenditureViewSet(viewsets.ModelViewSet):
     CRUD + Post action for expenditures.
     Supports the full funding + cost allocation workflow.
     """
-    queryset = Expenditure.objects.all().select_related("category").prefetch_related(
+    queryset = Expenditure.objects.all().select_related(
+        "category", "created_by", "posted_by", "reversed_by"
+    ).prefetch_related(
         "funding_allocations__funding_source",
+        "funding_allocations__created_by",
         "cost_allocations__batch",
     )
     serializer_class = ExpenditureSerializer

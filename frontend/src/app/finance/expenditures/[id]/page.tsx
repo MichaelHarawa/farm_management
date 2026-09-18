@@ -10,11 +10,24 @@ import {
   FundingSourcePicker,
   fundingSourceDisplayLabel,
 } from "@/features/finance/components/FundingSourcePicker";
+import {
+  PaymentDetailsDialog,
+  type PaymentDetail,
+} from "@/features/finance/components/PaymentDetailsDialog";
 import { formatCurrency, formatDate, formatLabel } from "@/features/finance/utils/formatters";
 import { clientApiFetch } from "@/lib/client-api";
 import { getApiErrorMessage } from "@/lib/errors";
 
 type FundingRow = { funding_source: number | ""; source_query: string; amount: string };
+type FundingAllocationRow = NonNullable<Expenditure["funding_allocations"]>[number];
+type ExpenditurePaymentGroup = {
+  key: string;
+  rows: FundingAllocationRow[];
+  amount: number;
+  paymentDate: string;
+  createdAt?: string;
+  recordedBy?: string | null;
+};
 type NewFundingSource = {
   source_type: "owner_capital" | "general_farm_cash" | "loan" | "grant" | "other_income";
   description: string;
@@ -25,6 +38,25 @@ type NewFundingSource = {
 
 const blankRow = (): FundingRow => ({ funding_source: "", source_query: "", amount: "" });
 const paymentKey = () => globalThis.crypto?.randomUUID?.() ?? `payment-${Date.now()}-${Math.random()}`;
+
+function groupExpenditurePayments(rows: FundingAllocationRow[]): ExpenditurePaymentGroup[] {
+  const groups = new Map<string, FundingAllocationRow[]>();
+  rows.forEach((row, index) => {
+    // A missing key is legacy data. Keep each such row independent rather than
+    // merging unrelated payments merely because their dates match.
+    const key = row.payment_group_key?.trim() || `legacy-allocation-${row.id ?? index}`;
+    groups.set(key, [...(groups.get(key) || []), row]);
+  });
+  return [...groups.entries()].map(([key, groupRows]) => ({
+    key,
+    rows: groupRows,
+    amount: groupRows.reduce((total, row) => total + Number(row.amount || 0), 0),
+    paymentDate: groupRows[0]?.allocation_date || "",
+    createdAt: groupRows[0]?.created_at,
+    recordedBy: groupRows[0]?.created_by_name,
+  }));
+}
+
 export default function ExpenditureDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -36,6 +68,7 @@ export default function ExpenditureDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [showSourceForm, setShowSourceForm] = useState(false);
+  const [selectedPayment, setSelectedPayment] = useState<PaymentDetail | null>(null);
   const [newSource, setNewSource] = useState<NewFundingSource>({
     source_type: "owner_capital",
     description: "",
@@ -81,6 +114,12 @@ export default function ExpenditureDetailPage() {
   const validLaterPayment = allocationTotal > 0 && allocationTotal <= target && validRows;
   const fundingPayload = rows.map((row) => ({ funding_source: Number(row.funding_source), amount: row.amount, classification: "reinvestment" }));
   const isHistoricalAssignment = expenditure?.payment_status === "historical_unassigned";
+  const paymentGroups = useMemo(
+    () => expenditure?.status === "draft"
+      ? []
+      : groupExpenditurePayments(expenditure?.funding_allocations || []),
+    [expenditure],
+  );
 
   const addNonSalesSource = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -183,6 +222,51 @@ export default function ExpenditureDetailPage() {
     }
   };
 
+  const openPaymentDetails = (group: ExpenditurePaymentGroup) => {
+    if (!expenditure) return;
+    const capturesExpenditurePaymentMetadata =
+      group.key.startsWith("initial-") || group.key.startsWith("post-");
+    const lineNotes = group.rows.map((row) => row.notes?.trim()).filter(Boolean).join("; ");
+    setSelectedPayment({
+      kind: "expenditure_payment",
+      identifier: group.key.startsWith("legacy-")
+        ? `Funding allocation #${group.rows[0]?.id ?? "N/A"}`
+        : `Payment group ${group.key}`,
+      source: {
+        label: expenditure.expenditure_reference || `Expenditure #${expenditure.id}`,
+        href: `/finance/expenditures/${expenditure.id}`,
+      },
+      partyLabel: "Payee",
+      party: expenditure.payee,
+      beneficiaries: expenditure.beneficiary_batches?.length
+        ? expenditure.beneficiary_batches.map((beneficiary) => ({
+            label: beneficiary.batch_id,
+            href: `/poultry/batches/${beneficiary.id}?tab=costs`,
+          }))
+        : expenditure.beneficiary_detail
+          ? [{ label: expenditure.beneficiary_detail }]
+          : [],
+      amount: group.amount,
+      paymentDate: group.paymentDate,
+      method: capturesExpenditurePaymentMetadata ? expenditure.payment_method : null,
+      externalReference: capturesExpenditurePaymentMetadata
+        ? expenditure.external_reference || expenditure.reference_number
+        : null,
+      recordedBy: group.recordedBy || expenditure.posted_by_name,
+      notes: lineNotes || null,
+      createdAt: group.createdAt,
+      status: expenditure.status === "void" ? "reversed" : "posted",
+      reversedAt: expenditure.reversed_at,
+      reversedBy: expenditure.reversed_by_name,
+      reversalReason: expenditure.reversal_reason,
+      fundingLines: group.rows.map((row, index) => ({
+        id: row.id ?? `${group.key}-${index}`,
+        source: row.funding_source_display || `Funding source #${row.funding_source}`,
+        amount: row.amount,
+      })),
+    });
+  };
+
   if (!expenditure) return <main className="p-8">{error || "Loading expenditure…"}</main>;
 
   const canRecordPayment = expenditure.status === "posted" && Number(expenditure.balance_due || 0) > 0;
@@ -216,6 +300,34 @@ export default function ExpenditureDetailPage() {
           )) : <p className="mt-1">{expenditure.beneficiary_detail || formatLabel(expenditure.beneficiary_type || "not allocated")}</p>}
         </div>
       </section>
+
+      {paymentGroups.length ? (
+        <section className="mt-6 rounded-xl border bg-white p-5">
+          <p className="finance-eyebrow">Payment history</p>
+          <h2 className="mt-1 text-xl font-extrabold">Payments against this expenditure</h2>
+          <div className="mt-4 grid gap-2">
+            {paymentGroups.map((group, index) => (
+              <button
+                key={group.key}
+                type="button"
+                onClick={() => openPaymentDetails(group)}
+                className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--line)] p-4 text-left transition hover:bg-[var(--gold-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--gold)]"
+              >
+                <span>
+                  <strong>Payment {index + 1}</strong>
+                  <span className="mt-1 block text-sm text-[var(--navy-muted)]">
+                    {formatDate(group.paymentDate)} · {group.rows.length} funding {group.rows.length === 1 ? "source" : "sources"}
+                  </span>
+                </span>
+                <span className="text-right">
+                  <strong className="block">{formatCurrency(group.amount)}</strong>
+                  <span className="text-xs font-bold text-[var(--navy-muted)]">View payment details</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       {(expenditure.status === "draft" || canRecordPayment) ? (
         <section className="mt-6 rounded-xl border bg-white p-5">
@@ -325,6 +437,10 @@ export default function ExpenditureDetailPage() {
           <button type="button" disabled={busy || !validLaterPayment} onClick={() => void runAction(isHistoricalAssignment ? "assign-funding" : "record-payment", { funding_allocations: fundingPayload, idempotency_key: idempotencyKey, payment_date: paymentDate })} className="finance-button disabled:opacity-40">{isHistoricalAssignment ? "Assign historical funding" : "Record payment"}</button>
         </div>
       ) : null}
+      <PaymentDetailsDialog
+        payment={selectedPayment}
+        onClose={() => setSelectedPayment(null)}
+      />
     </main>
   );
 }

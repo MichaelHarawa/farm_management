@@ -233,6 +233,15 @@ WARNING_GUIDANCE: dict[str, dict[str, str]] = {
         "action_label": "Review accounting periods",
         "action_href": "/finance/payroll#period-actions",
     },
+    "invalid_bird_balance": {
+        "solution": (
+            "Review the batch sales, mortality, actual delivery quantity, and approved "
+            "flock adjustments. Correct or reverse the inaccurate source record before "
+            "using per-bird profitability measures."
+        ),
+        "action_label": "Review poultry batches",
+        "action_href": "/poultry",
+    },
 }
 
 

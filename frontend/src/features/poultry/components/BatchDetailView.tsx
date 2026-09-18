@@ -511,8 +511,12 @@ export function BatchDetailView({
       0
     );
     const mortality = calculateMortalityTotal(mortalities);
+    const initialBirds =
+      profitabilityReport?.birds_placed ??
+      batch.actual_quantity_received ??
+      batch.quantity;
     const localCurrentBirds = Math.max(
-      batch.quantity - localBirdsSold - mortality,
+      initialBirds - localBirdsSold - mortality,
       0
     );
     const totalInputCosts =
@@ -539,7 +543,7 @@ export function BatchDetailView({
     const collectionRate =
       decimalToNumber(profitabilityReport?.collection_rate_percent);
     const reportCostPerBird =
-      decimalToNumber(profitabilityReport?.final_cost_per_bird_sold) ??
+      decimalToNumber(profitabilityReport?.cost_per_survived_bird) ??
       decimalToNumber(profitabilityReport?.provisional_cost_per_saleable_bird);
     const profitabilityStatus: Metrics["profitabilityStatus"] =
       profitabilityReport?.profitability_status ?? "local";
@@ -558,19 +562,20 @@ export function BatchDetailView({
       totalSales,
       totalPaid,
       totalBalance,
+      birdsPlaced: initialBirds,
       totalBirdsSold,
       mortality: reportMortality,
       currentBirds,
       grossProfit,
       managementNetPosition,
       fullAttributedCost,
-      survivalPercent: getPercent(currentBirds, batch.quantity),
-      soldPercent: getPercent(totalBirdsSold, batch.quantity),
-      mortalityPercent: getPercent(reportMortality, batch.quantity),
+      survivedBirds:
+        profitabilityReport?.survived_birds ?? totalBirdsSold + currentBirds,
+      remainingPercent: getPercent(currentBirds, initialBirds),
+      soldPercent: getPercent(totalBirdsSold, initialBirds),
+      mortalityPercent: getPercent(reportMortality, initialBirds),
       collectionPercent: collectionRate ?? getPercent(totalPaid, totalSales),
-      costPerBird:
-        reportCostPerBird ??
-        (batch.quantity > 0 ? totalInputCosts / batch.quantity : 0),
+      costPerBird: reportCostPerBird,
       profitabilityStatus,
       totalFeedKg,
       feedPerBirdStarted,
@@ -784,7 +789,6 @@ export function BatchDetailView({
 
           {activeTab === "costs" ? (
             <CostsTab
-              batch={batch}
               inputCosts={inputCosts}
               feedInputCosts={feedInputCosts}
               metrics={metrics}
@@ -1014,17 +1018,19 @@ type Metrics = {
   totalSales: number;
   totalPaid: number;
   totalBalance: number;
+  birdsPlaced: number;
   totalBirdsSold: number;
   mortality: number;
   currentBirds: number;
   grossProfit: number;
   managementNetPosition: number;
   fullAttributedCost: number;
-  survivalPercent: number;
+  survivedBirds: number;
+  remainingPercent: number;
   soldPercent: number;
   mortalityPercent: number;
   collectionPercent: number;
-  costPerBird: number;
+  costPerBird: number | null;
   profitabilityStatus:
     | "booked"
     | "provisional"
@@ -1223,8 +1229,8 @@ function OverviewTab({
               <ExecutiveMetric
                 label="Live Birds"
                 value={formatNumber(metrics.currentBirds)}
-                detail={`${formatPercent(metrics.survivalPercent)} of initial flock`}
-                progress={metrics.survivalPercent}
+                detail={`${formatPercent(metrics.remainingPercent)} remaining and unsold`}
+                progress={metrics.remainingPercent}
                 tone="green"
               />
               <ExecutiveMetric
@@ -1244,7 +1250,7 @@ function OverviewTab({
               <ExecutiveMetric
                 label="Production Cost"
                 value={formatCurrency(metrics.totalInputCosts)}
-                detail={`${formatCurrency(metrics.costPerBird)} per saleable bird`}
+                detail={metrics.costPerBird === null ? "Cost per survived bird: N/A" : `${formatCurrency(metrics.costPerBird)} per survived bird`}
                 tone="navy"
               />
               <ExecutiveMetric
@@ -1274,7 +1280,7 @@ function OverviewTab({
               />
               <TimelineStat
                 label="Initial Flock"
-                value={formatNumber(batch.quantity)}
+                value={formatNumber(metrics.birdsPlaced)}
               />
               <TimelineStat
                 label="Next Maturity"
@@ -1302,7 +1308,7 @@ function OverviewTab({
                       color: "#b24a43",
                     },
                   ]}
-                  total={batch.quantity}
+                  total={metrics.birdsPlaced}
                   compact
                   inverse
                 />
@@ -1468,7 +1474,7 @@ function FlockTab({
     [
       formatDisplayDate(batch.entry_date),
       "Batch placement",
-      formatNumber(batch.quantity),
+      formatNumber(metrics.birdsPlaced),
       "Farmnotes",
     ],
   ];
@@ -1478,13 +1484,13 @@ function FlockTab({
       <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
         <KpiCard
           label="Initial Birds"
-          value={formatNumber(batch.quantity)}
+          value={formatNumber(metrics.birdsPlaced)}
           detail={`Placed on ${formatDisplayDate(batch.entry_date)}`}
         />
         <KpiCard
           label="Current Birds"
           value={formatNumber(metrics.currentBirds)}
-          detail={`${formatPercent(metrics.survivalPercent)} survival / availability`}
+          detail={`${formatPercent(metrics.remainingPercent)} remaining and unsold`}
         />
         <KpiCard
           label="Birds Sold"
@@ -1501,7 +1507,7 @@ function FlockTab({
       <Card className="p-6">
         <SectionLabel>Reconciliation</SectionLabel>
         <h2 className="mt-6 text-3xl font-extrabold">
-          Where the {formatNumber(batch.quantity)} birds are now
+          Where the {formatNumber(metrics.birdsPlaced)} birds are now
         </h2>
         <p className="mt-5 text-base leading-7 text-[#747b8d]">
           Every bird should be accounted for across remaining, sold, and
@@ -1525,7 +1531,7 @@ function FlockTab({
               color: "#747b8d",
             },
           ]}
-          total={batch.quantity}
+          total={metrics.birdsPlaced}
         />
       </Card>
 
@@ -1569,7 +1575,6 @@ function FlockTab({
 }
 
 type CostsTabProps = {
-  batch: PoultryBatch;
   inputCosts: InputCost[];
   feedInputCosts: InputCost[];
   metrics: Metrics;
@@ -1578,7 +1583,6 @@ type CostsTabProps = {
 };
 
 function CostsTab({
-  batch,
   inputCosts,
   feedInputCosts,
   metrics,
@@ -1614,9 +1618,11 @@ function CostsTab({
           detail={formatRecordCount(inputCosts.length)}
         />
         <KpiCard
-          label="Cost Per Initial Bird"
-          value={formatCurrency(metrics.costPerBird)}
-          detail={`Based on ${formatNumber(batch.quantity)} birds`}
+          label="Cost Per Survived Bird"
+          value={metrics.costPerBird === null ? "N/A" : formatCurrency(metrics.costPerBird)}
+          detail={metrics.costPerBird === null
+            ? "Unavailable until a production flock has a valid survivor count"
+            : `${formatCurrency(metrics.totalInputCosts)} production cost ÷ ${formatNumber(metrics.survivedBirds)} sold or remaining birds`}
         />
         <KpiCard
           label="Largest Category"
@@ -1893,7 +1899,7 @@ function MortalityTab({
         />
         <KpiCard
           label="Initial Flock"
-          value={formatNumber(batch.quantity)}
+          value={formatNumber(metrics.birdsPlaced)}
           detail={`Placed on ${formatDisplayDate(batch.entry_date)}`}
         />
       </div>
@@ -1924,7 +1930,7 @@ function MortalityTab({
               color: "#b24a43",
             },
           ]}
-          total={batch.quantity}
+          total={metrics.birdsPlaced}
         />
       </Card>
 

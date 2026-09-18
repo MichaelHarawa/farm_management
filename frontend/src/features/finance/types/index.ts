@@ -84,11 +84,17 @@ export type PayrollEntry = {
 
 export type PayrollPayment = {
   id: number;
+  idempotency_key: string;
   amount: DecimalString;
   payment_date: string;
   payment_method: string;
   external_reference: string;
   status: "posted" | "reversed";
+  posted_by_name: string | null;
+  created_at: string;
+  reversed_at: string | null;
+  reversed_by_name: string | null;
+  reversal_reason: string;
   funding_allocations: Array<{
     id: number;
     funding_source: number;
@@ -327,6 +333,11 @@ export type BatchProfitabilityReport = {
   birds_placed: number;
   valid_bird_units_sold: number;
   remaining_live_birds: number;
+  raw_remaining_live_birds: number;
+  bird_balance_valid: boolean;
+  bird_balance_error: string | null;
+  survived_birds: number | null;
+  cost_per_survived_bird: DecimalString | null;
   profit_per_bird_sold: DecimalString | null;
   mortality: number;
   mortality_rate_percent: DecimalString | null;
@@ -373,6 +384,10 @@ export type BatchPortfolioSummary = {
   birds_placed: number;
   valid_bird_units_sold: number;
   remaining_live_birds: number;
+  survived_birds: number;
+  survivor_cost_numerator: DecimalString;
+  survivor_cost_batch_count: number;
+  cost_per_survived_bird: DecimalString | null;
   mortality: number;
   mortality_rate_percent: DecimalString | null;
   collection_rate_percent: DecimalString | null;
@@ -597,7 +612,10 @@ export type SalePayment = {
   received_by_name: string;
   notes: string;
   status: "posted" | "reversed";
+  created_at: string;
+  created_by_name: string;
   reversed_at: string | null;
+  reversed_by_name: string;
   reversal_reason: string;
 };
 
@@ -633,13 +651,25 @@ export type Expenditure = {
   notes?: string;
   created_at: string;
   updated_at: string;
+  created_by_name?: string | null;
+  posted_by_name?: string | null;
+  posted_at?: string | null;
+  reversed_at?: string | null;
+  reversed_by_name?: string | null;
+  reversal_reason?: string;
   funding_allocations?: Array<{
     id?: number;
     funding_source: number;
     funding_source_display?: string;
     funding_batch?: number | null;
+    funding_source_type?: string;
     amount: DecimalString;
     classification?: string;
+    allocation_date?: string;
+    payment_group_key?: string;
+    notes?: string;
+    created_at?: string;
+    created_by_name?: string | null;
   }>;
   total_funded?: DecimalString;
   amount_paid?: DecimalString;

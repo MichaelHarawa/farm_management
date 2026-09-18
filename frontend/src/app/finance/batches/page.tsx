@@ -215,9 +215,11 @@ export default async function FinanceBatchAnalysisPage({ searchParams }: PagePro
                   ["Remaining live birds", formatNumber(report.summary.remaining_live_birds)],
                   ["Mortality", formatNumber(report.summary.mortality)],
                   ["Mortality rate", formatPercent(report.summary.mortality_rate_percent)],
+                  ["Survived birds (sold + remaining)", formatNumber(report.summary.survived_birds)],
+                  ["Eligible production-cost numerator", formatCurrency(report.summary.survivor_cost_numerator)],
                   [
-                    "Production cost / saleable bird",
-                    formatCurrency(report.summary.production_cost_per_saleable_bird),
+                    "Production cost / survived bird",
+                    report.summary.cost_per_survived_bird === null ? "N/A" : formatCurrency(report.summary.cost_per_survived_bird),
                   ],
                   ["Gross profit / bird sold", formatCurrency(report.summary.profit_per_bird_sold)],
                   [
@@ -226,6 +228,13 @@ export default async function FinanceBatchAnalysisPage({ searchParams }: PagePro
                   ],
                 ]}
               />
+              <p className="mt-4 text-xs leading-5 text-[var(--navy-muted)]">
+                The portfolio rate is the eligible batches&apos; combined production
+                cost divided by their combined survived birds. It is not an average
+                of batch rates. Survived birds include valid bird units already sold
+                plus remaining live birds; pre-production, zero-survivor, and invalid
+                flock balances are excluded from this ratio.
+              </p>
             </Panel>
             <Panel title="Report Basis And Warnings">
               <FinanceWarningList warnings={report.warnings} />

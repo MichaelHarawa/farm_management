@@ -259,7 +259,14 @@ def post_expenditure(
             money(expenditure.amount),
             allow_less=allow_unpaid,
         )
-        if not use_stored_funding:
+        if use_stored_funding:
+            # Draft funding rows predate payment posting. Once posted, give the
+            # entire split one stable payment identity so detail history can
+            # reconcile it without guessing from dates or source names.
+            expenditure.funding_allocations.filter(
+                payment_group_key=""
+            ).update(payment_group_key=f"post-{expenditure.pk}")
+        else:
             _create_funding_rows(
                 expenditure,
                 normalized,

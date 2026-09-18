@@ -19,6 +19,14 @@ Use **Finance → Batch Performance** for one batch or a combination. Each row r
 
 An active batch’s negative actual-to-date position is not labelled a final loss. Use the forecast and its basis for planning. “Net assets” belongs to the period balance sheet; it is not another name for batch profit.
 
+**Cost per survived bird** uses all birds that survived mortality, whether already sold or still alive and unsold. It therefore does not jump merely because birds are sold. The figure shows **N/A** for a booked batch, a batch with no survivors, or an invalid flock balance that needs correction. Combined-batch views use a weighted calculation from the displayed production-cost numerator and survivor denominator, not an average of batch rates.
+
+## Payment history
+
+In **Receivables**, an expenditure detail page, or the payroll ledger, select any payment-history row to open its full audit detail. The window shows the payment amount, effective date, method/reference, who recorded it and when, its current/reversed status, and the linked buyer, payee, employee, batch or beneficiary where applicable. Expenditure payments split across funding sources also show every source line and a reconciliation total. Close the window with its close button, Escape, or the backdrop; keyboard focus returns to the selected history row.
+
+Reversals remain visible in history. Do not overwrite the original row to correct a payment.
+
 ## Funding versus cost allocation
 
 When recording or paying an expenditure:

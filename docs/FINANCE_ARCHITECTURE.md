@@ -48,6 +48,22 @@ The chart includes cash (1000), receivables (1100), inventory (1200), poultry WI
 
 Batch reports remain lifecycle management-cost reports. They show actual-to-date and forecast-at-completion separately and expose the allocation period, driver, numerator, denominator, percentage and calculation version. Selection never recalculates a batch’s denominator from only the selected subset.
 
+### Cost per survived bird
+
+The operational unit-cost denominator is the adjusted flock population less mortality. It is exposed explicitly as:
+
+`survived_birds = valid bird units sold + remaining live birds`
+
+`cost_per_survived_bird = total production cost / survived_birds`
+
+Only live-bird sales count as bird units. Cancelled sales and non-bird products such as eggs and manure do not reduce the flock. The initial population uses confirmed arrivals when present and includes approved flock adjustments. Booked/pre-production batches, zero-survivor batches, and invalid negative bird balances return `null` for the unit cost instead of manufacturing a zero or negative denominator.
+
+Portfolio cost per survived bird is weighted: eligible production costs are summed and divided by the corresponding sum of survived birds. Closed-batch snapshots preserve the same numerator and denominator so later operational changes do not rewrite finalized results. The older `provisional_cost_per_saleable_bird` and `production_cost_per_saleable_bird` response fields remain compatibility aliases during migration.
+
+### Payment-history detail contracts
+
+Customer receipts, expenditure funding allocations, and payroll payments remain append-only ledgers. Their detail responses now carry the recorded amount/date/method/reference, source or buyer/payee context, recording user and timestamp, reversal metadata, and stable funding-payment group keys where a payment is split across sources. The interface groups expenditure funding rows by that key and reconciles the split total without combining it with payroll funding allocations, preventing a payroll-linked expenditure from being counted twice.
+
 ## Operational modules delivered in priorities 5–9
 
 - Casual labour uses draft, approval, posting, payment and reversal states. Posting creates one payable and balanced journal; dated payments use the expenditure funding workflow and synchronize labour status.

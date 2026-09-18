@@ -509,7 +509,12 @@ class PayrollPaymentFundingSerializer(serializers.ModelSerializer):
 
 class PayrollPaymentSerializer(serializers.ModelSerializer):
     funding_allocations = PayrollPaymentFundingSerializer(many=True, read_only=True)
-    posted_by_name = serializers.CharField(source="posted_by.get_username", read_only=True)
+    posted_by_name = serializers.CharField(
+        source="posted_by.get_username", read_only=True, allow_null=True
+    )
+    reversed_by_name = serializers.CharField(
+        source="reversed_by.get_username", read_only=True, allow_null=True
+    )
 
     class Meta:
         model = PayrollPayment
@@ -768,6 +773,15 @@ class ExpenditureSerializer(serializers.ModelSerializer):
     amount_paid = serializers.SerializerMethodField(read_only=True)
     balance_due = serializers.SerializerMethodField(read_only=True)
     beneficiary_batches = serializers.SerializerMethodField(read_only=True)
+    created_by_name = serializers.CharField(
+        source="created_by.get_username", read_only=True, allow_null=True
+    )
+    posted_by_name = serializers.CharField(
+        source="posted_by.get_username", read_only=True, allow_null=True
+    )
+    reversed_by_name = serializers.CharField(
+        source="reversed_by.get_username", read_only=True, allow_null=True
+    )
 
     class Meta:
         model = Expenditure
@@ -799,10 +813,13 @@ class ExpenditureSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
             "created_by",
+            "created_by_name",
             "posted_by",
+            "posted_by_name",
             "posted_at",
             "reversed_at",
             "reversed_by",
+            "reversed_by_name",
             "reversal_reason",
             "funding_allocations",
             "total_funded",
@@ -940,29 +957,44 @@ class ExpenditureSerializer(serializers.ModelSerializer):
 class FundingAllocationSerializer(serializers.ModelSerializer):
     funding_source_display = serializers.CharField(source="funding_source.__str__", read_only=True)
     funding_batch = serializers.IntegerField(source="funding_source.batch_id", read_only=True, allow_null=True)
+    funding_source_type = serializers.CharField(
+        source="funding_source.source_type", read_only=True
+    )
+    created_by_name = serializers.CharField(
+        source="created_by.get_username", read_only=True, allow_null=True
+    )
 
     class Meta:
         model = FundingAllocation
         fields = [
             "id", "expenditure", "funding_source", "amount",
             "allocation_date", "classification", "notes", "created_by",
-            "funding_source_display", "funding_batch",
+            "funding_source_display", "funding_batch", "funding_source_type",
+            "payment_group_key", "created_at", "created_by_name",
         ]
-        read_only_fields = ["created_by"]
+        read_only_fields = ["created_by", "payment_group_key", "created_at"]
 
 
 class SalePaymentSerializer(serializers.ModelSerializer):
     sale_id = serializers.CharField(source="sale.sale_id", read_only=True)
     batch = serializers.IntegerField(source="sale.batch_id", read_only=True)
     batch_code = serializers.CharField(source="sale.batch.batch_id", read_only=True)
+    buyer_name = serializers.CharField(source="sale.buyer_name", read_only=True)
+    created_by_name = serializers.CharField(
+        source="created_by.get_username", read_only=True, allow_null=True
+    )
+    reversed_by_name = serializers.CharField(
+        source="reversed_by.get_username", read_only=True, allow_null=True
+    )
 
     class Meta:
         model = SalePayment
         fields = [
-            "id", "sale", "sale_id", "batch", "batch_code", "payment_reference",
+            "id", "sale", "sale_id", "batch", "batch_code", "buyer_name", "payment_reference",
             "idempotency_key", "amount", "payment_date", "payment_method",
             "external_reference", "received_by_name", "notes", "status",
-            "created_by", "created_at", "reversed_at", "reversed_by",
+            "created_by", "created_by_name", "created_at", "reversed_at", "reversed_by",
+            "reversed_by_name",
             "reversal_reason",
         ]
         read_only_fields = [

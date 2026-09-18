@@ -61,7 +61,10 @@ from apps.poultry.models import (
     BatchStatus,
     BuyerType,
     ChicksSource,
+    FlockAdjustment,
+    FlockAdjustmentStatus,
     InputCosts,
+    Mortality,
     PaymentMethod,
     PaymentStatus,
     ProductType,
@@ -139,6 +142,18 @@ class FinanceServiceTests(TestCase):
 
     def test_batch_closes_when_all_live_birds_are_accounted_for(self):
         batch = self.batch(quantity=200)
+        InputCosts.objects.create(
+            batch=batch,
+            item="Production inputs",
+            category="Feed",
+            quantity=1,
+            unit=1,
+            unit_measurement="lot",
+            unit_cost=Decimal("2000.00"),
+            purchase_date=aware(date(2026, 1, 2)),
+            notes="",
+            created_by=self.user,
+        )
         create_mortality_with_lifecycle(
             batch_id=batch.id,
             created_by=self.user,
@@ -162,6 +177,40 @@ class FinanceServiceTests(TestCase):
         self.assertEqual(balance.remaining_live_birds, 0)
         self.assertEqual(batch.status, BatchStatus.CLOSED)
         self.assertIsNotNone(batch.closed_at)
+        data = batch_profitability(batch)
+        self.assertEqual(data["survived_birds"], 190)
+        self.assertEqual(data["cost_per_survived_bird"], Decimal("10.53"))
+
+    def test_cost_per_survived_bird_is_unavailable_when_no_birds_survive(self):
+        batch = self.batch(quantity=10)
+        InputCosts.objects.create(
+            batch=batch,
+            item="Production inputs",
+            category="Feed",
+            quantity=1,
+            unit=1,
+            unit_measurement="lot",
+            unit_cost=Decimal("100.00"),
+            purchase_date=aware(date(2026, 1, 2)),
+            notes="",
+            created_by=self.user,
+        )
+        create_mortality_with_lifecycle(
+            batch_id=batch.id,
+            created_by=self.user,
+            mortality_date=aware(date(2026, 1, 5)),
+            quantity_dead=10,
+            age_in_days=5,
+            suspected_cause="Test",
+            description="No survivors.",
+            action_taken="Reviewed.",
+            reported_by_name="Supervisor",
+        )
+
+        data = batch_profitability(batch)
+
+        self.assertEqual(data["survived_birds"], 0)
+        self.assertIsNone(data["cost_per_survived_bird"])
 
     def test_eggs_and_manure_generate_revenue_without_reducing_birds(self):
         batch = self.batch(quantity=50)
@@ -192,6 +241,7 @@ class FinanceServiceTests(TestCase):
         self.assertEqual(data["revenue"], Decimal("400.00"))
         self.assertEqual(balance.valid_bird_units_sold, 0)
         self.assertEqual(balance.remaining_live_birds, 50)
+        self.assertEqual(data["survived_birds"], 50)
 
     def test_cancelled_sales_are_excluded_from_operations_and_finance(self):
         batch = self.batch(quantity=20)
@@ -211,6 +261,7 @@ class FinanceServiceTests(TestCase):
         self.assertEqual(data["revenue"], Decimal("0.00"))
         self.assertEqual(data["accounts_receivable"], Decimal("0.00"))
         self.assertEqual(balance.remaining_live_birds, 20)
+        self.assertEqual(data["survived_birds"], 20)
 
     def test_booking_flow_waits_for_delivery_before_batch_details(self):
         client = APIClient()
@@ -382,6 +433,8 @@ class FinanceServiceTests(TestCase):
             Decimal("0.00"),
         )
         self.assertFalse(booked_profitability["included_in_portfolio_summary"])
+        self.assertIsNone(booked_profitability["survived_birds"])
+        self.assertIsNone(booked_profitability["cost_per_survived_bird"])
         self.assertEqual(portfolio["selected_batch_count"], 2)
         self.assertEqual(portfolio["included_batch_count"], 1)
         self.assertEqual(
@@ -601,6 +654,118 @@ class FinanceServiceTests(TestCase):
         self.assertEqual(data["profitability_status"], "provisional")
         self.assertEqual(data["provisional_saleable_birds"], 100)
         self.assertEqual(data["provisional_cost_per_saleable_bird"], Decimal("10.00"))
+        self.assertEqual(data["survived_birds"], 100)
+        self.assertEqual(data["cost_per_survived_bird"], Decimal("10.00"))
+
+    def test_cost_per_survived_bird_keeps_sold_birds_in_denominator(self):
+        batch = self.batch(quantity=1000)
+        batch.actual_quantity_received = 1000
+        batch.save(update_fields=["actual_quantity_received", "updated_at"])
+        InputCosts.objects.create(
+            batch=batch,
+            item="Production inputs",
+            category="Feed",
+            quantity=1,
+            unit=1,
+            unit_measurement="lot",
+            unit_cost=Decimal("1900000.00"),
+            purchase_date=aware(date(2026, 1, 2)),
+            notes="",
+            created_by=self.user,
+        )
+        create_sale_with_lifecycle(
+            batch_id=batch.id,
+            created_by=self.user,
+            **self.sale_payload(
+                quantity_sold=600,
+                unit_price=Decimal("1.00"),
+                amount_paid=Decimal("600.00"),
+            ),
+        )
+        create_mortality_with_lifecycle(
+            batch_id=batch.id,
+            created_by=self.user,
+            mortality_date=aware(date(2026, 1, 10)),
+            quantity_dead=50,
+            age_in_days=10,
+            suspected_cause="Recorded loss",
+            description="Acceptance example.",
+            action_taken="Reviewed.",
+            reported_by_name="Supervisor",
+        )
+
+        before_final_sale = batch_profitability(batch)
+        self.assertEqual(before_final_sale["valid_bird_units_sold"], 600)
+        self.assertEqual(before_final_sale["remaining_live_birds"], 350)
+        self.assertEqual(before_final_sale["survived_birds"], 950)
+        self.assertEqual(
+            before_final_sale["cost_per_survived_bird"], Decimal("2000.00")
+        )
+
+        create_sale_with_lifecycle(
+            batch_id=batch.id,
+            created_by=self.user,
+            **self.sale_payload(
+                quantity_sold=350,
+                unit_price=Decimal("1.00"),
+                amount_paid=Decimal("350.00"),
+            ),
+        )
+        after_final_sale = batch_profitability(batch)
+        self.assertEqual(after_final_sale["survived_birds"], 950)
+        self.assertEqual(
+            after_final_sale["cost_per_survived_bird"], Decimal("2000.00")
+        )
+
+    def test_survivor_cost_honors_arrivals_adjustments_and_flags_invalid_balance(self):
+        batch = self.batch(quantity=1000)
+        batch.actual_quantity_received = 900
+        batch.save(update_fields=["actual_quantity_received", "updated_at"])
+        FlockAdjustment.objects.create(
+            batch=batch,
+            effective_at=aware(date(2026, 1, 3)),
+            quantity_change=50,
+            reason="Confirmed delivery correction",
+            status=FlockAdjustmentStatus.APPROVED,
+            approved_by=self.user,
+        )
+        Mortality.objects.create(
+            batch=batch,
+            mortality_date=aware(date(2026, 1, 4)),
+            quantity_dead=50,
+            age_in_days=3,
+            suspected_cause="Test",
+            description="Test",
+            action_taken="Test",
+            reported_by_name="Supervisor",
+            created_by=self.user,
+        )
+
+        report = batch_portfolio_report([batch])
+        row = report["results"][0]
+        self.assertEqual(row["birds_placed"], 900)
+        self.assertEqual(row["survived_birds"], 900)
+        self.assertEqual(report["summary"]["survived_birds"], 900)
+
+        Mortality.objects.create(
+            batch=batch,
+            mortality_date=aware(date(2026, 1, 5)),
+            quantity_dead=901,
+            age_in_days=4,
+            suspected_cause="Legacy inconsistency",
+            description="Deliberately invalid legacy row.",
+            action_taken="Review source records.",
+            reported_by_name="Supervisor",
+            created_by=self.user,
+        )
+        invalid = batch_portfolio_report([batch])
+        self.assertFalse(invalid["results"][0]["bird_balance_valid"])
+        self.assertIsNone(invalid["results"][0]["cost_per_survived_bird"])
+        self.assertIsNone(invalid["summary"]["cost_per_survived_bird"])
+        self.assertIn(
+            "invalid_bird_balance",
+            {warning["code"] for warning in invalid["warnings"]},
+        )
 
     def test_batch_portfolio_recomputes_weighted_poultry_metrics(self):
         batch_a = self.batch(quantity=100)
@@ -668,7 +833,7 @@ class FinanceServiceTests(TestCase):
         # Collection totals now come from the append-only payment ledger.
         # Includes unified expenditure attribution, management-period discovery,
         # and one grouped asset-depreciation breakdown query (no per-batch N+1).
-        with self.assertNumQueries(15):
+        with self.assertNumQueries(16):
             report = batch_portfolio_report([batch_a, batch_b])
         summary = report["summary"]
 
@@ -685,6 +850,9 @@ class FinanceServiceTests(TestCase):
             summary["production_cost_per_saleable_bird"],
             Decimal("11.11"),
         )
+        self.assertEqual(summary["survived_birds"], 135)
+        self.assertEqual(summary["survivor_cost_numerator"], Decimal("1500.00"))
+        self.assertEqual(summary["cost_per_survived_bird"], Decimal("11.11"))
 
     def test_batch_portfolio_endpoint_validates_and_deduplicates_selection(self):
         manager_role, _ = Role.objects.get_or_create(
@@ -1036,6 +1204,14 @@ class FinanceServiceTests(TestCase):
         self.assertEqual(single["calculation_basis"], "final_snapshot")
         self.assertEqual(single["direct_batch_cost"], snapshot.direct_batch_cost)
         self.assertEqual(single["management_net_position"], frozen_net_position)
+        self.assertEqual(
+            single["survived_birds"],
+            snapshot.valid_bird_units_sold + snapshot.remaining_live_birds,
+        )
+        self.assertEqual(
+            single["cost_per_survived_bird"],
+            Decimal("0.00"),
+        )
         self.assertEqual(
             portfolio["summary"]["direct_batch_cost"],
             snapshot.direct_batch_cost,

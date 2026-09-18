@@ -5,11 +5,15 @@ import { useRouter } from "next/navigation";
 
 import { clientApiFetch } from "@/lib/client-api";
 import type { PoultryBatch } from "@/features/poultry/types";
-import type { PayrollEntry } from "../types";
+import type { PayrollEntry, PayrollPayment } from "../types";
 import {
   FundingSourcePicker,
   fundingSourceDisplayLabel,
 } from "./FundingSourcePicker";
+import {
+  PaymentDetailsDialog,
+  type PaymentDetail,
+} from "./PaymentDetailsDialog";
 import { formatCurrency, formatDate } from "../utils/formatters";
 
 type Row = { funding_source: string; source_query: string; amount: string };
@@ -26,6 +30,7 @@ export function PayrollLedgerManager({ entries, batches }: { entries: PayrollEnt
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().slice(0, 10));
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [selectedPayment, setSelectedPayment] = useState<PaymentDetail | null>(null);
 
   const updateFunding = (index: number, patch: Partial<Row>) =>
     setFunding((rows) => rows.map((row, rowIndex) => rowIndex === index ? { ...row, ...patch } : row));
@@ -69,6 +74,42 @@ export function PayrollLedgerManager({ entries, batches }: { entries: PayrollEnt
     finally { setBusy(false); }
   }
 
+  function openPayrollPaymentDetails(entry: PayrollEntry, payment: PayrollPayment) {
+    const beneficiaries = entry.cost_allocation_plan?.map((row) => {
+      if (row.beneficiary_type === "administration") {
+        return { label: "Farm administration" };
+      }
+      const batch = batches.find((candidate) => candidate.id === row.batch);
+      return {
+        label: batch?.batch_id || `Batch #${row.batch}`,
+        href: row.batch ? `/poultry/batches/${row.batch}?tab=costs` : undefined,
+      };
+    });
+    setSelectedPayment({
+      kind: "payroll_payment",
+      identifier: `Payroll payment #${payment.id}`,
+      source: { label: `Payroll entry #${entry.id}`, href: "/finance/payroll" },
+      partyLabel: "Employee",
+      party: entry.employee_name,
+      beneficiaries,
+      amount: payment.amount,
+      paymentDate: payment.payment_date,
+      method: payment.payment_method,
+      externalReference: payment.external_reference,
+      recordedBy: payment.posted_by_name,
+      createdAt: payment.created_at,
+      status: payment.status,
+      reversedAt: payment.reversed_at,
+      reversedBy: payment.reversed_by_name,
+      reversalReason: payment.reversal_reason,
+      fundingLines: payment.funding_allocations.map((line) => ({
+        id: line.id,
+        source: line.funding_source_name,
+        amount: line.amount,
+      })),
+    });
+  }
+
   return <>
     <div className="overflow-x-auto">
       <table className="min-w-full border-collapse text-sm">
@@ -106,8 +147,12 @@ export function PayrollLedgerManager({ entries, batches }: { entries: PayrollEnt
           <button className="mt-3 underline" onClick={() => setCosts((rows) => [...rows, { beneficiary_type: "batch", batch: "", amount: "" }])}>Add beneficiary</button>
           <button disabled={busy} className="mt-4 block rounded-full bg-[var(--navy)] px-5 py-3 font-extrabold text-white disabled:opacity-50" onClick={submitCosts}>Save cost allocation</button>
         </section>
-        {active.payments?.length ? <section className="mt-7 border-t pt-5"><h3 className="font-extrabold">Payment history</h3>{active.payments.map((payment) => <p key={payment.id} className="mt-2 text-sm">{formatDate(payment.payment_date)} · {formatCurrency(payment.amount)} · {payment.payment_method} · <span className="capitalize">{payment.status}</span></p>)}</section> : null}
+        {active.payments?.length ? <section className="mt-7 border-t pt-5"><h3 className="font-extrabold">Payment history</h3><div className="mt-3 grid gap-2">{active.payments.map((payment) => <button key={payment.id} type="button" onClick={() => openPayrollPaymentDetails(active, payment)} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--line)] p-3 text-left transition hover:bg-[var(--gold-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--gold)]"><span>{formatDate(payment.payment_date)} · {payment.payment_method} · <span className="capitalize">{payment.status}</span></span><span className="text-right"><strong className="block">{formatCurrency(payment.amount)}</strong><span className="text-xs font-bold text-[var(--navy-muted)]">View payment details</span></span></button>)}</div></section> : null}
       </div>
     </div> : null}
+    <PaymentDetailsDialog
+      payment={selectedPayment}
+      onClose={() => setSelectedPayment(null)}
+    />
   </>;
 }

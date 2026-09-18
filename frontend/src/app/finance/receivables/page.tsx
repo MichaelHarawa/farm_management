@@ -6,7 +6,15 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 
 import { clientApiFetch } from "@/lib/client-api";
 import { getApiErrorMessage } from "@/lib/errors";
-import type { ReceivableSale, ReceivablesReport } from "@/features/finance/types";
+import type {
+  ReceivableSale,
+  ReceivablesReport,
+  SalePayment,
+} from "@/features/finance/types";
+import {
+  PaymentDetailsDialog,
+  type PaymentDetail,
+} from "@/features/finance/components/PaymentDetailsDialog";
 import { formatCurrency, formatDate, formatLabel } from "@/features/finance/utils/formatters";
 
 type BatchOption = { id: number; batch_id: string };
@@ -29,6 +37,7 @@ export default function FinanceReceivablesPage() {
   const [page, setPage] = useState(1);
   const [paymentSale, setPaymentSale] = useState<ReceivableSale | null>(null);
   const [expandedSale, setExpandedSale] = useState<string | null>(null);
+  const [selectedPayment, setSelectedPayment] = useState<PaymentDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -127,6 +136,35 @@ export default function FinanceReceivablesPage() {
     }
   };
 
+  const openPaymentDetails = (sale: ReceivableSale, item: SalePayment) => {
+    setSelectedPayment({
+      kind: "customer_collection",
+      identifier: item.payment_reference,
+      source: {
+        label: `Sale ${sale.sale_id}`,
+        href: `/poultry/batches/${sale.batch}?tab=sales`,
+      },
+      partyLabel: "Buyer",
+      party: sale.buyer_name,
+      batch: {
+        label: sale.batch_id,
+        href: `/poultry/batches/${sale.batch}`,
+      },
+      amount: item.amount,
+      paymentDate: item.payment_date,
+      method: item.payment_method,
+      externalReference: item.external_reference,
+      receivedBy: item.received_by_name,
+      recordedBy: item.created_by_name,
+      notes: item.notes,
+      createdAt: item.created_at,
+      status: item.status,
+      reversedAt: item.reversed_at,
+      reversedBy: item.reversed_by_name,
+      reversalReason: item.reversal_reason,
+    });
+  };
+
   return (
     <main className="mx-auto max-w-[1320px] px-5 py-8 sm:px-8 lg:px-12">
       <Link href={backHref} className="text-sm font-extrabold text-[var(--navy)] underline decoration-[var(--gold)] decoration-2 underline-offset-4">
@@ -192,7 +230,7 @@ export default function FinanceReceivablesPage() {
                   <td className="p-3 text-right">{formatCurrency(sale.sale_total)}</td><td className="p-3 text-right">{formatCurrency(sale.amount_paid)}</td><td className="p-3 text-right font-bold">{formatCurrency(sale.balance)}</td>
                   <td className="p-3"><div className="flex gap-2"><button type="button" onClick={() => openPayment(sale)} disabled={Number(sale.balance) <= 0} className="rounded bg-[#151f36] px-3 py-2 text-xs font-bold text-white disabled:opacity-40">Record payment</button><button type="button" onClick={() => setExpandedSale(expandedSale === sale.sale_id ? null : sale.sale_id)} className="text-xs font-bold underline">{expandedSale === sale.sale_id ? "Hide history" : "Payment history"}</button></div></td>
                 </tr>
-                {expandedSale === sale.sale_id ? <tr key={`${sale.sale_id}-payments`} className="bg-[#faf8f2]"><td colSpan={11} className="p-4"><div className="grid gap-2">{sale.payments.length ? sale.payments.map((item) => <div key={item.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-white p-3"><span><strong>{item.payment_reference}</strong> · {formatDate(item.payment_date)} · {formatLabel(item.payment_method)} · {formatCurrency(item.amount)} · {formatLabel(item.status)}</span>{item.status === "posted" ? <button type="button" onClick={() => void reversePayment(item.id)} className="text-xs font-bold text-red-700 underline">Reverse payment</button> : <span className="text-xs text-red-700">{item.reversal_reason}</span>}</div>) : <p>No payments recorded.</p>}</div></td></tr> : null}
+                {expandedSale === sale.sale_id ? <tr key={`${sale.sale_id}-payments`} className="bg-[#faf8f2]"><td colSpan={11} className="p-4"><div className="grid gap-2">{sale.payments.length ? sale.payments.map((item) => <div key={item.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-white p-2"><button type="button" onClick={() => openPaymentDetails(sale, item)} className="min-w-0 flex-1 rounded-md p-2 text-left transition hover:bg-[var(--gold-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--gold)]"><span className="block"><strong>{item.payment_reference}</strong> · {formatDate(item.payment_date)} · {formatLabel(item.payment_method)} · {formatCurrency(item.amount)} · {formatLabel(item.status)}</span><span className="mt-1 block text-xs font-bold text-[var(--navy-muted)]">View payment details</span></button>{item.status === "posted" ? <button type="button" onClick={(event) => { event.stopPropagation(); void reversePayment(item.id); }} className="px-2 text-xs font-bold text-red-700 underline">Reverse payment</button> : <span className="px-2 text-xs text-red-700">{item.reversal_reason}</span>}</div>) : <p>No payments recorded.</p>}</div></td></tr> : null}
               </Fragment>
             ))}
           </tbody>
@@ -215,6 +253,10 @@ export default function FinanceReceivablesPage() {
         <label className="text-sm font-bold">Received by<input value={payment.received_by_name} onChange={(event) => setPayment({ ...payment, received_by_name: event.target.value })} className="form-input mt-2 w-full" /></label>
         <label className="text-sm font-bold">Notes<textarea value={payment.notes} onChange={(event) => setPayment({ ...payment, notes: event.target.value })} className="form-input mt-2 w-full" /></label>
       </div><div className="mt-6 flex justify-end gap-3"><button type="button" onClick={() => setPaymentSale(null)} className="rounded-lg border px-5 py-3 font-bold">Cancel</button><button disabled={submitting} className="finance-button">{submitting ? "Recording…" : "Record payment"}</button></div></form></div> : null}
+      <PaymentDetailsDialog
+        payment={selectedPayment}
+        onClose={() => setSelectedPayment(null)}
+      />
     </main>
   );
 }

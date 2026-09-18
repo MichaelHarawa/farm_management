@@ -4,7 +4,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from django.conf import settings
-from django.db.models import DecimalField, ExpressionWrapper, F, Q, Sum
+from django.db.models import DecimalField, ExpressionWrapper, F, Prefetch, Q, Sum
 from django.utils import timezone
 
 from apps.poultry.models import (
@@ -1549,13 +1549,31 @@ def receivables_report(filters=None) -> dict:
                     "received_by_name": payment.received_by_name,
                     "notes": payment.notes,
                     "status": payment.status,
+                    "created_at": payment.created_at,
+                    "created_by_name": (
+                        payment.created_by.get_username()
+                        if payment.created_by_id
+                        else ""
+                    ),
                     "reversed_at": payment.reversed_at,
+                    "reversed_by_name": (
+                        payment.reversed_by.get_username()
+                        if payment.reversed_by_id
+                        else ""
+                    ),
                     "reversal_reason": payment.reversal_reason,
                 }
                 for payment in sale.payments.all()
             ],
         }
-        for sale in open_sales.select_related("batch").prefetch_related("payments").order_by(ordering, "pk")[start:start + page_size]
+        for sale in open_sales.select_related("batch").prefetch_related(
+            Prefetch(
+                "payments",
+                queryset=SalePayment.objects.select_related(
+                    "created_by", "reversed_by"
+                ),
+            )
+        ).order_by(ordering, "pk")[start:start + page_size]
     ]
     return {
         "total_receivable": money(open_sales.aggregate(total=Sum("balance"))["total"]),

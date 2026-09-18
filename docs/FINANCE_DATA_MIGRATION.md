@@ -14,6 +14,12 @@
 
 All correction/backfill commands are dry-run by default and idempotent. They add traceable records; they do not silently delete or rewrite posted financial records.
 
+## Phase 1 compatibility and migration notes
+
+The survivor-cost and payment-detail changes require no schema migration. Existing batch, mortality, sale, snapshot, payment, and funding-allocation records remain authoritative. The new survivor fields are calculated from those records at read time; existing saleable-bird fields remain response aliases for older clients.
+
+New expenditure postings assign one stable `payment_group_key` to every funding split in that payment. Historical funding allocations that already have a group key retain it. A legacy row with a blank group key is displayed as its own payment event rather than being guessed into another payment; finance staff may reconcile those events from the preserved source records. No automatic backfill combines historical payments, and payroll funding allocations are not merged with linked expenditure funding rows.
+
 ## Latest supplied dump verification
 
 The latest reference dump, `dump-farm_management-202609031558.sql`, was restored into isolated verification databases (final pass: `farm_management_codex_latest_final`) using a PostgreSQL 18 client. Its SHA-256 is `1BA1096E0662613D945EF13F752DF820BCB9BEAAA9BB470DF61A797561DA5BD9`; the source file was not modified. The single ignored restore statement was `SET transaction_timeout = 0`, which PostgreSQL 16 does not recognize; table data restored successfully.

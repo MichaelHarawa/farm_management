@@ -57,12 +57,22 @@ export default async function FinanceBatchProfitabilityPage({ params }: PageProp
           Compare with other batches
         </Link>
       </div>
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         <MetricCard label="Revenue" value={formatCurrency(report.revenue)} />
         <MetricCard label="Full attributed cost" value={formatCurrency(report.total_attributed_cost)} />
         <MetricCard label="Net position" value={formatCurrency(report.management_net_position)} />
+        <MetricCard
+          label="Cost / survived bird"
+          value={report.cost_per_survived_bird === null ? "N/A" : formatCurrency(report.cost_per_survived_bird)}
+          detail={report.survived_birds === null ? "No valid survivor denominator" : `${report.survived_birds} sold or remaining birds`}
+        />
         <MetricCard label="Status" value={formatLabel(report.profitability_status)} />
       </div>
+      {!report.bird_balance_valid ? (
+        <p role="alert" className="rounded-xl border border-red-300 bg-red-50 px-5 py-4 text-sm font-semibold text-red-800">
+          {report.bird_balance_error} Cost per survived bird is unavailable until the flock records reconcile.
+        </p>
+      ) : null}
       <div className="grid gap-6 lg:grid-cols-2">
         <Panel title="Production Result">
           <Rows
@@ -70,11 +80,19 @@ export default async function FinanceBatchProfitabilityPage({ params }: PageProp
               ["Direct batch cost", formatCurrency(report.direct_batch_cost)],
               ["Allocated production", formatCurrency(report.allocated_production_cost)],
               ["Total production cost", formatCurrency(report.total_production_cost)],
+              ["Survived birds (sold + remaining)", report.survived_birds === null ? "N/A" : String(report.survived_birds)],
+              ["Production cost per survived bird", report.cost_per_survived_bird === null ? "N/A" : formatCurrency(report.cost_per_survived_bird)],
               ["Production gross profit", formatCurrency(report.batch_gross_profit)],
               ["Gross margin", formatPercent(report.batch_gross_margin_percent)],
               ["Profit per bird sold", formatCurrency(report.profit_per_bird_sold)],
             ]}
           />
+          <p className="mt-4 text-xs leading-5 text-[var(--navy-muted)]">
+            Cost per survived bird is total production cost divided by valid bird
+            units already sold plus remaining live birds. Sold birds remain in the
+            denominator, so completing sales without further mortality does not change it.
+            Active batches are provisional; finalized batches use their stored close snapshot.
+          </p>
         </Panel>
         <Panel title="Full Net Position">
           <Rows

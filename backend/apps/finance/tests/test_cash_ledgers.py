@@ -119,6 +119,20 @@ class CashLedgerTests(TestCase):
         self.assertEqual(sale.balance, Decimal("0.00"))
         self.assertEqual(sale.payment_status, PaymentStatus.PAID)
 
+        client = APIClient()
+        client.force_authenticate(self.user)
+        response = client.get(f"/api/v1/finance/receivables/{sale.pk}/payments")
+        self.assertEqual(response.status_code, 200)
+        detail = next(row for row in response.data if row["id"] == first.pk)
+        self.assertEqual(detail["created_by_name"], self.user.username)
+        self.assertEqual(detail["buyer_name"], sale.buyer_name)
+        self.assertEqual(detail["batch_code"], self.batch.batch_id)
+
+        anonymous = APIClient().get(
+            f"/api/v1/finance/receivables/{sale.pk}/payments"
+        )
+        self.assertIn(anonymous.status_code, {401, 403})
+
     def test_posting_requires_full_funding_and_updates_revenue_usage(self):
         self.make_sale(total=Decimal("200.00"), paid=Decimal("100.00"))
         source = FundingSource.objects.get(

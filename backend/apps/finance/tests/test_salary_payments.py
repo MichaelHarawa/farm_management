@@ -5,6 +5,7 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
+from rest_framework.test import APIClient
 
 from apps.finance.models import (
     AccountingPeriod, AllocationSourceType, CostAllocation, EmployeeProfile, EmploymentType,
@@ -84,6 +85,22 @@ class SalaryPaymentLedgerTests(TestCase):
         self.assertEqual(second.status, PayrollPaymentStatus.REVERSED)
         self.assertEqual(self.entry.outstanding_salary, Decimal("170.00"))
         self.assertEqual(available_funding_source_cash(self.source), Decimal("400.00"))
+
+        client = APIClient()
+        client.force_authenticate(self.manager)
+        response = client.get(f"/api/v1/finance/payroll-entries/{self.entry.pk}")
+        self.assertEqual(response.status_code, 200)
+        detail = next(
+            row for row in response.data["payments"] if row["id"] == second.pk
+        )
+        self.assertEqual(detail["posted_by_name"], self.manager.username)
+        self.assertEqual(detail["reversed_by_name"], self.manager.username)
+        self.assertEqual(detail["funding_allocations"][0]["amount"], "170.00")
+
+        anonymous = APIClient().get(
+            f"/api/v1/finance/payroll-entries/{self.entry.pk}"
+        )
+        self.assertIn(anonymous.status_code, {401, 403})
 
     def test_salary_cost_split_is_independent_of_funding(self):
         set_salary_cost_allocations(

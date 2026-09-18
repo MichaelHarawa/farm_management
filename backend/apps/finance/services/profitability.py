@@ -12,6 +12,8 @@ from django.utils import timezone
 from apps.poultry.models import (
     Batch,
     BatchStatus,
+    FlockAdjustment,
+    FlockAdjustmentStatus,
     InputCosts,
     Mortality,
     PaymentStatus,
@@ -323,14 +325,21 @@ def _build_batch_profitability(
     gross_profit = revenue - total_production_cost
     fully_loaded_profit = gross_profit - selling_cost
     bird_units_sold = balance.valid_bird_units_sold
-    remaining = max(balance.remaining_live_birds, 0)
-    provisional_saleable_birds = bird_units_sold + remaining
+    raw_remaining = balance.remaining_live_birds
+    bird_balance_valid = raw_remaining >= 0
+    remaining = max(raw_remaining, 0)
+    survived_birds = (
+        bird_units_sold + remaining
+        if not is_pre_production and bird_balance_valid
+        else None
+    )
+    provisional_saleable_birds = survived_birds or 0
     is_final = batch.status == BatchStatus.CLOSED
 
     provisional_cost_per_saleable_bird = None
-    if provisional_saleable_birds:
+    if survived_birds:
         provisional_cost_per_saleable_bird = money(
-            total_production_cost / Decimal(provisional_saleable_birds)
+            total_production_cost / Decimal(survived_birds)
         )
 
     final_cost_per_bird_sold = None
@@ -372,6 +381,15 @@ def _build_batch_profitability(
         "birds_placed": balance.initial_birds,
         "valid_bird_units_sold": bird_units_sold,
         "remaining_live_birds": remaining,
+        "raw_remaining_live_birds": raw_remaining,
+        "bird_balance_valid": bird_balance_valid,
+        "bird_balance_error": (
+            None
+            if bird_balance_valid
+            else "Recorded sales and mortality exceed the adjusted flock population."
+        ),
+        "survived_birds": survived_birds,
+        "cost_per_survived_bird": provisional_cost_per_saleable_bird,
         "profit_per_bird_sold": (
             money(gross_profit / Decimal(bird_units_sold))
             if bird_units_sold
@@ -418,8 +436,10 @@ def _apply_final_snapshot(
     fully_loaded_profit = money(snapshot.fully_loaded_batch_profit)
     selling_cost = money(gross_profit - fully_loaded_profit)
     birds_sold = snapshot.valid_bird_units_sold
-    remaining = snapshot.remaining_live_birds
-    saleable_birds = birds_sold + remaining
+    raw_remaining = snapshot.remaining_live_birds
+    bird_balance_valid = raw_remaining >= 0
+    remaining = max(raw_remaining, 0)
+    survived_birds = birds_sold + remaining if bird_balance_valid else None
     additional_revenue_required = max(
         production_cost + selling_cost - revenue,
         ZERO,
@@ -443,13 +463,26 @@ def _apply_final_snapshot(
             "fully_loaded_margin_percent": percent(fully_loaded_profit, revenue),
             "valid_bird_units_sold": birds_sold,
             "remaining_live_birds": remaining,
+            "raw_remaining_live_birds": raw_remaining,
+            "bird_balance_valid": bird_balance_valid,
+            "bird_balance_error": (
+                None
+                if bird_balance_valid
+                else "The finalized snapshot contains a negative live-bird balance."
+            ),
+            "survived_birds": survived_birds,
+            "cost_per_survived_bird": (
+                money(production_cost / Decimal(survived_birds))
+                if survived_birds
+                else None
+            ),
             "profit_per_bird_sold": (
                 money(gross_profit / Decimal(birds_sold)) if birds_sold else None
             ),
-            "provisional_saleable_birds": saleable_birds,
+            "provisional_saleable_birds": survived_birds or 0,
             "provisional_cost_per_saleable_bird": (
-                money(production_cost / Decimal(saleable_birds))
-                if saleable_birds
+                money(production_cost / Decimal(survived_birds))
+                if survived_birds
                 else None
             ),
             "final_cost_per_bird_sold": (
@@ -1039,6 +1072,15 @@ def _portfolio_profitability_rows(batches: list[Batch]) -> list[dict]:
         .values("batch_id")
         .annotate(total=Sum("quantity_dead"))
     }
+    flock_adjustments_by_batch = {
+        row["batch_id"]: int(row["total"] or 0)
+        for row in FlockAdjustment.objects.filter(
+            batch_id__in=batch_ids,
+            status=FlockAdjustmentStatus.APPROVED,
+        )
+        .values("batch_id")
+        .annotate(total=Sum("quantity_change"))
+    }
 
     input_expression = ExpressionWrapper(
         F("quantity") * F("unit") * F("unit_cost"),
@@ -1178,11 +1220,15 @@ def _portfolio_profitability_rows(batches: list[Batch]) -> list[dict]:
         batch_sales = sales_by_batch.get(batch.pk, {})
         birds_sold = int(batch_sales.get("birds_sold", 0))
         mortality = mortality_by_batch.get(batch.pk, 0)
+        initial_birds = batch.actual_quantity_received or batch.quantity
+        adjusted_population = initial_birds + flock_adjustments_by_batch.get(
+            batch.pk, 0
+        )
         balance = BirdBalance(
-            initial_birds=batch.quantity,
+            initial_birds=initial_birds,
             valid_bird_units_sold=birds_sold,
             mortality=mortality,
-            remaining_live_birds=batch.quantity - birds_sold - mortality,
+            remaining_live_birds=adjusted_population - birds_sold - mortality,
         )
         direct_cost = (
             input_costs.get(batch.pk, ZERO)
@@ -1264,7 +1310,20 @@ def batch_portfolio_report(batches: Iterable[Batch]) -> dict:
     birds_sold = sum(row["valid_bird_units_sold"] for row in included_rows)
     remaining_birds = sum(row["remaining_live_birds"] for row in included_rows)
     mortality = sum(row["mortality"] for row in included_rows)
-    saleable_birds = birds_sold + remaining_birds
+    survivor_metric_rows = [
+        row
+        for row in included_rows
+        if row["survived_birds"] is not None and row["survived_birds"] > 0
+    ]
+    survived_birds = sum(row["survived_birds"] for row in survivor_metric_rows)
+    survivor_cost_numerator = money(
+        sum((row["total_production_cost"] for row in survivor_metric_rows), ZERO)
+    )
+    cost_per_survived_bird = (
+        money(survivor_cost_numerator / Decimal(survived_birds))
+        if survived_birds
+        else None
+    )
     additional_revenue_required = max(
         production_cost + selling_cost - revenue,
         ZERO,
@@ -1359,6 +1418,20 @@ def batch_portfolio_report(batches: Iterable[Batch]) -> dict:
                 ),
             )
         )
+    invalid_balance_rows = [row for row in rows if not row["bird_balance_valid"]]
+    if invalid_balance_rows:
+        warnings.append(
+            finance_warning(
+                code="invalid_bird_balance",
+                severity="warning",
+                message=(
+                    "Recorded sales and mortality exceed the adjusted flock population "
+                    "for: "
+                    + ", ".join(row["batch_id"] for row in invalid_balance_rows)
+                    + ". Survivor cost is unavailable until the flock records reconcile."
+                ),
+            )
+        )
 
     return {
         "analysis_basis": "lifecycle_management_cost",
@@ -1398,6 +1471,10 @@ def batch_portfolio_report(batches: Iterable[Batch]) -> dict:
             "birds_placed": birds_placed,
             "valid_bird_units_sold": birds_sold,
             "remaining_live_birds": remaining_birds,
+            "survived_birds": survived_birds,
+            "survivor_cost_numerator": survivor_cost_numerator,
+            "survivor_cost_batch_count": len(survivor_metric_rows),
+            "cost_per_survived_bird": cost_per_survived_bird,
             "mortality": mortality,
             "mortality_rate_percent": percent(
                 Decimal(mortality),
@@ -1408,9 +1485,7 @@ def batch_portfolio_report(batches: Iterable[Batch]) -> dict:
                 money(gross_profit / Decimal(birds_sold)) if birds_sold else None
             ),
             "production_cost_per_saleable_bird": (
-                money(production_cost / Decimal(saleable_birds))
-                if saleable_birds
-                else None
+                cost_per_survived_bird
             ),
             "break_even_selling_price_per_remaining_bird": (
                 money(additional_revenue_required / Decimal(remaining_birds))

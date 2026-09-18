@@ -14,6 +14,7 @@ from apps.finance.models import (
     ExpenditureCategory,
     ExpenditureOrigin,
     ExpenditurePaymentStatus,
+    FundingAllocation,
     FundingReceipt,
     FundingSource,
     FundingSourceType,
@@ -314,6 +315,42 @@ class UnifiedExpenditureWorkflowTests(TestCase):
         self.assertEqual(cash_used_from_batch(self.batch_a), Decimal("100.00"))
         self.assertEqual(Expenditure.objects.filter(pk=expenditure.pk).count(), 1)
         self.assertEqual(InputCosts.objects.filter(pk=detail.pk).count(), 1)
+
+        client = APIClient()
+        client.force_authenticate(self.user)
+        response = client.get(f"/api/v1/finance/expenditures/{expenditure.pk}")
+        self.assertEqual(response.status_code, 200)
+        payment_rows = response.data["funding_allocations"]
+        self.assertEqual(
+            {row["payment_group_key"] for row in payment_rows},
+            {"credit-payment-one", "credit-payment-two"},
+        )
+        self.assertTrue(all(row["created_by_name"] == self.user.username for row in payment_rows))
+
+    def test_posted_draft_split_receives_one_payment_group_identity(self):
+        expenditure = Expenditure.objects.create(
+            expenditure_date=date(2026, 1, 20),
+            accounting_period=self.period,
+            amount=Decimal("100.00"),
+            category=self.feed,
+            accounting_nature=AccountingNature.DIRECT_COST,
+            description="Draft split payment",
+            origin=ExpenditureOrigin.FINANCE,
+            idempotency_key="draft-split-payment",
+            created_by=self.user,
+        )
+        FundingAllocation.objects.create(
+            expenditure=expenditure,
+            funding_source=self.equity,
+            amount=Decimal("100.00"),
+            allocation_date=date(2026, 1, 20),
+            created_by=self.user,
+        )
+
+        post_expenditure(expenditure_id=expenditure.pk, user=self.user)
+
+        allocation = expenditure.funding_allocations.get()
+        self.assertEqual(allocation.payment_group_key, f"post-{expenditure.pk}")
 
     def test_insufficient_funds_roll_back_and_reversal_restores_cash_and_cost(self):
         with self.assertRaises(ValidationError):
