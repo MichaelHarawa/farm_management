@@ -2155,9 +2155,34 @@ class FundingClassification(models.TextChoices):
     REINVESTMENT = "reinvestment", "Reinvestment in Operations"
     WORKING_CAPITAL = "working_capital", "Working Capital"
     COST_RECOVERY = "cost_recovery", "Cost Recovery"
-    OWNER_DISTRIBUTION = "owner_distribution", "Owner Distribution"
+    OWNER_DISTRIBUTION = "owner_distribution", "Owner Profit Distribution"
+    OWNER_CAPITAL_RETURN = "owner_capital_return", "Return of Owner Capital"
+    OWNER_DRAWING = "owner_drawing", "Owner Drawing"
+    OWNER_COMPENSATION = "owner_compensation", "Owner Compensation"
     DEBT_SERVICE = "debt_service", "Debt Service"
     OTHER = "other", "Other"
+
+
+class OwnerContributor(TimestampedModel):
+    """A stable non-login identity for a person or entity contributing capital."""
+
+    public_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    display_name = models.CharField(max_length=160)
+    notes = models.TextField(blank=True, default="")
+    is_active = models.BooleanField(default=True, db_index=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_owner_contributors",
+    )
+
+    class Meta:
+        ordering = ["display_name", "pk"]
+
+    def __str__(self) -> str:
+        return self.display_name
 
 
 class FundingSource(TimestampedModel):
@@ -2179,6 +2204,14 @@ class FundingSource(TimestampedModel):
         related_name="funding_sources",
         help_text="The batch whose collected revenue is the source (for BATCH_COLLECTION).",
     )
+    owner = models.ForeignKey(
+        OwnerContributor,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="funding_sources",
+        help_text="Stable contributor identity for an OWNER_CAPITAL source.",
+    )
     description = models.CharField(max_length=255, blank=True)
     notes = models.TextField(blank=True, default="")
     is_active = models.BooleanField(default=True, db_index=True)
@@ -2187,6 +2220,14 @@ class FundingSource(TimestampedModel):
         ordering = ["-created_at"]
         indexes = [
             models.Index(fields=["source_type", "batch"]),
+            models.Index(fields=["source_type", "owner"]),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(owner__isnull=True)
+                | Q(source_type=FundingSourceType.OWNER_CAPITAL),
+                name="finance_funding_source_owner_only_for_capital",
+            ),
         ]
 
     def __str__(self) -> str:
@@ -2216,6 +2257,14 @@ class FundingReceipt(TimestampedModel):
     receipt_date = models.DateTimeField(default=timezone.now, db_index=True)
     reference = models.CharField(max_length=120, blank=True, default="")
     notes = models.TextField(blank=True, default="")
+    idempotency_key = models.CharField(
+        max_length=120,
+        null=True,
+        blank=True,
+        unique=True,
+        help_text="Client-generated key used to safely retry contribution receipts.",
+    )
+    request_fingerprint = models.CharField(max_length=64, blank=True, default="")
     status = models.CharField(
         max_length=20,
         choices=FundingReceiptStatus.choices,
@@ -2245,6 +2294,98 @@ class FundingReceipt(TimestampedModel):
 
     def __str__(self) -> str:
         return f"{self.amount} received into {self.funding_source}"
+
+
+class OwnerDesignationStatus(models.TextChoices):
+    POSTED = "posted", "Posted"
+    REVERSED = "reversed", "Reversed"
+
+
+class OwnerReceiptDesignation(TimestampedModel):
+    """Analytical designation of one existing owner receipt to a poultry batch."""
+
+    receipt = models.ForeignKey(
+        FundingReceipt,
+        on_delete=models.PROTECT,
+        related_name="owner_designations",
+    )
+    batch = models.ForeignKey(
+        Batch,
+        on_delete=models.PROTECT,
+        related_name="owner_capital_designations",
+    )
+    amount = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal("0.01"))],
+    )
+    designation_date = models.DateField(default=timezone.localdate, db_index=True)
+    notes = models.TextField(blank=True, default="")
+    status = models.CharField(
+        max_length=20,
+        choices=OwnerDesignationStatus.choices,
+        default=OwnerDesignationStatus.POSTED,
+        db_index=True,
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_owner_designations",
+    )
+    reversed_at = models.DateTimeField(null=True, blank=True)
+    reversed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reversed_owner_designations",
+    )
+    reversal_reason = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["-designation_date", "-created_at", "-pk"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["receipt", "batch"],
+                condition=Q(status=OwnerDesignationStatus.POSTED),
+                name="finance_one_posted_owner_designation_per_batch",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["receipt", "status"]),
+            models.Index(fields=["batch", "designation_date"]),
+        ]
+
+
+class FinanceActionEvent(models.Model):
+    """Append-only audit trail for privileged finance actions and access."""
+
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="finance_actions",
+    )
+    action = models.CharField(max_length=80, db_index=True)
+    entity_type = models.CharField(max_length=80, db_index=True)
+    entity_id = models.CharField(max_length=120, blank=True, default="")
+    before_data = models.JSONField(default=dict, blank=True)
+    after_data = models.JSONField(default=dict, blank=True)
+    reason = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["-created_at", "-pk"]
+        indexes = [models.Index(fields=["entity_type", "entity_id"])]
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            raise ValidationError("Finance action events are immutable.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Finance action events cannot be deleted.")
 
 
 class Expenditure(DollarReferenceMixin, TimestampedModel):

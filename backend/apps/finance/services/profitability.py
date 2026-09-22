@@ -52,6 +52,7 @@ from ..models import (
 )
 from apps.poultry.services.batch_lifecycle import BirdBalance, calculate_bird_balance
 from .bird_days import calculate_batch_bird_days
+from .funding_attribution import expenditure_payment_beneficiary_shares
 from .warnings import finance_warning
 
 
@@ -1855,6 +1856,7 @@ def batch_expenditure_funding_mix(batch: Batch, *, include_transactions: bool = 
     own_batch_sales = ZERO
     other_batch_sales = ZERO
     other_sources = ZERO
+    owner_capital = ZERO
     sources: dict[int, dict] = {}
     transactions = []
 
@@ -1862,22 +1864,15 @@ def batch_expenditure_funding_mix(batch: Batch, *, include_transactions: bool = 
         expenditure = cost_allocation.expenditure
         batch_cost = money(cost_allocation.allocated_amount)
         total_batch_cost += batch_cost
-        total_expenditure_allocations = money(
-            sum(
-                (
-                    allocation.allocated_amount
-                    for allocation in expenditure.cost_allocations.all()
-                ),
-                ZERO,
-            )
-        )
-        if total_expenditure_allocations <= ZERO:
-            continue
-        batch_share = batch_cost / total_expenditure_allocations
-
         for funding_allocation in expenditure.funding_allocations.all():
             source = funding_allocation.funding_source
-            attributed_amount = money(funding_allocation.amount * batch_share)
+            shares = expenditure_payment_beneficiary_shares(
+                expenditure,
+                funding_allocation.amount,
+            )
+            attributed_amount = money(
+                shares["allocation_shares"].get(cost_allocation.pk, ZERO)
+            )
             if attributed_amount <= ZERO:
                 continue
 
@@ -1903,6 +1898,8 @@ def batch_expenditure_funding_mix(batch: Batch, *, include_transactions: bool = 
                 other_batch_sales += attributed_amount
             else:
                 other_sources += attributed_amount
+                if source.source_type == FundingSourceType.OWNER_CAPITAL:
+                    owner_capital += attributed_amount
 
             source_row = sources.setdefault(
                 source.pk,
@@ -1953,6 +1950,8 @@ def batch_expenditure_funding_mix(batch: Batch, *, include_transactions: bool = 
     own_batch_sales = money(own_batch_sales)
     other_batch_sales = money(other_batch_sales)
     other_sources = money(other_sources)
+    owner_capital = money(owner_capital)
+    non_owner_sources = money(other_sources - owner_capital)
     source_rows = []
     for row in sources.values():
         amount = money(row["amount"])
@@ -1980,12 +1979,20 @@ def batch_expenditure_funding_mix(batch: Batch, *, include_transactions: bool = 
         "other_batch_sales_percent": percent(other_batch_sales, total_paid_for_batch),
         "other_sources": other_sources,
         "other_sources_percent": percent(other_sources, total_paid_for_batch),
+        "owner_capital": owner_capital,
+        "owner_capital_percent": percent(owner_capital, total_paid_for_batch),
+        "non_owner_sources": non_owner_sources,
+        "non_owner_sources_percent": percent(
+            non_owner_sources,
+            total_paid_for_batch,
+        ),
         "sources": source_rows,
         "transactions": transactions,
         "basis": (
             "Funding follows posted cash allocations. When one expenditure benefits "
-            "multiple batches, each funding source is attributed in proportion to "
-            "that batch's share of the expenditure cost allocation."
+            "multiple beneficiaries, each payment is apportioned across the complete "
+            "beneficiary set with a deterministic cent remainder before any batch "
+            "filter is applied. Owner capital remains equity funding, not revenue."
         ),
     }
 

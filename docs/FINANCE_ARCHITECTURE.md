@@ -76,3 +76,27 @@ Customer receipts, expenditure funding allocations, and payroll payments remain 
 ## Remaining policy-controlled work
 
 Effective-dated compensation and payroll proration remain Priority 4 work. Inventory movement screens beyond receipt/issue and advanced prospective asset-estimate changes can be extended from the new ledgers. Switching statutory statements fully to the GL still requires approved historical backfill, opening balances and qualified-accountant approval.
+
+## Phase 2: owner-capital subledger
+
+`OwnerContributor` is the stable identity for a person or entity that introduces capital; it is deliberately separate from system-user accounts. A named `FundingSource` may belong to one contributor only when its type is `owner_capital`. Existing owner-capital sources remain valid with a null contributor and are reported as **Unknown legacy owner**—the migration does not infer identity from free text.
+
+`FundingReceipt` remains the one authoritative cash-in event. `OwnerReceiptDesignation` assigns some or all of that receipt to intended poultry batches for analysis, but does not create cash, revenue, expense, or another contribution. Designations are reversed rather than overwritten. Actual batch use comes from posted `FundingAllocation` and `PayrollPaymentFunding` rows, apportioned over the expenditure's complete stored beneficiary set before any report filter. Deterministic cent remainder assignment guarantees that batch shares reconcile exactly to the payment.
+
+The owner-capital report reconciles:
+
+`remaining owner cash = posted owner receipts - owner-funded expenditure payments - owner-funded payroll payments`
+
+`net contributed capital = posted owner receipts - explicit return-of-owner-capital payments`
+
+Owner drawings, compensation and profit distributions are classified separately and do not silently reduce contributed capital. Date filters use receipt dates for cash introduced and payment/allocation dates for cash used. The timeline includes opening balances so period movements reconcile to closing balances.
+
+Owner identities, contribution workflows, reports, assignment of owner cash to a payment, and the finance-action audit require the Administrator or Director role. Other finance roles receive neither contributor identity, owner-source balances nor owner-receipt history; they may record a payable for later authorized funding. `FinanceActionEvent` is append-only and records privileged owner creation/change, contribution, designation/reversal, receipt reversal, owner-payment classification and protected report access.
+
+| Operation / field | Admin | Director | Finance manager/supervisor/stakeholder |
+|---|---:|---:|---:|
+| View owner identity, receipts, report and filtered export | Yes | Yes | No |
+| Create/deactivate contributor identity | Yes | Yes | No |
+| Record/reverse contribution or designation | Yes | Yes | No |
+| View append-only owner finance actions | Yes | Yes | No |
+| Assign owner-capital cash as an expenditure source | Yes | Yes | No; record a payable for authorized funding |

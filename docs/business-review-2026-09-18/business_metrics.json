@@ -1,0 +1,2350 @@
+{
+  "batches": [
+    {
+      "batch": "BATCH-20260712-0001",
+      "id": "1",
+      "revenue": "3584500.00",
+      "sale_summary_collected": "3584500.00",
+      "ledger_collected": "3584500.00",
+      "sales_by_price": {
+        "live_chicken @ 19000.00": {
+          "birds": "152",
+          "revenue": "2888000.00"
+        },
+        "live_chicken @ 18000.00": {
+          "birds": "17",
+          "revenue": "306000.00"
+        },
+        "live_chicken @ 13000.00": {
+          "birds": "3",
+          "revenue": "39000.00"
+        },
+        "live_chicken @ 18500.00": {
+          "birds": "19",
+          "revenue": "351500.00"
+        }
+      },
+      "first_sale": "2026-08-16 11:53:00+00",
+      "last_sale": "2026-09-02 16:04:00+00",
+      "cost_categories": {
+        "Biosecurity": "15800.00",
+        "Batch utilities": "147500.00",
+        "Feed": "2459000.00",
+        "Chicks or livestock": "568500.00",
+        "Veterinary and medication": "88000.00",
+        "Batch transport": "41400.00"
+      },
+      "cost_details": [
+        {
+          "id": "4",
+          "date": "2026-07-12",
+          "category": "Biosecurity",
+          "amount": "15800.00",
+          "description": "Disinfectants",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "5",
+          "date": "2026-07-12",
+          "category": "Batch utilities",
+          "amount": "40000.00",
+          "description": "Charcoal",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "6",
+          "date": "2026-07-12",
+          "category": "Feed",
+          "amount": "375000.00",
+          "description": "Soya full fat",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "7",
+          "date": "2026-07-12",
+          "category": "Feed",
+          "amount": "220000.00",
+          "description": "Soya low fat",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "8",
+          "date": "2026-07-12",
+          "category": "Feed",
+          "amount": "511000.00",
+          "description": "KBC",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "9",
+          "date": "2026-07-12",
+          "category": "Feed",
+          "amount": "135000.00",
+          "description": "Transporting",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "10",
+          "date": "2026-07-12",
+          "category": "Feed",
+          "amount": "30000.00",
+          "description": "Maize Meal",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "11",
+          "date": "2026-07-12",
+          "category": "Batch utilities",
+          "amount": "4000.00",
+          "description": "Plastic Paper",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "12",
+          "date": "2026-07-12",
+          "category": "Feed",
+          "amount": "6500.00",
+          "description": "Transport",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "13",
+          "date": "2026-07-12",
+          "category": "Feed",
+          "amount": "5000.00",
+          "description": "Soda",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "14",
+          "date": "2026-07-12",
+          "category": "Feed",
+          "amount": "3000.00",
+          "description": "Salt",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "15",
+          "date": "2026-07-12",
+          "category": "Chicks or livestock",
+          "amount": "12500.00",
+          "description": "Stress pack",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "16",
+          "date": "2026-07-12",
+          "category": "Chicks or livestock",
+          "amount": "11000.00",
+          "description": "Utuchi",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "17",
+          "date": "2026-07-12",
+          "category": "Batch utilities",
+          "amount": "7500.00",
+          "description": "Mbaula",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "18",
+          "date": "2026-07-12",
+          "category": "Chicks or livestock",
+          "amount": "500000.00",
+          "description": "Chicks",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "19",
+          "date": "2026-07-12",
+          "category": "Batch utilities",
+          "amount": "28000.00",
+          "description": "Charcoal",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "20",
+          "date": "2026-07-12",
+          "category": "Feed",
+          "amount": "150000.00",
+          "description": "Maize",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "21",
+          "date": "2026-07-13",
+          "category": "Veterinary and medication",
+          "amount": "12000.00",
+          "description": "Hitchner",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "22",
+          "date": "2026-07-13",
+          "category": "Batch utilities",
+          "amount": "10000.00",
+          "description": "Water",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "23",
+          "date": "2026-07-14",
+          "category": "Veterinary and medication",
+          "amount": "18000.00",
+          "description": "OTC 20%",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "24",
+          "date": "2026-07-14",
+          "category": "Batch transport",
+          "amount": "3400.00",
+          "description": "Transport",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "25",
+          "date": "2026-07-14",
+          "category": "Batch utilities",
+          "amount": "48000.00",
+          "description": "Charcoal",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "26",
+          "date": "2026-07-19",
+          "category": "Batch utilities",
+          "amount": "10000.00",
+          "description": "Water",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "27",
+          "date": "2026-07-21",
+          "category": "Veterinary and medication",
+          "amount": "18000.00",
+          "description": "Gumblo",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "28",
+          "date": "2026-07-21",
+          "category": "Veterinary and medication",
+          "amount": "15000.00",
+          "description": "Vitamins",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "29",
+          "date": "2026-07-21",
+          "category": "Feed",
+          "amount": "4000.00",
+          "description": "Soda",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "30",
+          "date": "2026-07-21",
+          "category": "Feed",
+          "amount": "3500.00",
+          "description": "Salt",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "31",
+          "date": "2026-07-21",
+          "category": "Feed",
+          "amount": "150000.00",
+          "description": "Maize",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "32",
+          "date": "2026-07-21",
+          "category": "Feed",
+          "amount": "25000.00",
+          "description": "Maize Meal",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "33",
+          "date": "2026-07-21",
+          "category": "Batch transport",
+          "amount": "20000.00",
+          "description": "Transportation",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "34",
+          "date": "2026-07-28",
+          "category": "Veterinary and medication",
+          "amount": "15000.00",
+          "description": "Vitamins",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "35",
+          "date": "2026-07-28",
+          "category": "Veterinary and medication",
+          "amount": "10000.00",
+          "description": "Lasota",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "36",
+          "date": "2026-08-03",
+          "category": "Feed",
+          "amount": "7000.00",
+          "description": "Transportation",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "37",
+          "date": "2026-08-03",
+          "category": "Feed",
+          "amount": "5000.00",
+          "description": "Scale borrowing",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "44",
+          "date": "2026-08-10",
+          "category": "Chicks or livestock",
+          "amount": "15000.00",
+          "description": "Vitamins",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "47",
+          "date": "2026-08-13",
+          "category": "Feed",
+          "amount": "415500.00",
+          "description": "Feed",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "48",
+          "date": "2026-08-13",
+          "category": "Batch transport",
+          "amount": "7000.00",
+          "description": "Transport",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "50",
+          "date": "2026-08-18",
+          "category": "Feed",
+          "amount": "275000.00",
+          "description": "Finisher",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "51",
+          "date": "2026-08-19",
+          "category": "Chicks or livestock",
+          "amount": "15000.00",
+          "description": "Vitamins",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "52",
+          "date": "2026-08-18",
+          "category": "Batch transport",
+          "amount": "3000.00",
+          "description": "Transport",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "53",
+          "date": "2026-08-18",
+          "category": "Chicks or livestock",
+          "amount": "15000.00",
+          "description": "Vitamins",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "56",
+          "date": "2026-08-24",
+          "category": "Feed",
+          "amount": "138500.00",
+          "description": "Feed",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "58",
+          "date": "2026-08-25",
+          "category": "Batch transport",
+          "amount": "8000.00",
+          "description": "Transport",
+          "nature": "direct_cost"
+        }
+      ],
+      "input_details": [
+        {
+          "id": "26",
+          "item": "Disinfectants",
+          "category": "Biosecurity",
+          "quantity": "1",
+          "unit": "1",
+          "unit_measurement": "other",
+          "unit_cost": "15000.00",
+          "purchase_date": "2026-07-21 10:39:00+00",
+          "expenditure_id": null
+        },
+        {
+          "id": "1",
+          "item": "Disinfectants",
+          "category": "Biosecurity",
+          "quantity": "1",
+          "unit": "1",
+          "unit_measurement": "kg",
+          "unit_cost": "15800.00",
+          "purchase_date": "2026-07-12 14:43:23.217+00",
+          "expenditure_id": "4"
+        },
+        {
+          "id": "2",
+          "item": "Charcoal",
+          "category": "temperature control",
+          "quantity": "2",
+          "unit": "1",
+          "unit_measurement": "kg",
+          "unit_cost": "20000.00",
+          "purchase_date": "2026-07-12 14:43:23.217+00",
+          "expenditure_id": "5"
+        },
+        {
+          "id": "3",
+          "item": "Soya full fat",
+          "category": "Feed inputs",
+          "quantity": "3",
+          "unit": "50",
+          "unit_measurement": "kg",
+          "unit_cost": "2500.00",
+          "purchase_date": "2026-07-12 14:43:23.217+00",
+          "expenditure_id": "6"
+        },
+        {
+          "id": "4",
+          "item": "Soya low fat",
+          "category": "feed input",
+          "quantity": "2",
+          "unit": "50",
+          "unit_measurement": "kg",
+          "unit_cost": "2200.00",
+          "purchase_date": "2026-07-12 14:43:23.217+00",
+          "expenditure_id": "7"
+        },
+        {
+          "id": "5",
+          "item": "KBC",
+          "category": "Feed Iputs",
+          "quantity": "2",
+          "unit": "50",
+          "unit_measurement": "kg",
+          "unit_cost": "5110.00",
+          "purchase_date": "2026-07-12 14:43:23.217+00",
+          "expenditure_id": "8"
+        },
+        {
+          "id": "6",
+          "item": "Transporting",
+          "category": "feed inputs",
+          "quantity": "1",
+          "unit": "1",
+          "unit_measurement": "kg",
+          "unit_cost": "135000.00",
+          "purchase_date": "2026-07-12 14:43:23.217+00",
+          "expenditure_id": "9"
+        },
+        {
+          "id": "7",
+          "item": "Maize Meal",
+          "category": "Feed Input",
+          "quantity": "1",
+          "unit": "1",
+          "unit_measurement": "kg",
+          "unit_cost": "30000.00",
+          "purchase_date": "2026-07-12 14:43:23.217+00",
+          "expenditure_id": "10"
+        },
+        {
+          "id": "8",
+          "item": "Plastic Paper",
+          "category": "Temperature control",
+          "quantity": "4",
+          "unit": "1",
+          "unit_measurement": "meters",
+          "unit_cost": "1000.00",
+          "purchase_date": "2026-07-12 14:43:23.217+00",
+          "expenditure_id": "11"
+        },
+        {
+          "id": "9",
+          "item": "Transport",
+          "category": "Transporting feed",
+          "quantity": "1",
+          "unit": "1",
+          "unit_measurement": "na",
+          "unit_cost": "6500.00",
+          "purchase_date": "2026-07-12 14:43:23.217+00",
+          "expenditure_id": "12"
+        },
+        {
+          "id": "10",
+          "item": "Soda",
+          "category": "Feed Input",
+          "quantity": "2",
+          "unit": "1",
+          "unit_measurement": "kg",
+          "unit_cost": "2500.00",
+          "purchase_date": "2026-07-12 14:43:23.217+00",
+          "expenditure_id": "13"
+        },
+        {
+          "id": "11",
+          "item": "Salt",
+          "category": "Feed Input",
+          "quantity": "2",
+          "unit": "1",
+          "unit_measurement": "kg",
+          "unit_cost": "1500.00",
+          "purchase_date": "2026-07-12 14:43:23.217+00",
+          "expenditure_id": "14"
+        },
+        {
+          "id": "12",
+          "item": "Stress pack",
+          "category": "chick care",
+          "quantity": "1",
+          "unit": "1",
+          "unit_measurement": "other",
+          "unit_cost": "12500.00",
+          "purchase_date": "2026-07-12 14:43:23.217+00",
+          "expenditure_id": "15"
+        },
+        {
+          "id": "13",
+          "item": "Utuchi",
+          "category": "chick care",
+          "quantity": "2",
+          "unit": "1",
+          "unit_measurement": "other",
+          "unit_cost": "5500.00",
+          "purchase_date": "2026-07-12 14:43:23.217+00",
+          "expenditure_id": "16"
+        },
+        {
+          "id": "14",
+          "item": "Mbaula",
+          "category": "Temperature control",
+          "quantity": "1",
+          "unit": "1",
+          "unit_measurement": "na",
+          "unit_cost": "7500.00",
+          "purchase_date": "2026-07-12 14:43:23.217+00",
+          "expenditure_id": "17"
+        },
+        {
+          "id": "15",
+          "item": "Chicks",
+          "category": "Chicks",
+          "quantity": "200",
+          "unit": "1",
+          "unit_measurement": "kg",
+          "unit_cost": "2500.00",
+          "purchase_date": "2026-07-12 14:43:23.217+00",
+          "expenditure_id": "18"
+        },
+        {
+          "id": "16",
+          "item": "Charcoal",
+          "category": "Temperature control",
+          "quantity": "1",
+          "unit": "1",
+          "unit_measurement": "na",
+          "unit_cost": "28000.00",
+          "purchase_date": "2026-07-12 14:43:23.217+00",
+          "expenditure_id": "19"
+        },
+        {
+          "id": "17",
+          "item": "Maize",
+          "category": "Feed input",
+          "quantity": "3",
+          "unit": "50",
+          "unit_measurement": "kg",
+          "unit_cost": "1000.00",
+          "purchase_date": "2026-07-12 14:43:23.217+00",
+          "expenditure_id": "20"
+        },
+        {
+          "id": "18",
+          "item": "Hitchner",
+          "category": "Vaccine",
+          "quantity": "2",
+          "unit": "1",
+          "unit_measurement": "other",
+          "unit_cost": "6000.00",
+          "purchase_date": "2026-07-13 10:36:00+00",
+          "expenditure_id": "21"
+        },
+        {
+          "id": "19",
+          "item": "Water",
+          "category": "Water",
+          "quantity": "1",
+          "unit": "1",
+          "unit_measurement": "na",
+          "unit_cost": "10000.00",
+          "purchase_date": "2026-07-13 10:37:00+00",
+          "expenditure_id": "22"
+        },
+        {
+          "id": "20",
+          "item": "OTC 20%",
+          "category": "Drug",
+          "quantity": "1",
+          "unit": "1",
+          "unit_measurement": "other",
+          "unit_cost": "18000.00",
+          "purchase_date": "2026-07-14 11:19:00+00",
+          "expenditure_id": "23"
+        },
+        {
+          "id": "21",
+          "item": "Transport",
+          "category": "Transport",
+          "quantity": "1",
+          "unit": "1",
+          "unit_measurement": "na",
+          "unit_cost": "3400.00",
+          "purchase_date": "2026-07-14 11:20:00+00",
+          "expenditure_id": "24"
+        },
+        {
+          "id": "22",
+          "item": "Charcoal",
+          "category": "Temperature Control",
+          "quantity": "2",
+          "unit": "1",
+          "unit_measurement": "other",
+          "unit_cost": "24000.00",
+          "purchase_date": "2026-07-14 15:03:00+00",
+          "expenditure_id": "25"
+        },
+        {
+          "id": "23",
+          "item": "Water",
+          "category": "Water",
+          "quantity": "1",
+          "unit": "1",
+          "unit_measurement": "other",
+          "unit_cost": "10000.00",
+          "purchase_date": "2026-07-19 09:06:00+00",
+          "expenditure_id": "26"
+        },
+        {
+          "id": "24",
+          "item": "Gumblo",
+          "category": "Vaccination",
+          "quantity": "2",
+          "unit": "1",
+          "unit_measurement": "other",
+          "unit_cost": "9000.00",
+          "purchase_date": "2026-07-21 10:37:00+00",
+          "expenditure_id": "27"
+        },
+        {
+          "id": "25",
+          "item": "Vitamins",
+          "category": "Vitamins",
+          "quantity": "1",
+          "unit": "1",
+          "unit_measurement": "other",
+          "unit_cost": "15000.00",
+          "purchase_date": "2026-07-21 10:38:00+00",
+          "expenditure_id": "28"
+        },
+        {
+          "id": "27",
+          "item": "Soda",
+          "category": "Feed",
+          "quantity": "1",
+          "unit": "1",
+          "unit_measurement": "kg",
+          "unit_cost": "4000.00",
+          "purchase_date": "2026-07-21 10:40:00+00",
+          "expenditure_id": "29"
+        },
+        {
+          "id": "28",
+          "item": "Salt",
+          "category": "Feed",
+          "quantity": "1",
+          "unit": "1",
+          "unit_measurement": "kg",
+          "unit_cost": "3500.00",
+          "purchase_date": "2026-07-21 10:41:00+00",
+          "expenditure_id": "30"
+        },
+        {
+          "id": "29",
+          "item": "Maize",
+          "category": "Feed",
+          "quantity": "3",
+          "unit": "50",
+          "unit_measurement": "kg",
+          "unit_cost": "1000.00",
+          "purchase_date": "2026-07-21 10:42:00+00",
+          "expenditure_id": "31"
+        },
+        {
+          "id": "30",
+          "item": "Maize Meal",
+          "category": "Feed",
+          "quantity": "1",
+          "unit": "1",
+          "unit_measurement": "other",
+          "unit_cost": "25000.00",
+          "purchase_date": "2026-07-21 11:57:00+00",
+          "expenditure_id": "32"
+        },
+        {
+          "id": "31",
+          "item": "Transportation",
+          "category": "Transport",
+          "quantity": "4",
+          "unit": "1",
+          "unit_measurement": "other",
+          "unit_cost": "5000.00",
+          "purchase_date": "2026-07-21 11:58:00+00",
+          "expenditure_id": "33"
+        },
+        {
+          "id": "32",
+          "item": "Vitamins",
+          "category": "Vitamins",
+          "quantity": "1",
+          "unit": "1",
+          "unit_measurement": "na",
+          "unit_cost": "15000.00",
+          "purchase_date": "2026-07-28 08:44:00+00",
+          "expenditure_id": "34"
+        },
+        {
+          "id": "33",
+          "item": "Lasota",
+          "category": "Vaccination",
+          "quantity": "2",
+          "unit": "1",
+          "unit_measurement": "kg",
+          "unit_cost": "5000.00",
+          "purchase_date": "2026-07-28 08:45:00+00",
+          "expenditure_id": "35"
+        },
+        {
+          "id": "34",
+          "item": "Transportation",
+          "category": "Feed",
+          "quantity": "1",
+          "unit": "1",
+          "unit_measurement": "kg",
+          "unit_cost": "7000.00",
+          "purchase_date": "2026-08-03 11:33:00+00",
+          "expenditure_id": "36"
+        },
+        {
+          "id": "35",
+          "item": "Scale borrowing",
+          "category": "Feed",
+          "quantity": "1",
+          "unit": "1",
+          "unit_measurement": "kg",
+          "unit_cost": "5000.00",
+          "purchase_date": "2026-08-03 11:34:00+00",
+          "expenditure_id": "37"
+        },
+        {
+          "id": "42",
+          "item": "Vitamins",
+          "category": "Chick Care",
+          "quantity": "1",
+          "unit": "1",
+          "unit_measurement": "kg",
+          "unit_cost": "15000.00",
+          "purchase_date": "2026-08-10 19:28:00+00",
+          "expenditure_id": "44"
+        },
+        {
+          "id": "45",
+          "item": "Feed",
+          "category": "Feed",
+          "quantity": "3",
+          "unit": "1",
+          "unit_measurement": "kg",
+          "unit_cost": "138500.00",
+          "purchase_date": "2026-08-13 08:28:00+00",
+          "expenditure_id": "47"
+        },
+        {
+          "id": "46",
+          "item": "Transport",
+          "category": "Transport",
+          "quantity": "1",
+          "unit": "1",
+          "unit_measurement": "na",
+          "unit_cost": "7000.00",
+          "purchase_date": "2026-08-13 08:29:00+00",
+          "expenditure_id": "48"
+        },
+        {
+          "id": "48",
+          "item": "Finisher",
+          "category": "Feed",
+          "quantity": "2",
+          "unit": "1",
+          "unit_measurement": "kg",
+          "unit_cost": "137500.00",
+          "purchase_date": "2026-08-18 11:49:00+00",
+          "expenditure_id": "50"
+        },
+        {
+          "id": "49",
+          "item": "Vitamins",
+          "category": "Chick Care",
+          "quantity": "1",
+          "unit": "1",
+          "unit_measurement": "na",
+          "unit_cost": "15000.00",
+          "purchase_date": "2026-08-19 11:51:00+00",
+          "expenditure_id": "51"
+        },
+        {
+          "id": "50",
+          "item": "Transport",
+          "category": "Transport",
+          "quantity": "1",
+          "unit": "1",
+          "unit_measurement": "na",
+          "unit_cost": "3000.00",
+          "purchase_date": "2026-08-18 11:52:00+00",
+          "expenditure_id": "52"
+        },
+        {
+          "id": "51",
+          "item": "Vitamins",
+          "category": "Chick Care",
+          "quantity": "1",
+          "unit": "1",
+          "unit_measurement": "na",
+          "unit_cost": "15000.00",
+          "purchase_date": "2026-08-18 11:53:00+00",
+          "expenditure_id": "53"
+        },
+        {
+          "id": "54",
+          "item": "Feed",
+          "category": "Feed",
+          "quantity": "1",
+          "unit": "1",
+          "unit_measurement": "kg",
+          "unit_cost": "138500.00",
+          "purchase_date": "2026-08-24 08:23:00+00",
+          "expenditure_id": "56"
+        },
+        {
+          "id": "56",
+          "item": "Transport",
+          "category": "Transport",
+          "quantity": "4",
+          "unit": "1",
+          "unit_measurement": "na",
+          "unit_cost": "2000.00",
+          "purchase_date": "2026-08-25 09:00:00+00",
+          "expenditure_id": "58"
+        }
+      ],
+      "mortality": [
+        {
+          "mortality_date": "2026-07-09 16:49:00+00",
+          "quantity_dead": "1",
+          "age_in_days": "2",
+          "suspected_cause": "weak chick",
+          "description": "weak chick on arrival"
+        },
+        {
+          "mortality_date": "2026-07-11 16:50:00+00",
+          "quantity_dead": "1",
+          "age_in_days": "4",
+          "suspected_cause": "weak chick",
+          "description": "weak chick on arrival"
+        },
+        {
+          "mortality_date": "2026-07-14 08:02:00+00",
+          "quantity_dead": "2",
+          "age_in_days": "6",
+          "suspected_cause": "Flue",
+          "description": "Suspected Flue"
+        },
+        {
+          "mortality_date": "2026-07-14 08:41:00+00",
+          "quantity_dead": "1",
+          "age_in_days": "6",
+          "suspected_cause": "Flue",
+          "description": "none"
+        },
+        {
+          "mortality_date": "2026-07-15 09:32:00+00",
+          "quantity_dead": "1",
+          "age_in_days": "7",
+          "suspected_cause": "Flue",
+          "description": "might be poor observations and care"
+        },
+        {
+          "mortality_date": "2026-07-19 09:07:00+00",
+          "quantity_dead": "1",
+          "age_in_days": "11",
+          "suspected_cause": "weak chick",
+          "description": "weak chicks"
+        },
+        {
+          "mortality_date": "2026-07-27 14:58:00+00",
+          "quantity_dead": "1",
+          "age_in_days": "19",
+          "suspected_cause": "Unknown",
+          "description": "Unknown"
+        },
+        {
+          "mortality_date": "2026-08-06 08:14:00+00",
+          "quantity_dead": "1",
+          "age_in_days": "29",
+          "suspected_cause": "Unknown",
+          "description": "not sick"
+        }
+      ],
+      "feed_usage": [
+        {
+          "feeding_start_date": "2026-07-22 10:11:00+00",
+          "feeding_end_date": "2026-07-25 10:11:00+00",
+          "feed_type": "grower",
+          "quantity_given": "50",
+          "unit_of_measurement": "kg",
+          "current_number_of_birds": "193"
+        },
+        {
+          "feeding_start_date": "2026-07-25 20:54:00+00",
+          "feeding_end_date": "2026-07-29 20:54:00+00",
+          "feed_type": "grower",
+          "quantity_given": "50",
+          "unit_of_measurement": "kg",
+          "current_number_of_birds": "193"
+        },
+        {
+          "feeding_start_date": "2026-07-29 10:47:00+00",
+          "feeding_end_date": "2026-08-01 10:47:00+00",
+          "feed_type": "grower",
+          "quantity_given": "50",
+          "unit_of_measurement": "kg",
+          "current_number_of_birds": "192"
+        },
+        {
+          "feeding_start_date": "2026-08-01 11:32:00+00",
+          "feeding_end_date": "2026-08-03 11:32:00+00",
+          "feed_type": "grower",
+          "quantity_given": "50",
+          "unit_of_measurement": "kg",
+          "current_number_of_birds": "192"
+        },
+        {
+          "feeding_start_date": "2026-08-02 08:55:00+00",
+          "feeding_end_date": "2026-08-05 08:55:00+00",
+          "feed_type": "grower",
+          "quantity_given": "50",
+          "unit_of_measurement": "kg",
+          "current_number_of_birds": "192"
+        },
+        {
+          "feeding_start_date": "2026-08-05 10:44:00+00",
+          "feeding_end_date": "2026-08-07 10:44:00+00",
+          "feed_type": "grower",
+          "quantity_given": "50",
+          "unit_of_measurement": "kg",
+          "current_number_of_birds": "192"
+        },
+        {
+          "feeding_start_date": "2026-08-07 16:59:00+00",
+          "feeding_end_date": "2026-08-09 16:59:00+00",
+          "feed_type": "grower",
+          "quantity_given": "50",
+          "unit_of_measurement": "kg",
+          "current_number_of_birds": "191"
+        },
+        {
+          "feeding_start_date": "2026-08-07 17:00:00+00",
+          "feeding_end_date": "2026-08-09 17:00:00+00",
+          "feed_type": "starter",
+          "quantity_given": "50",
+          "unit_of_measurement": "kg",
+          "current_number_of_birds": "191"
+        },
+        {
+          "feeding_start_date": "2026-08-09 16:59:00+00",
+          "feeding_end_date": "2026-08-10 16:59:00+00",
+          "feed_type": "grower",
+          "quantity_given": "50",
+          "unit_of_measurement": "kg",
+          "current_number_of_birds": "191"
+        },
+        {
+          "feeding_start_date": "2026-08-11 15:04:00+00",
+          "feeding_end_date": "2026-08-12 15:04:00+00",
+          "feed_type": "grower",
+          "quantity_given": "50",
+          "unit_of_measurement": "kg",
+          "current_number_of_birds": "191"
+        },
+        {
+          "feeding_start_date": "2026-08-12 15:05:00+00",
+          "feeding_end_date": "2026-08-13 15:05:00+00",
+          "feed_type": "starter",
+          "quantity_given": "50",
+          "unit_of_measurement": "kg",
+          "current_number_of_birds": "191"
+        },
+        {
+          "feeding_start_date": "2026-08-14 15:59:00+00",
+          "feeding_end_date": "2026-08-15 15:59:00+00",
+          "feed_type": "grower",
+          "quantity_given": "50",
+          "unit_of_measurement": "kg",
+          "current_number_of_birds": "191"
+        },
+        {
+          "feeding_start_date": "2026-08-15 09:37:00+00",
+          "feeding_end_date": "2026-08-16 09:37:00+00",
+          "feed_type": "grower",
+          "quantity_given": "50",
+          "unit_of_measurement": "kg",
+          "current_number_of_birds": "191"
+        },
+        {
+          "feeding_start_date": "2026-07-07 11:29:00+00",
+          "feeding_end_date": "2026-07-15 09:29:00+00",
+          "feed_type": "starter",
+          "quantity_given": "50",
+          "unit_of_measurement": "kg",
+          "current_number_of_birds": "0"
+        },
+        {
+          "feeding_start_date": "2026-07-15 13:11:00+00",
+          "feeding_end_date": "2026-07-22 18:11:00+00",
+          "feed_type": "starter",
+          "quantity_given": "100",
+          "unit_of_measurement": "kg",
+          "current_number_of_birds": "194"
+        }
+      ]
+    },
+    {
+      "batch": "BATCH-20260724-0001",
+      "id": "3",
+      "revenue": "1262500.00",
+      "sale_summary_collected": "365500.00",
+      "ledger_collected": "365500.00",
+      "sales_by_price": {
+        "live_chicken @ 19000.00": {
+          "birds": "9",
+          "revenue": "171000.00"
+        },
+        "live_chicken @ 18500.00": {
+          "birds": "59",
+          "revenue": "1091500.00"
+        }
+      },
+      "first_sale": "2026-09-04 20:25:00+00",
+      "last_sale": "2026-09-18 11:24:00+00",
+      "cost_categories": {
+        "Feed": "2372500.00",
+        "Batch utilities": "123000.00",
+        "Batch supplies": "30000.00",
+        "Transport": "22000.00",
+        "General farm costs": "10000.00",
+        "Chicks or livestock": "643000.00",
+        "Batch transport": "7000.00",
+        "Biosecurity": "15000.00",
+        "Veterinary and medication": "96000.00"
+      },
+      "cost_details": [
+        {
+          "id": "80",
+          "date": "2026-09-04",
+          "category": "Feed",
+          "amount": "550000.00",
+          "description": "Finisher Feed",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "88",
+          "date": "2026-09-11",
+          "category": "Batch utilities",
+          "amount": "5000.00",
+          "description": "Charcoal",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "94",
+          "date": "2026-09-15",
+          "category": "Feed",
+          "amount": "137500.00",
+          "description": "Finisher Feed",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "79",
+          "date": "2026-09-02",
+          "category": "Batch supplies",
+          "amount": "15000.00",
+          "description": "Vitamins",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "81",
+          "date": "2026-09-04",
+          "category": "Transport",
+          "amount": "7000.00",
+          "description": "Transportation",
+          "nature": "indirect_operating_expense"
+        },
+        {
+          "id": "89",
+          "date": "2026-09-11",
+          "category": "General farm costs",
+          "amount": "10000.00",
+          "description": "Security",
+          "nature": "indirect_operating_expense"
+        },
+        {
+          "id": "95",
+          "date": "2026-09-14",
+          "category": "Transport",
+          "amount": "2000.00",
+          "description": "Transportation",
+          "nature": "indirect_operating_expense"
+        },
+        {
+          "id": "82",
+          "date": "2026-09-04",
+          "category": "Batch utilities",
+          "amount": "20000.00",
+          "description": "Mobile Charges",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "38",
+          "date": "2026-08-04",
+          "category": "Chicks or livestock",
+          "amount": "624000.00",
+          "description": "Chicks",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "39",
+          "date": "2026-08-04",
+          "category": "Feed",
+          "amount": "297000.00",
+          "description": "Feed",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "40",
+          "date": "2026-08-04",
+          "category": "Chicks or livestock",
+          "amount": "4000.00",
+          "description": "Plastic Paper",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "41",
+          "date": "2026-08-04",
+          "category": "Chicks or livestock",
+          "amount": "15000.00",
+          "description": "Stress Pack",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "42",
+          "date": "2026-08-04",
+          "category": "Batch transport",
+          "amount": "7000.00",
+          "description": "Transportation",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "43",
+          "date": "2026-08-04",
+          "category": "Batch utilities",
+          "amount": "80000.00",
+          "description": "Charcoal",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "59",
+          "date": "2026-08-22",
+          "category": "Feed",
+          "amount": "418500.00",
+          "description": "Grower Feed",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "86",
+          "date": "2026-09-07",
+          "category": "Batch supplies",
+          "amount": "15000.00",
+          "description": "Vitamins",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "45",
+          "date": "2026-08-10",
+          "category": "Biosecurity",
+          "amount": "15000.00",
+          "description": "Cleanser",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "46",
+          "date": "2026-08-10",
+          "category": "Veterinary and medication",
+          "amount": "14000.00",
+          "description": "Hitchner",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "49",
+          "date": "2026-08-18",
+          "category": "Feed",
+          "amount": "139500.00",
+          "description": "Grower",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "54",
+          "date": "2026-08-18",
+          "category": "Veterinary and medication",
+          "amount": "18000.00",
+          "description": "Gumbolo",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "57",
+          "date": "2026-08-25",
+          "category": "Veterinary and medication",
+          "amount": "27000.00",
+          "description": "Lasota",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "60",
+          "date": "2026-08-23",
+          "category": "Batch utilities",
+          "amount": "18000.00",
+          "description": "Utuchi",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "61",
+          "date": "2026-08-26",
+          "category": "Veterinary and medication",
+          "amount": "19000.00",
+          "description": "Stresspack",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "62",
+          "date": "2026-08-26",
+          "category": "Feed",
+          "amount": "692500.00",
+          "description": "Grower Feed",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "63",
+          "date": "2026-08-26",
+          "category": "Transport",
+          "amount": "13000.00",
+          "description": "Transportation",
+          "nature": "indirect_operating_expense"
+        },
+        {
+          "id": "93",
+          "date": "2026-09-12",
+          "category": "Veterinary and medication",
+          "amount": "18000.00",
+          "description": "Gumbolo",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "98",
+          "date": "2026-09-16",
+          "category": "Feed",
+          "amount": "137500.00",
+          "description": "Finisher Feed",
+          "nature": "direct_cost"
+        }
+      ],
+      "input_details": [
+        {
+          "id": "36",
+          "item": "Chicks",
+          "category": "Chicks",
+          "quantity": "208",
+          "unit": "1",
+          "unit_measurement": "na",
+          "unit_cost": "3000.00",
+          "purchase_date": "2026-08-04 14:30:00+00",
+          "expenditure_id": "38"
+        },
+        {
+          "id": "37",
+          "item": "Feed",
+          "category": "Feed",
+          "quantity": "2",
+          "unit": "1",
+          "unit_measurement": "kg",
+          "unit_cost": "148500.00",
+          "purchase_date": "2026-08-04 14:31:00+00",
+          "expenditure_id": "39"
+        },
+        {
+          "id": "38",
+          "item": "Plastic Paper",
+          "category": "Chick Care",
+          "quantity": "4",
+          "unit": "1",
+          "unit_measurement": "meters",
+          "unit_cost": "1000.00",
+          "purchase_date": "2026-08-04 14:33:00+00",
+          "expenditure_id": "40"
+        },
+        {
+          "id": "39",
+          "item": "Stress Pack",
+          "category": "Chick Care",
+          "quantity": "1",
+          "unit": "1",
+          "unit_measurement": "na",
+          "unit_cost": "15000.00",
+          "purchase_date": "2026-08-04 14:33:00+00",
+          "expenditure_id": "41"
+        },
+        {
+          "id": "40",
+          "item": "Transportation",
+          "category": "Transport",
+          "quantity": "1",
+          "unit": "1",
+          "unit_measurement": "na",
+          "unit_cost": "7000.00",
+          "purchase_date": "2026-08-04 14:34:00+00",
+          "expenditure_id": "42"
+        },
+        {
+          "id": "41",
+          "item": "Charcoal",
+          "category": "Temperature Control",
+          "quantity": "4",
+          "unit": "1",
+          "unit_measurement": "kg",
+          "unit_cost": "20000.00",
+          "purchase_date": "2026-08-04 14:34:00+00",
+          "expenditure_id": "43"
+        },
+        {
+          "id": "43",
+          "item": "Cleanser",
+          "category": "Biosecurity",
+          "quantity": "1",
+          "unit": "1",
+          "unit_measurement": "kg",
+          "unit_cost": "15000.00",
+          "purchase_date": "2026-08-10 19:29:00+00",
+          "expenditure_id": "45"
+        },
+        {
+          "id": "44",
+          "item": "Hitchner",
+          "category": "Vaccination",
+          "quantity": "2",
+          "unit": "1",
+          "unit_measurement": "other",
+          "unit_cost": "7000.00",
+          "purchase_date": "2026-08-10 19:29:00+00",
+          "expenditure_id": "46"
+        },
+        {
+          "id": "47",
+          "item": "Grower",
+          "category": "Feed",
+          "quantity": "1",
+          "unit": "1",
+          "unit_measurement": "kg",
+          "unit_cost": "139500.00",
+          "purchase_date": "2026-08-18 08:46:00+00",
+          "expenditure_id": "49"
+        },
+        {
+          "id": "52",
+          "item": "Gumbolo",
+          "category": "Vaccination",
+          "quantity": "1",
+          "unit": "1",
+          "unit_measurement": "na",
+          "unit_cost": "18000.00",
+          "purchase_date": "2026-08-18 11:54:00+00",
+          "expenditure_id": "54"
+        },
+        {
+          "id": "53",
+          "item": "Utuchi",
+          "category": "Chick Care",
+          "quantity": "2",
+          "unit": "1",
+          "unit_measurement": "other",
+          "unit_cost": "9000.00",
+          "purchase_date": "2026-08-23 08:22:00+00",
+          "expenditure_id": "55"
+        },
+        {
+          "id": "55",
+          "item": "Lasota",
+          "category": "Vaccination",
+          "quantity": "3",
+          "unit": "1",
+          "unit_measurement": "na",
+          "unit_cost": "9000.00",
+          "purchase_date": "2026-08-25 08:58:00+00",
+          "expenditure_id": "57"
+        },
+        {
+          "id": "57",
+          "item": "Grower Feed",
+          "category": "Feed",
+          "quantity": "3",
+          "unit": "1",
+          "unit_measurement": "kg",
+          "unit_cost": "139500.00",
+          "purchase_date": "2026-08-22 11:27:00+00",
+          "expenditure_id": "59"
+        },
+        {
+          "id": "58",
+          "item": "Utuchi",
+          "category": "Batch utilities",
+          "quantity": "1",
+          "unit": "1",
+          "unit_measurement": "kg",
+          "unit_cost": "18000.00",
+          "purchase_date": "2026-08-23 11:47:00+00",
+          "expenditure_id": "60"
+        },
+        {
+          "id": "59",
+          "item": "Stresspack",
+          "category": "Veterinary and medication",
+          "quantity": "1",
+          "unit": "1",
+          "unit_measurement": "na",
+          "unit_cost": "19000.00",
+          "purchase_date": "2026-08-26 11:53:00+00",
+          "expenditure_id": "61"
+        },
+        {
+          "id": "60",
+          "item": "Grower Feed",
+          "category": "Feed",
+          "quantity": "5",
+          "unit": "1",
+          "unit_measurement": "kg",
+          "unit_cost": "138500.00",
+          "purchase_date": "2026-08-26 20:06:00+00",
+          "expenditure_id": "62"
+        },
+        {
+          "id": "61",
+          "item": "Transportation",
+          "category": "Transport",
+          "quantity": "1",
+          "unit": "1",
+          "unit_measurement": "kg",
+          "unit_cost": "13000.00",
+          "purchase_date": "2026-08-26 20:07:00+00",
+          "expenditure_id": "63"
+        },
+        {
+          "id": "69",
+          "item": "Vitamins",
+          "category": "Batch supplies",
+          "quantity": "1",
+          "unit": "1",
+          "unit_measurement": "kg",
+          "unit_cost": "15000.00",
+          "purchase_date": "2026-09-02 11:23:00+00",
+          "expenditure_id": "79"
+        },
+        {
+          "id": "70",
+          "item": "Finisher Feed",
+          "category": "Feed",
+          "quantity": "4",
+          "unit": "1",
+          "unit_measurement": "kg",
+          "unit_cost": "137500.00",
+          "purchase_date": "2026-09-04 11:24:00+00",
+          "expenditure_id": "80"
+        },
+        {
+          "id": "71",
+          "item": "Transportation",
+          "category": "Transport",
+          "quantity": "1",
+          "unit": "1",
+          "unit_measurement": "kg",
+          "unit_cost": "7000.00",
+          "purchase_date": "2026-09-04 11:27:00+00",
+          "expenditure_id": "81"
+        },
+        {
+          "id": "72",
+          "item": "Mobile Charges",
+          "category": "Batch utilities",
+          "quantity": "5",
+          "unit": "1",
+          "unit_measurement": "na",
+          "unit_cost": "4000.00",
+          "purchase_date": "2026-09-04 11:28:00+00",
+          "expenditure_id": "82"
+        },
+        {
+          "id": "76",
+          "item": "Vitamins",
+          "category": "Batch supplies",
+          "quantity": "1",
+          "unit": "1",
+          "unit_measurement": "na",
+          "unit_cost": "15000.00",
+          "purchase_date": "2026-09-07 20:51:00+00",
+          "expenditure_id": "86"
+        },
+        {
+          "id": "77",
+          "item": "Charcoal",
+          "category": "Batch utilities",
+          "quantity": "1",
+          "unit": "1",
+          "unit_measurement": "items",
+          "unit_cost": "5000.00",
+          "purchase_date": "2026-09-11 15:11:00+00",
+          "expenditure_id": "88"
+        },
+        {
+          "id": "78",
+          "item": "Security",
+          "category": "General farm costs",
+          "quantity": "1",
+          "unit": "1",
+          "unit_measurement": "items",
+          "unit_cost": "10000.00",
+          "purchase_date": "2026-09-11 15:12:00+00",
+          "expenditure_id": "89"
+        },
+        {
+          "id": "81",
+          "item": "Gumbolo",
+          "category": "Veterinary and medication",
+          "quantity": "1",
+          "unit": "1",
+          "unit_measurement": "kg",
+          "unit_cost": "18000.00",
+          "purchase_date": "2026-09-12 23:12:00+00",
+          "expenditure_id": "93"
+        },
+        {
+          "id": "82",
+          "item": "Finisher Feed",
+          "category": "Feed",
+          "quantity": "1",
+          "unit": "1",
+          "unit_measurement": "kg",
+          "unit_cost": "137500.00",
+          "purchase_date": "2026-09-15 09:51:00+00",
+          "expenditure_id": "94"
+        },
+        {
+          "id": "83",
+          "item": "Transportation",
+          "category": "Transport",
+          "quantity": "1",
+          "unit": "1",
+          "unit_measurement": "na",
+          "unit_cost": "2000.00",
+          "purchase_date": "2026-09-14 09:54:00+00",
+          "expenditure_id": "95"
+        },
+        {
+          "id": "86",
+          "item": "Finisher Feed",
+          "category": "Feed",
+          "quantity": "1",
+          "unit": "1",
+          "unit_measurement": "kg",
+          "unit_cost": "137500.00",
+          "purchase_date": "2026-09-16 16:53:00+00",
+          "expenditure_id": "98"
+        }
+      ],
+      "mortality": [
+        {
+          "mortality_date": "2026-08-06 08:15:00+00",
+          "quantity_dead": "2",
+          "age_in_days": "1",
+          "suspected_cause": "weak chick",
+          "description": "weak chicks"
+        },
+        {
+          "mortality_date": "2026-08-07 10:43:00+00",
+          "quantity_dead": "2",
+          "age_in_days": "2",
+          "suspected_cause": "weak chick",
+          "description": "weak chicks"
+        },
+        {
+          "mortality_date": "2026-08-11 08:08:00+00",
+          "quantity_dead": "2",
+          "age_in_days": "6",
+          "suspected_cause": "weak chick",
+          "description": "none"
+        },
+        {
+          "mortality_date": "2026-08-14 16:07:00+00",
+          "quantity_dead": "1",
+          "age_in_days": "9",
+          "suspected_cause": "weak chick",
+          "description": "weak chicks"
+        },
+        {
+          "mortality_date": "2026-08-15 16:07:00+00",
+          "quantity_dead": "1",
+          "age_in_days": "10",
+          "suspected_cause": "weak chick",
+          "description": "weak chicks"
+        },
+        {
+          "mortality_date": "2026-08-19 09:33:00+00",
+          "quantity_dead": "3",
+          "age_in_days": "14",
+          "suspected_cause": "weak chick",
+          "description": "none"
+        },
+        {
+          "mortality_date": "2026-08-20 08:39:00+00",
+          "quantity_dead": "9",
+          "age_in_days": "15",
+          "suspected_cause": "Cold",
+          "description": "Carelessness"
+        },
+        {
+          "mortality_date": "2026-08-21 10:50:00+00",
+          "quantity_dead": "1",
+          "age_in_days": "16",
+          "suspected_cause": "physical damage",
+          "description": "carelessness"
+        },
+        {
+          "mortality_date": "2026-08-26 10:55:00+00",
+          "quantity_dead": "2",
+          "age_in_days": "21",
+          "suspected_cause": "cough",
+          "description": "none"
+        },
+        {
+          "mortality_date": "2026-08-31 08:18:00+00",
+          "quantity_dead": "1",
+          "age_in_days": "26",
+          "suspected_cause": "Unknown",
+          "description": "none"
+        },
+        {
+          "mortality_date": "2026-09-09 12:02:00+00",
+          "quantity_dead": "1",
+          "age_in_days": "35",
+          "suspected_cause": "Poor feed",
+          "description": "none"
+        },
+        {
+          "mortality_date": "2026-09-12 11:10:00+00",
+          "quantity_dead": "1",
+          "age_in_days": "38",
+          "suspected_cause": "Poor feed",
+          "description": "none"
+        }
+      ],
+      "feed_usage": [
+        {
+          "feeding_start_date": "2026-08-12 17:01:00+00",
+          "feeding_end_date": "2026-08-18 14:34:00+00",
+          "feed_type": "starter",
+          "quantity_given": "50",
+          "unit_of_measurement": "kg",
+          "current_number_of_birds": "202"
+        },
+        {
+          "feeding_start_date": "2026-08-18 16:34:00+00",
+          "feeding_end_date": "2026-08-25 11:12:00+00",
+          "feed_type": "grower",
+          "quantity_given": "50",
+          "unit_of_measurement": "kg",
+          "current_number_of_birds": "200"
+        },
+        {
+          "feeding_start_date": "2026-08-25 13:12:00+00",
+          "feeding_end_date": "2026-09-01 11:30:00+00",
+          "feed_type": "grower",
+          "quantity_given": "50",
+          "unit_of_measurement": "kg",
+          "current_number_of_birds": "187"
+        },
+        {
+          "feeding_start_date": "2026-09-01 13:30:00+00",
+          "feeding_end_date": "2026-09-03 08:57:00+00",
+          "feed_type": "starter",
+          "quantity_given": "50",
+          "unit_of_measurement": "kg",
+          "current_number_of_birds": "184"
+        },
+        {
+          "feeding_start_date": "2026-09-03 10:57:00+00",
+          "feeding_end_date": "2026-09-06 17:00:00+00",
+          "feed_type": "grower",
+          "quantity_given": "50",
+          "unit_of_measurement": "kg",
+          "current_number_of_birds": "184"
+        },
+        {
+          "feeding_start_date": "2026-09-03 17:00:00+00",
+          "feeding_end_date": "2026-09-06 17:00:00+00",
+          "feed_type": "finisher",
+          "quantity_given": "50",
+          "unit_of_measurement": "kg",
+          "current_number_of_birds": "184"
+        },
+        {
+          "feeding_start_date": "2026-09-06 19:00:00+00",
+          "feeding_end_date": "2026-09-08 20:26:00+00",
+          "feed_type": "finisher",
+          "quantity_given": "50",
+          "unit_of_measurement": "kg",
+          "current_number_of_birds": "182"
+        },
+        {
+          "feeding_start_date": "2026-08-05 15:01:00+00",
+          "feeding_end_date": "2026-08-12 15:01:00+00",
+          "feed_type": "starter",
+          "quantity_given": "50",
+          "unit_of_measurement": "kg",
+          "current_number_of_birds": "208"
+        }
+      ]
+    },
+    {
+      "batch": "BATCH-20260824-0001",
+      "id": "4",
+      "revenue": "0",
+      "sale_summary_collected": "0",
+      "ledger_collected": "0",
+      "sales_by_price": {},
+      "first_sale": null,
+      "last_sale": null,
+      "cost_categories": {
+        "Veterinary and medication": "51000.00",
+        "Feed": "701500.00",
+        "Transport": "11500.00",
+        "Biosecurity": "30000.00",
+        "Chicks or livestock": "638000.00",
+        "Batch utilities": "100000.00",
+        "Batch transport": "7000.00"
+      },
+      "cost_details": [
+        {
+          "id": "78",
+          "date": "2026-09-02",
+          "category": "Veterinary and medication",
+          "amount": "18000.00",
+          "description": "Hitchner",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "83",
+          "date": "2026-09-07",
+          "category": "Feed",
+          "amount": "143500.00",
+          "description": "Feed Starter",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "99",
+          "date": "2026-09-16",
+          "category": "Feed",
+          "amount": "139500.00",
+          "description": "Grower Feed",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "84",
+          "date": "2026-09-07",
+          "category": "Transport",
+          "amount": "2500.00",
+          "description": "Transportation",
+          "nature": "indirect_operating_expense"
+        },
+        {
+          "id": "85",
+          "date": "2026-09-07",
+          "category": "Biosecurity",
+          "amount": "15000.00",
+          "description": "Disinfectants",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "91",
+          "date": "2026-09-11",
+          "category": "Veterinary and medication",
+          "amount": "18000.00",
+          "description": "Gumbolo",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "96",
+          "date": "2026-09-16",
+          "category": "Feed",
+          "amount": "139500.00",
+          "description": "Grower Feed",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "92",
+          "date": "2026-09-11",
+          "category": "Transport",
+          "amount": "5000.00",
+          "description": "Transportation",
+          "nature": "indirect_operating_expense"
+        },
+        {
+          "id": "97",
+          "date": "2026-09-16",
+          "category": "Transport",
+          "amount": "4000.00",
+          "description": "Transportation",
+          "nature": "indirect_operating_expense"
+        },
+        {
+          "id": "71",
+          "date": "2026-08-26",
+          "category": "Feed",
+          "amount": "279000.00",
+          "description": "Starter Feed",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "72",
+          "date": "2026-08-27",
+          "category": "Chicks or livestock",
+          "amount": "638000.00",
+          "description": "Chicks",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "73",
+          "date": "2026-08-26",
+          "category": "Biosecurity",
+          "amount": "15000.00",
+          "description": "Disinfectants",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "74",
+          "date": "2026-08-26",
+          "category": "Batch utilities",
+          "amount": "100000.00",
+          "description": "Charcoal",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "75",
+          "date": "2026-08-28",
+          "category": "Batch transport",
+          "amount": "7000.00",
+          "description": "Transport",
+          "nature": "direct_cost"
+        },
+        {
+          "id": "76",
+          "date": "2026-08-28",
+          "category": "Veterinary and medication",
+          "amount": "15000.00",
+          "description": "Stresspack",
+          "nature": "direct_cost"
+        }
+      ],
+      "input_details": [
+        {
+          "id": "62",
+          "item": "Starter Feed",
+          "category": "Feed",
+          "quantity": "2",
+          "unit": "1",
+          "unit_measurement": "kg",
+          "unit_cost": "139500.00",
+          "purchase_date": "2026-08-26 09:54:00+00",
+          "expenditure_id": "71"
+        },
+        {
+          "id": "63",
+          "item": "Chicks",
+          "category": "Chicks or livestock",
+          "quantity": "220",
+          "unit": "1",
+          "unit_measurement": "na",
+          "unit_cost": "2900.00",
+          "purchase_date": "2026-08-27 09:56:00+00",
+          "expenditure_id": "72"
+        },
+        {
+          "id": "64",
+          "item": "Disinfectants",
+          "category": "Biosecurity",
+          "quantity": "1",
+          "unit": "1",
+          "unit_measurement": "na",
+          "unit_cost": "15000.00",
+          "purchase_date": "2026-08-26 09:59:00+00",
+          "expenditure_id": "73"
+        },
+        {
+          "id": "65",
+          "item": "Charcoal",
+          "category": "Batch utilities",
+          "quantity": "4",
+          "unit": "1",
+          "unit_measurement": "na",
+          "unit_cost": "25000.00",
+          "purchase_date": "2026-08-26 11:15:00+00",
+          "expenditure_id": "74"
+        },
+        {
+          "id": "66",
+          "item": "Transport",
+          "category": "Batch transport",
+          "quantity": "1",
+          "unit": "1",
+          "unit_measurement": "na",
+          "unit_cost": "7000.00",
+          "purchase_date": "2026-08-28 11:17:00+00",
+          "expenditure_id": "75"
+        },
+        {
+          "id": "67",
+          "item": "Stresspack",
+          "category": "Veterinary and medication",
+          "quantity": "1",
+          "unit": "1",
+          "unit_measurement": "na",
+          "unit_cost": "15000.00",
+          "purchase_date": "2026-08-28 11:18:00+00",
+          "expenditure_id": "76"
+        },
+        {
+          "id": "68",
+          "item": "Hitchner",
+          "category": "Veterinary and medication",
+          "quantity": "1",
+          "unit": "1",
+          "unit_measurement": "na",
+          "unit_cost": "18000.00",
+          "purchase_date": "2026-09-02 11:22:00+00",
+          "expenditure_id": "78"
+        },
+        {
+          "id": "73",
+          "item": "Feed Starter",
+          "category": "Feed",
+          "quantity": "1",
+          "unit": "1",
+          "unit_measurement": "kg",
+          "unit_cost": "143500.00",
+          "purchase_date": "2026-09-07 20:45:00+00",
+          "expenditure_id": "83"
+        },
+        {
+          "id": "74",
+          "item": "Transportation",
+          "category": "Transport",
+          "quantity": "1",
+          "unit": "1",
+          "unit_measurement": "na",
+          "unit_cost": "2500.00",
+          "purchase_date": "2026-09-07 20:47:00+00",
+          "expenditure_id": "84"
+        },
+        {
+          "id": "75",
+          "item": "Disinfectants",
+          "category": "Biosecurity",
+          "quantity": "1",
+          "unit": "1",
+          "unit_measurement": "na",
+          "unit_cost": "15000.00",
+          "purchase_date": "2026-09-07 20:50:00+00",
+          "expenditure_id": "85"
+        },
+        {
+          "id": "79",
+          "item": "Gumbolo",
+          "category": "Veterinary and medication",
+          "quantity": "1",
+          "unit": "1",
+          "unit_measurement": "kg",
+          "unit_cost": "18000.00",
+          "purchase_date": "2026-09-11 09:43:00+00",
+          "expenditure_id": "91"
+        },
+        {
+          "id": "80",
+          "item": "Transportation",
+          "category": "Transport",
+          "quantity": "1",
+          "unit": "1",
+          "unit_measurement": "items",
+          "unit_cost": "5000.00",
+          "purchase_date": "2026-09-11 09:44:00+00",
+          "expenditure_id": "92"
+        },
+        {
+          "id": "84",
+          "item": "Grower Feed",
+          "category": "Feed",
+          "quantity": "1",
+          "unit": "1",
+          "unit_measurement": "kg",
+          "unit_cost": "139500.00",
+          "purchase_date": "2026-09-16 11:18:00+00",
+          "expenditure_id": "96"
+        },
+        {
+          "id": "85",
+          "item": "Transportation",
+          "category": "Transport",
+          "quantity": "1",
+          "unit": "1",
+          "unit_measurement": "na",
+          "unit_cost": "4000.00",
+          "purchase_date": "2026-09-16 11:22:00+00",
+          "expenditure_id": "97"
+        },
+        {
+          "id": "87",
+          "item": "Grower Feed",
+          "category": "Feed",
+          "quantity": "1",
+          "unit": "1",
+          "unit_measurement": "kg",
+          "unit_cost": "139500.00",
+          "purchase_date": "2026-09-16 16:56:00+00",
+          "expenditure_id": "99"
+        }
+      ],
+      "mortality": [
+        {
+          "mortality_date": "2026-09-01 11:36:00+00",
+          "quantity_dead": "1",
+          "age_in_days": "3",
+          "suspected_cause": "weak chick",
+          "description": "none"
+        },
+        {
+          "mortality_date": "2026-09-02 08:35:00+00",
+          "quantity_dead": "4",
+          "age_in_days": "4",
+          "suspected_cause": "Less care",
+          "description": "none"
+        },
+        {
+          "mortality_date": "2026-09-03 08:07:00+00",
+          "quantity_dead": "1",
+          "age_in_days": "5",
+          "suspected_cause": "Poor feed",
+          "description": "gone soon after feeding"
+        },
+        {
+          "mortality_date": "2026-09-04 11:40:00+00",
+          "quantity_dead": "6",
+          "age_in_days": "6",
+          "suspected_cause": "Poor feed",
+          "description": "none"
+        },
+        {
+          "mortality_date": "2026-09-05 22:32:00+00",
+          "quantity_dead": "3",
+          "age_in_days": "7",
+          "suspected_cause": "Poor feed",
+          "description": "none"
+        },
+        {
+          "mortality_date": "2026-09-12 09:36:00+00",
+          "quantity_dead": "1",
+          "age_in_days": "14",
+          "suspected_cause": "Poor feed",
+          "description": "none"
+        },
+        {
+          "mortality_date": "2026-09-16 08:49:00+00",
+          "quantity_dead": "1",
+          "age_in_days": "18",
+          "suspected_cause": "Poor feed",
+          "description": "none"
+        }
+      ],
+      "feed_usage": [
+        {
+          "feeding_start_date": "2026-09-06 19:00:00+00",
+          "feeding_end_date": "2026-09-12 09:35:00+00",
+          "feed_type": "starter",
+          "quantity_given": "50",
+          "unit_of_measurement": "kg",
+          "current_number_of_birds": "205"
+        },
+        {
+          "feeding_start_date": "2026-09-12 10:48:00+00",
+          "feeding_end_date": "2026-09-16 10:48:00+00",
+          "feed_type": "starter",
+          "quantity_given": "50",
+          "unit_of_measurement": "kg",
+          "current_number_of_birds": "204"
+        },
+        {
+          "feeding_start_date": "2026-09-12 11:35:00+00",
+          "feeding_end_date": "2026-09-16 08:48:00+00",
+          "feed_type": "grower",
+          "quantity_given": "1",
+          "unit_of_measurement": "kg",
+          "current_number_of_birds": "204"
+        },
+        {
+          "feeding_start_date": "2026-08-28 22:52:00+00",
+          "feeding_end_date": "2026-09-06 17:00:00+00",
+          "feed_type": "starter",
+          "quantity_given": "50",
+          "unit_of_measurement": "kg",
+          "current_number_of_birds": "220"
+        }
+      ]
+    }
+  ],
+  "costs_by_category": {
+    "Owner withdrawal": "1308000.00",
+    "Biosecurity": "60800.00",
+    "Batch utilities": "370500.00",
+    "Feed": "5533000.00",
+    "Chicks or livestock": "1849500.00",
+    "Veterinary and medication": "235000.00",
+    "Batch transport": "55400.00",
+    "Transport": "33500.00",
+    "Legacy finance expense": "50000.00",
+    "Salaries and wages": "540000.00",
+    "Batch supplies": "30000.00",
+    "Repairs and maintenance": "12000.00",
+    "General farm costs": "10000.00"
+  },
+  "funding": {
+    "1": {
+      "type": "batch_collection",
+      "batch": "1",
+      "received": "0",
+      "used": "3584500.00"
+    },
+    "2": {
+      "type": "owner_capital",
+      "batch": null,
+      "received": "418500.00",
+      "used": "418500.00"
+    },
+    "3": {
+      "type": "owner_capital",
+      "batch": null,
+      "received": "138500.00",
+      "used": "138500.00"
+    },
+    "4": {
+      "type": "owner_capital",
+      "batch": null,
+      "received": "18000.00",
+      "used": "0"
+    },
+    "5": {
+      "type": "owner_capital",
+      "batch": null,
+      "received": "638000.00",
+      "used": "638000.00"
+    },
+    "6": {
+      "type": "owner_capital",
+      "batch": null,
+      "received": "170000.00",
+      "used": "170000.00"
+    },
+    "7": {
+      "type": "owner_capital",
+      "batch": null,
+      "received": "100000.00",
+      "used": "100000.00"
+    },
+    "8": {
+      "type": "batch_collection",
+      "batch": "3",
+      "received": "0",
+      "used": "365500.00"
+    },
+    "9": {
+      "type": "loan",
+      "batch": null,
+      "received": "78000.00",
+      "used": "78000.00"
+    },
+    "10": {
+      "type": "loan",
+      "batch": null,
+      "received": "187000.00",
+      "used": "147500.00"
+    },
+    "11": {
+      "type": "loan",
+      "batch": null,
+      "received": "25000.00",
+      "used": "25000.00"
+    }
+  },
+  "exceptions": {
+    "unlinked_inputs": [
+      "26"
+    ],
+    "funding_payment_total": "5665500.00",
+    "expenditure_payment_status": {
+      "paid": "5665500.00",
+      "historical_unassigned": "4422200.00"
+    },
+    "void_expenditures": [
+      {
+        "id": "1",
+        "amount": "100000.00",
+        "description": "Salary for Mukwala"
+      },
+      {
+        "id": "3",
+        "amount": "279000.00",
+        "description": "Starter for the booked batch"
+      },
+      {
+        "id": "55",
+        "amount": "18000.00",
+        "description": "Utuchi"
+      }
+    ]
+  },
+  "owner_withdrawals": [
+    {
+      "id": "2",
+      "expenditure_date": "2026-08-25",
+      "amount": "500000.00",
+      "description": "Wedding contribution",
+      "payment_status": "paid"
+    },
+    {
+      "id": "64",
+      "expenditure_date": "2026-08-27",
+      "amount": "133000.00",
+      "description": "Wedding contribution",
+      "payment_status": "paid"
+    },
+    {
+      "id": "77",
+      "expenditure_date": "2026-09-01",
+      "amount": "152000.00",
+      "description": "Owner withdrawal",
+      "payment_status": "paid"
+    },
+    {
+      "id": "90",
+      "expenditure_date": "2026-09-11",
+      "amount": "523000.00",
+      "description": "temporaly withdrawal",
+      "payment_status": "paid"
+    }
+  ],
+  "receivables": [
+    {
+      "sale": "SALE-20260911-0001",
+      "date": "2026-09-11 10:01:00+00",
+      "due": "2026-09-25",
+      "buyer": "Lumbadzi Market",
+      "balance": "25000.00",
+      "quantity": "10",
+      "unit_price": "18500.00"
+    },
+    {
+      "sale": "SALE-20260916-0001",
+      "date": "2026-09-16 11:24:00+00",
+      "due": "2026-10-02",
+      "buyer": "village people",
+      "balance": "19000.00",
+      "quantity": "1",
+      "unit_price": "19000.00"
+    },
+    {
+      "sale": "SALE-20260916-0002",
+      "date": "2026-09-16 11:32:00+00",
+      "due": "2026-10-02",
+      "buyer": "village people",
+      "balance": "38000.00",
+      "quantity": "2",
+      "unit_price": "19000.00"
+    },
+    {
+      "sale": "SALE-20260914-0001",
+      "date": "2026-09-14 11:11:00+00",
+      "due": "2026-09-23",
+      "buyer": "Lumbadzi Market",
+      "balance": "149000.00",
+      "quantity": "10",
+      "unit_price": "18500.00"
+    },
+    {
+      "sale": "SALE-20260918-0001",
+      "date": "2026-09-18 08:42:00+00",
+      "due": "2026-09-25",
+      "buyer": "Masten- Lumbadzi Market",
+      "balance": "333000.00",
+      "quantity": "18",
+      "unit_price": "18500.00"
+    },
+    {
+      "sale": "SALE-20260918-0002",
+      "date": "2026-09-18 11:24:00+00",
+      "due": "2026-09-25",
+      "buyer": "Masten- Lumbadzi Market",
+      "balance": "333000.00",
+      "quantity": "18",
+      "unit_price": "18500.00"
+    }
+  ]
+}

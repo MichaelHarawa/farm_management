@@ -4,6 +4,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { getSession } from "@/features/auth/api/auth-client";
+import { canAccessOwnerCapital } from "@/features/auth/utils/permissions";
 
 import { clientApiFetch } from "@/lib/client-api";
 import { getApiErrorMessage } from "@/lib/errors";
@@ -12,6 +14,7 @@ import {
   FundingSourcePicker,
   fundingSourceDisplayLabel,
 } from "@/features/finance/components/FundingSourcePicker";
+import { Dialog } from "@/components/ui/Dialog";
 
 type FundingRow = { funding_source: number | ""; source_query: string; amount: string; classification: string };
 type CostRow = { batch: number | ""; amount: string };
@@ -55,8 +58,9 @@ export default function NewExpenditurePage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showFundingReceipt, setShowFundingReceipt] = useState(false);
+  const [canManageOwnerCapital, setCanManageOwnerCapital] = useState(false);
   const [paymentTiming, setPaymentTiming] = useState<"paid" | "credit">("paid");
-  const [newFunds, setNewFunds] = useState({ source_type: "owner_capital", description: "", amount: "", reference: "" });
+  const [newFunds, setNewFunds] = useState({ source_type: "general_farm_cash", description: "", amount: "", reference: "" });
 
   const totalAmount = Number(form.amount) || 0;
   const assignsSingleBatch = form.beneficiary_type === "one_poultry_batch";
@@ -80,6 +84,9 @@ export default function NewExpenditurePage() {
   const costDiff = (totalAmount - costTotal).toFixed(2);
 
   const fundingComplete = totalAmount > 0 && Math.abs(totalAmount - fundingTotal) < 0.01;
+  const hasOwnerEquityOutflow = fundingRows.some((row) =>
+    ["owner_capital_return", "owner_drawing", "owner_distribution"].includes(row.classification)
+  );
   const costAssignmentComplete = !assignsBatchCosts || (
     totalAmount > 0 &&
     costRows.some((row) => Boolean(row.batch)) &&
@@ -90,13 +97,15 @@ export default function NewExpenditurePage() {
   useEffect(() => {
     (async () => {
       try {
-        const [bsRaw, cats] = await Promise.all([
+        const [bsRaw, cats, sessionUser] = await Promise.all([
           clientApiFetch<any>("/api/poultry/batches").catch(() => []),
           clientApiFetch<any>("/api/finance/expenditure-categories").catch(() => []),
+          getSession({ touch: false }).catch(() => null),
         ]);
         const bs = Array.isArray(bsRaw) ? bsRaw : (bsRaw?.results || []);
         setBatches(bs);  // include all non-deleted: active, closed, historical etc.
         setCategories(Array.isArray(cats) ? cats : (cats?.results || []));
+        setCanManageOwnerCapital(canAccessOwnerCapital(sessionUser));
       } catch {
         // ignore
       }
@@ -125,6 +134,19 @@ export default function NewExpenditurePage() {
       (copy[idx] as any)[key] = val;
       return copy;
     });
+    if (
+      key === "classification" &&
+      ["owner_capital_return", "owner_drawing", "owner_distribution"].includes(String(val))
+    ) {
+      setForm((current) => ({
+        ...current,
+        category: "",
+        accounting_nature: "owner_withdrawal",
+        beneficiary_type: "other",
+        beneficiary_detail: "Owner equity outflow — excluded from poultry batch cost",
+      }));
+      setCostRows([{ batch: "", amount: "" }]);
+    }
   };
 
   const addCostRow = () => {
@@ -166,6 +188,11 @@ export default function NewExpenditurePage() {
 
   const addNonSalesFunds = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (newFunds.source_type === "owner_capital") {
+      setShowFundingReceipt(false);
+      router.push("/finance/owner-capital");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -398,7 +425,10 @@ export default function NewExpenditurePage() {
           </label>
 
           {paymentTiming === "paid" ? <><div className="mb-2 flex justify-end gap-2">
-            <button type="button" onClick={() => setShowFundingReceipt(true)} className="text-sm px-3 py-1 border rounded">+ Add owner, farm, or loan funds</button>
+            <div className="flex flex-wrap gap-2">
+              {canManageOwnerCapital ? <Link href="/finance/owner-capital" className="text-sm px-3 py-1 border rounded font-bold">+ Record owner capital</Link> : null}
+              <button type="button" onClick={() => setShowFundingReceipt(true)} className="text-sm px-3 py-1 border rounded">+ Add farm, loan, grant, or other funds</button>
+            </div>
             <button type="button" onClick={addFundingRow} className="text-sm px-3 py-1 border rounded">Split funding</button>
           </div>
 
@@ -431,13 +461,24 @@ export default function NewExpenditurePage() {
               >
                 <option value="reinvestment">Reinvestment</option>
                 <option value="working_capital">Working Capital</option>
-                <option value="owner_distribution">Owner Distribution</option>
+                {canManageOwnerCapital ? <>
+                  <option value="owner_capital_return">Return of Owner Capital</option>
+                  <option value="owner_drawing">Owner Drawing</option>
+                  <option value="owner_compensation">Owner Compensation</option>
+                  <option value="owner_distribution">Owner Profit Distribution</option>
+                </> : null}
                 <option value="debt_service">Debt Service</option>
                 <option value="other">Other</option>
               </select>
               <button type="button" onClick={() => removeFundingRow(idx)} className="text-red-600 text-xs px-2">×</button>
             </div>
           ))}
+
+          {hasOwnerEquityOutflow ? (
+            <p className="rounded-lg bg-[var(--gold-soft)] p-3 text-sm text-[var(--navy)]">
+              This is an owner equity outflow. It uses Owner Withdrawal treatment and cannot be charged to a poultry batch or operating profit.
+            </p>
+          ) : null}
 
           </> : <p className="rounded-lg bg-amber-50 p-4 text-sm text-amber-900">The cost will be posted as a payable. Add the actual payment source later without creating another expenditure.</p>}
         </section>
@@ -575,7 +616,36 @@ export default function NewExpenditurePage() {
           Drafts do not affect balances. Use the Expenditures list to Review &amp; Post after confirming the payment source and cost treatment.
         </p>
       </form>
-      {showFundingReceipt ? <div role="dialog" aria-modal="true" aria-labelledby="funding-receipt-title" className="fixed inset-0 z-50 grid place-items-center bg-[#151f36]/45 p-4"><form onSubmit={addNonSalesFunds} className="w-full max-w-xl rounded-2xl bg-white p-6 shadow-2xl"><div className="flex justify-between"><h2 id="funding-receipt-title" className="text-2xl font-extrabold">Add available funds</h2><button type="button" onClick={() => setShowFundingReceipt(false)} aria-label="Close funding form" className="text-2xl">×</button></div><p className="mt-2 text-sm text-[var(--navy-muted)]">This records a receipt. The available balance is always calculated from receipts minus posted spending.</p><div className="mt-5 grid gap-4 sm:grid-cols-2"><label className="text-sm font-bold">Source type<select value={newFunds.source_type} onChange={(event) => setNewFunds({ ...newFunds, source_type: event.target.value })} className="form-input mt-2 w-full"><option value="owner_capital">Owner capital</option><option value="general_farm_cash">General farm cash</option><option value="loan">Loan funding</option><option value="grant">Grant / subsidy</option><option value="other_income">Other income</option></select></label><label className="text-sm font-bold">Description<input required value={newFunds.description} onChange={(event) => setNewFunds({ ...newFunds, description: event.target.value })} className="form-input mt-2 w-full" /></label><label className="text-sm font-bold">Amount received<input required min="0.01" step="0.01" type="number" value={newFunds.amount} onChange={(event) => setNewFunds({ ...newFunds, amount: event.target.value })} className="form-input mt-2 w-full" /></label><label className="text-sm font-bold">Receipt reference<input value={newFunds.reference} onChange={(event) => setNewFunds({ ...newFunds, reference: event.target.value })} className="form-input mt-2 w-full" /></label></div><div className="mt-6 flex justify-end gap-3"><button type="button" onClick={() => setShowFundingReceipt(false)} className="rounded-lg border px-5 py-3 font-bold">Cancel</button><button disabled={submitting} className="finance-button">Record funds</button></div></form></div> : null}
+      <Dialog
+        open={showFundingReceipt}
+        onClose={() => setShowFundingReceipt(false)}
+        eyebrow="Non-sales funding"
+        title="Add available funds"
+        size="md"
+      >
+        <form onSubmit={addNonSalesFunds}>
+          <p className="text-sm text-[var(--navy-muted)]">
+            This records a non-owner cash receipt. Owner contributions use the protected Owner Capital workspace.
+          </p>
+          <div className="mt-5 grid gap-4 sm:grid-cols-2">
+            <label className="text-sm font-bold">Source type
+              <select value={newFunds.source_type} onChange={(event) => setNewFunds({ ...newFunds, source_type: event.target.value })} className="form-input mt-2 w-full">
+                <option value="general_farm_cash">General farm cash</option>
+                <option value="loan">Loan funding</option>
+                <option value="grant">Grant / subsidy</option>
+                <option value="other_income">Other income</option>
+              </select>
+            </label>
+            <label className="text-sm font-bold">Description<input required value={newFunds.description} onChange={(event) => setNewFunds({ ...newFunds, description: event.target.value })} className="form-input mt-2 w-full" /></label>
+            <label className="text-sm font-bold">Amount received<input required min="0.01" step="0.01" type="number" value={newFunds.amount} onChange={(event) => setNewFunds({ ...newFunds, amount: event.target.value })} className="form-input mt-2 w-full" /></label>
+            <label className="text-sm font-bold">Receipt reference<input value={newFunds.reference} onChange={(event) => setNewFunds({ ...newFunds, reference: event.target.value })} className="form-input mt-2 w-full" /></label>
+          </div>
+          <div className="mt-6 flex justify-end gap-3">
+            <button type="button" onClick={() => setShowFundingReceipt(false)} className="rounded-lg border px-5 py-3 font-bold">Cancel</button>
+            <button disabled={submitting} className="finance-button">Record funds</button>
+          </div>
+        </form>
+      </Dialog>
     </main>
   );
 }

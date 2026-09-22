@@ -21,6 +21,11 @@ from .views import (
     ExpenditureCategoryViewSet,
     FundingSourceViewSet,
     FundingReceiptViewSet,
+    FinanceActionEventViewSet,
+    OwnerContributionReportView,
+    OwnerContributionView,
+    OwnerContributorViewSet,
+    OwnerReceiptDesignationViewSet,
     MonthlyReportView,
     BatchRevenueUtilizationView,
     BatchRevenueUtilizationListView,
@@ -87,12 +92,31 @@ router.register("allocations", CostAllocationViewSet, basename="finance-allocati
 router.register("expenditures", ExpenditureViewSet, basename="finance-expenditure")
 router.register("funding-sources", FundingSourceViewSet, basename="finance-funding-source")
 router.register("funding-receipts", FundingReceiptViewSet, basename="finance-funding-receipt")
+router.register("owners", OwnerContributorViewSet, basename="finance-owner")
+router.register(
+    "owner-designations",
+    OwnerReceiptDesignationViewSet,
+    basename="finance-owner-designation",
+)
+router.register(
+    "action-events", FinanceActionEventViewSet, basename="finance-action-event"
+)
 router.register("expenditure-categories", ExpenditureCategoryViewSet, basename="finance-expenditure-category")
 
 app_name = "finance"
 
 urlpatterns = [
     path("", include(router.urls)),
+    path(
+        "owner-contributions",
+        OwnerContributionView.as_view(),
+        name="owner-contribution-create",
+    ),
+    path(
+        "reports/owner-contributions",
+        OwnerContributionReportView.as_view(),
+        name="owner-contribution-report",
+    ),
     path("reports/monthly", MonthlyReportView.as_view(), name="monthly-report"),
     path(
         "reports/batches",

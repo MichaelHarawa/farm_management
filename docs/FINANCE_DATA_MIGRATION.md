@@ -41,3 +41,19 @@ All 4 payroll entries total MWK 540,000 and are marked paid in this latest dump.
 The GL preview generates unique source-based idempotency keys and reports trial-balance totals before and after. Payroll-linked expenditures are excluded from ordinary expenditure journals to avoid double-counting payroll generation. Management overhead allocations remain reporting dimensions and are not converted into duplicate expenses.
 
 Do not run `backfill_general_ledger --apply` on production until source exceptions, cash/bank opening balances, payable splits, stock/asset histories and accounting policies are approved. Rollback uses forward corrective migrations and reversal journals; do not remove applied migrations or delete posted journals.
+
+## Phase 2 migration 0025
+
+Migration `finance.0025_ownerreceiptdesignation_and_more` is additive. It creates owner identities, receipt-to-batch designations and the privileged finance-action audit; adds optional owner identity to funding sources; adds receipt idempotency metadata; and extends funding classifications for capital return, drawing and compensation. It does not delete, merge or recalculate an existing receipt, expenditure, allocation or batch.
+
+All historical `owner_capital` sources initially keep `owner_id = NULL`. Reports label those values **Unknown legacy owner**. This is intentional: source descriptions are not a safe identity key. New owner receipts must use the protected contribution workflow and a named active contributor.
+
+After deployment run:
+
+1. `python backend/manage.py migrate`;
+2. `python backend/manage.py check`;
+3. `python backend/manage.py finance_preflight`;
+4. review Owner Capital's unknown-legacy total against source documents;
+5. verify that introduced cash minus actual owner-funded use equals the displayed remaining balance.
+
+Rollback must be forward-only. Reverse incorrect new receipts/designations through the application; do not unapply migration 0025 after Phase 2 records exist. The pre-migration database backup remains the disaster-recovery boundary.

@@ -14,6 +14,7 @@ import {
   PaymentDetailsDialog,
   type PaymentDetail,
 } from "@/features/finance/components/PaymentDetailsDialog";
+import { OwnerCapitalLink } from "@/features/finance/components/OwnerCapitalLink";
 import { formatCurrency, formatDate, formatLabel } from "@/features/finance/utils/formatters";
 import { clientApiFetch } from "@/lib/client-api";
 import { getApiErrorMessage } from "@/lib/errors";
@@ -29,7 +30,7 @@ type ExpenditurePaymentGroup = {
   recordedBy?: string | null;
 };
 type NewFundingSource = {
-  source_type: "owner_capital" | "general_farm_cash" | "loan" | "grant" | "other_income";
+  source_type: "general_farm_cash" | "loan" | "grant" | "other_income";
   description: string;
   amount: string;
   receipt_date: string;
@@ -70,7 +71,7 @@ export default function ExpenditureDetailPage() {
   const [showSourceForm, setShowSourceForm] = useState(false);
   const [selectedPayment, setSelectedPayment] = useState<PaymentDetail | null>(null);
   const [newSource, setNewSource] = useState<NewFundingSource>({
-    source_type: "owner_capital",
+    source_type: "general_farm_cash",
     description: "",
     amount: "",
     receipt_date: new Date().toISOString().slice(0, 10),
@@ -373,7 +374,8 @@ export default function ExpenditureDetailPage() {
                 }
                 return newRows;
               })} className="w-fit text-sm font-bold underline">Split across another source</button>
-              <button type="button" onClick={() => setShowSourceForm(true)} className="w-fit text-sm font-bold underline">Add owner, farm, loan, grant, or other funds</button>
+              <OwnerCapitalLink className="w-fit text-sm font-bold underline">Record owner capital</OwnerCapitalLink>
+              <button type="button" onClick={() => setShowSourceForm(true)} className="w-fit text-sm font-bold underline">Add farm, loan, grant, or other funds</button>
             </div>
             {canRecordPayment ? <label className="text-sm font-bold">Payment date<input type="date" value={paymentDate} onChange={(event) => setPaymentDate(event.target.value)} className="form-input mt-2 block" /></label> : null}
           </div>
@@ -396,7 +398,6 @@ export default function ExpenditureDetailPage() {
             <div className="mt-5 grid gap-4 sm:grid-cols-2">
               <label className="text-sm font-bold">Source type
                 <select value={newSource.source_type} onChange={(event) => setNewSource((current) => ({ ...current, source_type: event.target.value as NewFundingSource["source_type"] }))} className="form-input mt-2 w-full">
-                  <option value="owner_capital">Owner equity</option>
                   <option value="general_farm_cash">General farm cash</option>
                   <option value="loan">Loan funds</option>
                   <option value="grant">Grant or subsidy</option>
@@ -404,7 +405,7 @@ export default function ExpenditureDetailPage() {
                 </select>
               </label>
               <label className="text-sm font-bold">Source description
-                <input required value={newSource.description} onChange={(event) => setNewSource((current) => ({ ...current, description: event.target.value }))} className="form-input mt-2 w-full" placeholder="Example: Owner contribution" />
+                <input required value={newSource.description} onChange={(event) => setNewSource((current) => ({ ...current, description: event.target.value }))} className="form-input mt-2 w-full" placeholder="Example: Farm cash deposit" />
               </label>
               <label className="text-sm font-bold">Amount received
                 <input required type="number" min="0.01" step="0.01" value={newSource.amount} onChange={(event) => setNewSource((current) => ({ ...current, amount: event.target.value }))} className="form-input mt-2 w-full" />

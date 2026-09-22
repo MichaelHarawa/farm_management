@@ -111,7 +111,8 @@ export default function RevenueUsagePage() {
                     <th className="p-3 text-right">Paid / traced</th>
                     <th className="p-3 text-right">Own sales</th>
                     <th className="p-3 text-right">Other batch sales</th>
-                    <th className="p-3 text-right">Other sources</th>
+                    <th className="p-3 text-right">Owner capital</th>
+                    <th className="p-3 text-right">Other non-sales funds</th>
                     <th className="p-3">Funding mix</th>
                     <th className="p-3">Action</th>
                   </tr>
@@ -127,12 +128,13 @@ export default function RevenueUsagePage() {
                       </td>
                       <td className="p-3 text-right">{formatCurrency(row.own_batch_sales)}<span className="block text-xs">{formatPercent(row.own_batch_sales_percent)}</span></td>
                       <td className="p-3 text-right">{formatCurrency(row.other_batch_sales)}<span className="block text-xs">{formatPercent(row.other_batch_sales_percent)}</span></td>
-                      <td className="p-3 text-right">{formatCurrency(row.other_sources)}<span className="block text-xs">{formatPercent(row.other_sources_percent)}</span></td>
+                      <td className="p-3 text-right">{formatCurrency(row.owner_capital)}<span className="block text-xs">{formatPercent(row.owner_capital_percent)}</span></td>
+                      <td className="p-3 text-right">{formatCurrency(row.non_owner_sources)}<span className="block text-xs">{formatPercent(row.non_owner_sources_percent)}</span></td>
                       <td className="w-52 p-3"><FundingMixBar row={row} /></td>
                       <td className="p-3"><Link className="font-bold underline" href={`/finance/revenue-usage/${row.batch_id}`}>View funding and expenditures</Link></td>
                     </tr>
                   ))}
-                  {!mixes.results.length ? <tr><td colSpan={8} className="p-6 text-center">No poultry batches are available.</td></tr> : null}
+                  {!mixes.results.length ? <tr><td colSpan={9} className="p-6 text-center">No poultry batches are available.</td></tr> : null}
                 </tbody>
               </table>
             </div>
@@ -172,16 +174,18 @@ export default function RevenueUsagePage() {
 function FundingMixBar({ row }: { row: BatchFundingMix }) {
   const own = parseDecimal(row.own_batch_sales_percent);
   const crossBatch = parseDecimal(row.other_batch_sales_percent);
-  const other = parseDecimal(row.other_sources_percent);
-  if (own + crossBatch + other === 0) return <span className="text-xs text-[var(--navy-muted)]">No paid source recorded</span>;
+  const owner = parseDecimal(row.owner_capital_percent);
+  const other = parseDecimal(row.non_owner_sources_percent);
+  if (own + crossBatch + owner + other === 0) return <span className="text-xs text-[var(--navy-muted)]">No paid source recorded</span>;
   return (
     <div>
-      <div className="flex h-3 overflow-hidden rounded-full bg-[#ebe7dc]" title={`Own sales ${own}% · Other batch sales ${crossBatch}% · Other sources ${other}%`}>
+      <div className="flex h-3 overflow-hidden rounded-full bg-[#ebe7dc]" title={`Own sales ${own}% · Other batch sales ${crossBatch}% · Owner capital ${owner}% · Other funds ${other}%`}>
         <span className="bg-[#4e8b61]" style={{ width: `${own}%` }} />
         <span className="bg-[var(--gold)]" style={{ width: `${crossBatch}%` }} />
+        <span className="bg-[#7655a3]" style={{ width: `${owner}%` }} />
         <span className="bg-[var(--navy)]" style={{ width: `${other}%` }} />
       </div>
-      <p className="mt-2 text-xs leading-5 text-[var(--navy-muted)]">Green: own sales · Gold: other batch sales · Navy: other sources</p>
+      <p className="mt-2 text-xs leading-5 text-[var(--navy-muted)]">Green: own sales · Gold: other batch sales · Purple: owner capital · Navy: other funds</p>
     </div>
   );
 }

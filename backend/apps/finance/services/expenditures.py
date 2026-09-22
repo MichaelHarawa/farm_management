@@ -5,11 +5,12 @@ from decimal import Decimal, InvalidOperation
 from django.db import transaction
 from django.db.models import Count, Sum
 from django.utils import timezone
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import PermissionDenied, ValidationError
 
 from apps.poultry.models import Batch, InputCosts
 
 from ..models import (
+    AccountingNature,
     AccountingPeriod,
     AllocationSourceType,
     CostAllocation,
@@ -19,15 +20,24 @@ from ..models import (
     ExpenditurePaymentStatus,
     ExpenditureStatus,
     FundingAllocation,
+    FundingClassification,
     FundingSource,
+    FundingSourceType,
     InputCostReconciliation,
     PeriodStatus,
 )
+from ..permissions import has_owner_capital_access
 from .profitability import available_funding_source_cash
 from .ledger import post_journal
+from .action_audit import record_finance_action
 
 
 ZERO = Decimal("0.00")
+OWNER_EQUITY_OUTFLOW_CLASSIFICATIONS = {
+    FundingClassification.OWNER_CAPITAL_RETURN,
+    FundingClassification.OWNER_DRAWING,
+    FundingClassification.OWNER_DISTRIBUTION,
+}
 
 
 def money(value) -> Decimal:
@@ -35,6 +45,32 @@ def money(value) -> Decimal:
         return Decimal(str(value)).quantize(Decimal("0.01"))
     except (InvalidOperation, TypeError, ValueError):
         raise ValidationError({"amount": "Enter a valid monetary amount."})
+
+
+def _validate_owner_equity_treatment(expenditure: Expenditure, rows) -> None:
+    if not any(
+        row.get("classification") in OWNER_EQUITY_OUTFLOW_CLASSIFICATIONS
+        for row in rows
+    ):
+        return
+    if expenditure.accounting_nature != AccountingNature.OWNER_WITHDRAWAL:
+        raise ValidationError(
+            {
+                "accounting_nature": (
+                    "Capital returns, drawings and profit distributions must use "
+                    "Owner Withdrawal so they are not reported as operating cost."
+                )
+            }
+        )
+    if expenditure.cost_allocations.exists() or expenditure.cost_allocation_plan:
+        raise ValidationError(
+            {
+                "cost_allocations": (
+                    "Capital returns, drawings and profit distributions cannot be "
+                    "charged to poultry batch profitability."
+                )
+            }
+        )
 
 
 def accounting_period_for(transaction_date: date, *, require_open: bool = True):
@@ -85,7 +121,9 @@ def validate_cost_allocations(expenditure: Expenditure, rows) -> list[tuple[int,
     return normalized
 
 
-def _validate_payment_rows(rows, expected_total: Decimal, *, allow_less: bool) -> list[dict]:
+def _validate_payment_rows(
+    rows, expected_total: Decimal, *, allow_less: bool, user=None
+) -> list[dict]:
     if not isinstance(rows, list) or not rows:
         raise ValidationError({"funding_allocations": "Select at least one payment source."})
     normalized = []
@@ -124,6 +162,23 @@ def _validate_payment_rows(rows, expected_total: Decimal, *, allow_less: bool) -
         raise ValidationError(
             {"funding_allocations": f"Unknown funding source: {', '.join(map(str, sorted(missing)))}."}
         )
+    owner_only = {
+        FundingClassification.OWNER_CAPITAL_RETURN,
+        FundingClassification.OWNER_DRAWING,
+        FundingClassification.OWNER_COMPENSATION,
+        FundingClassification.OWNER_DISTRIBUTION,
+    }
+    for row in normalized:
+        source = sources[row["funding_source"]]
+        if source.source_type == FundingSourceType.OWNER_CAPITAL:
+            if not has_owner_capital_access(user):
+                raise PermissionDenied(
+                    "Only administrators and directors can assign owner-capital cash."
+                )
+        elif row["classification"] in owner_only:
+            raise ValidationError(
+                {"funding_allocations": "Owner payment classifications require an owner-capital source."}
+            )
     for source_id, required in source_totals.items():
         available = available_funding_source_cash(sources[source_id])
         if required > available:
@@ -213,8 +268,16 @@ def _create_cost_allocations(expenditure, rows, *, user, period=None):
 
 
 def _create_funding_rows(expenditure, rows, *, user, payment_group_key, allocation_date):
+    _validate_owner_equity_treatment(expenditure, rows)
+    owner_source_ids = set(
+        FundingSource.objects.filter(
+            pk__in=[row["funding_source"] for row in rows],
+            source_type=FundingSourceType.OWNER_CAPITAL,
+        ).values_list("pk", flat=True)
+    )
+    owner_allocations = []
     for row in rows:
-        FundingAllocation.objects.create(
+        allocation = FundingAllocation.objects.create(
             expenditure=expenditure,
             funding_source_id=row["funding_source"],
             amount=row["amount"],
@@ -222,6 +285,29 @@ def _create_funding_rows(expenditure, rows, *, user, payment_group_key, allocati
             classification=row["classification"],
             payment_group_key=payment_group_key,
             created_by=user,
+        )
+        if allocation.funding_source_id in owner_source_ids:
+            owner_allocations.append(allocation)
+    if owner_allocations:
+        record_finance_action(
+            actor=user,
+            action="owner_cash_assigned_to_expenditure",
+            entity_type="finance.Expenditure",
+            entity_id=expenditure.pk,
+            after_data={
+                "expenditure_reference": expenditure.expenditure_reference,
+                "payment_group_key": payment_group_key,
+                "allocations": [
+                    {
+                        "id": allocation.pk,
+                        "funding_source_id": allocation.funding_source_id,
+                        "amount": allocation.amount,
+                        "classification": allocation.classification,
+                        "allocation_date": allocation.allocation_date,
+                    }
+                    for allocation in owner_allocations
+                ],
+            },
         )
 
 
@@ -258,7 +344,9 @@ def post_expenditure(
             funding_rows,
             money(expenditure.amount),
             allow_less=allow_unpaid,
+            user=user,
         )
+        _validate_owner_equity_treatment(expenditure, normalized)
         if use_stored_funding:
             # Draft funding rows predate payment posting. Once posted, give the
             # entire split one stable payment identity so detail history can
@@ -266,6 +354,26 @@ def post_expenditure(
             expenditure.funding_allocations.filter(
                 payment_group_key=""
             ).update(payment_group_key=f"post-{expenditure.pk}")
+            owner_allocations = list(
+                expenditure.funding_allocations.filter(
+                    funding_source__source_type=FundingSourceType.OWNER_CAPITAL
+                ).values(
+                    "id", "funding_source_id", "amount", "classification",
+                    "allocation_date", "payment_group_key",
+                )
+            )
+            if owner_allocations:
+                record_finance_action(
+                    actor=user,
+                    action="owner_cash_assigned_to_expenditure",
+                    entity_type="finance.Expenditure",
+                    entity_id=expenditure.pk,
+                    after_data={
+                        "expenditure_reference": expenditure.expenditure_reference,
+                        "payment_group_key": f"post-{expenditure.pk}",
+                        "allocations": owner_allocations,
+                    },
+                )
         else:
             _create_funding_rows(
                 expenditure,
@@ -355,7 +463,9 @@ def create_batch_cost_transaction(*, batch: Batch, data: dict, user) -> InputCos
     )
 
     if payment_choice == "paid":
-        normalized = _validate_payment_rows(funding_rows, total, allow_less=False)
+        normalized = _validate_payment_rows(
+            funding_rows, total, allow_less=False, user=user
+        )
         _create_funding_rows(
             expenditure,
             normalized,
@@ -398,7 +508,9 @@ def record_expenditure_payment(
     outstanding = money(expenditure.amount) - funded_total(expenditure)
     if outstanding <= ZERO:
         raise ValidationError({"detail": "This expenditure is already fully paid."})
-    normalized = _validate_payment_rows(funding_rows, outstanding, allow_less=True)
+    normalized = _validate_payment_rows(
+        funding_rows, outstanding, allow_less=True, user=user
+    )
     if isinstance(payment_date, str):
         try:
             payment_date = date.fromisoformat(payment_date)
@@ -450,6 +562,15 @@ def reverse_expenditure(*, expenditure_id: int, reason: str, user) -> Expenditur
     reason = (reason or "").strip()
     if not reason:
         raise ValidationError({"reason": "A reversal reason is required."})
+    owner_allocations = list(
+        expenditure.funding_allocations.filter(
+            funding_source__source_type=FundingSourceType.OWNER_CAPITAL
+        ).values("id", "funding_source_id", "amount", "classification")
+    )
+    if owner_allocations and not has_owner_capital_access(user):
+        raise PermissionDenied(
+            "Only administrators and directors can reverse owner-capital use."
+        )
     expenditure.status = ExpenditureStatus.VOID
     expenditure.reversal_reason = reason
     expenditure.reversed_at = timezone.now()
@@ -457,6 +578,19 @@ def reverse_expenditure(*, expenditure_id: int, reason: str, user) -> Expenditur
     expenditure.save(
         update_fields=["status", "reversal_reason", "reversed_at", "reversed_by", "updated_at"]
     )
+    if owner_allocations:
+        record_finance_action(
+            actor=user,
+            action="owner_funded_expenditure_reversed",
+            entity_type="finance.Expenditure",
+            entity_id=expenditure.pk,
+            before_data={"status": ExpenditureStatus.POSTED},
+            after_data={
+                "status": expenditure.status,
+                "owner_allocations": owner_allocations,
+            },
+            reason=reason,
+        )
     return expenditure
 
 

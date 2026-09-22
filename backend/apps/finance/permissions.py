@@ -32,6 +32,19 @@ FINANCE_MANAGEMENT_ROLES = {
     RoleChoices.FARM_MANAGER,
 }
 
+OWNER_CAPITAL_ROLES = {
+    RoleChoices.ADMIN,
+    RoleChoices.DIRECTOR,
+}
+
+
+def has_owner_capital_access(user) -> bool:
+    return bool(
+        user
+        and user.is_authenticated
+        and user.has_any_role(OWNER_CAPITAL_ROLES)
+    )
+
 
 class FinancePermission(BasePermission):
     def has_permission(self, request, view) -> bool:
@@ -63,3 +76,10 @@ class FinancePermission(BasePermission):
 
 class FinanceReadOnlyOrManagement(FinancePermission):
     pass
+
+
+class OwnerCapitalPermission(BasePermission):
+    """Owner identities and capital movements are limited to senior roles."""
+
+    def has_permission(self, request, view) -> bool:
+        return has_owner_capital_access(request.user)

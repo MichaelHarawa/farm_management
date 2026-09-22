@@ -10,6 +10,7 @@ import {
   FundingSourcePicker,
   fundingSourceDisplayLabel,
 } from "@/features/finance/components/FundingSourcePicker";
+import { OwnerCapitalLink } from "@/features/finance/components/OwnerCapitalLink";
 import { clientApiFetch } from "@/lib/client-api";
 import { getApiErrorMessage } from "@/lib/errors";
 
@@ -75,7 +76,7 @@ export function AddInputCostForm({ batchId, onSuccess }: AddInputCostFormProps) 
   const [categories, setCategories] = useState<FinanceCategory[]>([]);
   const [serverError, setServerError] = useState<string | null>(null);
   const [showAddFunds, setShowAddFunds] = useState(false);
-  const [addFundsData, setAddFundsData] = useState({ source_type: "owner_capital", description: "", amount: "", reference: "" });
+  const [addFundsData, setAddFundsData] = useState({ source_type: "general_farm_cash", description: "", amount: "", reference: "" });
   const [addFundsError, setAddFundsError] = useState<string | null>(null);
   const [addFundsBusy, setAddFundsBusy] = useState(false);
 
@@ -165,7 +166,7 @@ export function AddInputCostForm({ batchId, onSuccess }: AddInputCostFormProps) 
         }]);
       }
       setShowAddFunds(false);
-      setAddFundsData({ source_type: "owner_capital", description: "", amount: "", reference: "" });
+      setAddFundsData({ source_type: "general_farm_cash", description: "", amount: "", reference: "" });
     } catch (err) {
       setAddFundsError(getApiErrorMessage(err));
     } finally {
@@ -265,12 +266,15 @@ export function AddInputCostForm({ batchId, onSuccess }: AddInputCostFormProps) 
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h5 className="font-bold">Paid from</h5>
               <div className="flex items-center gap-3">
+                <OwnerCapitalLink className="text-sm font-bold underline">
+                  + Record owner capital
+                </OwnerCapitalLink>
                 <button
                   type="button"
                   onClick={() => { setAddFundsError(null); setShowAddFunds(true); }}
                   className="text-sm font-bold underline"
                 >
-                  + Add owner, farm, loan, grant or other funds
+                  + Add farm, loan, grant or other funds
                 </button>
                 <span className={Math.abs(fundingTotal - estimatedTotal) < 0.01 ? "text-sm font-bold text-green-700" : "text-sm font-bold text-amber-700"}>
                   {formatCurrency(fundingTotal)} / {formatCurrency(estimatedTotal)}
@@ -327,11 +331,10 @@ export function AddInputCostForm({ batchId, onSuccess }: AddInputCostFormProps) 
               <h2 className="text-2xl font-extrabold">Add available funds</h2>
               <button type="button" onClick={() => setShowAddFunds(false)} aria-label="Close" className="text-2xl">×</button>
             </div>
-            <p className="mt-2 text-sm text-[var(--navy-muted)]">Record a receipt into owner capital, loans, grants, farm cash or other income. Balance becomes available for this and future costs.</p>
+            <p className="mt-2 text-sm text-[var(--navy-muted)]">Record a receipt into loans, grants, farm cash or other income. Owner contributions use the protected Owner Capital workspace.</p>
             <div className="mt-5 grid gap-4 sm:grid-cols-2">
               <label className="text-sm font-bold">Source type
                 <select value={addFundsData.source_type} onChange={(e) => setAddFundsData({ ...addFundsData, source_type: e.target.value })} className="form-input mt-2 w-full">
-                  <option value="owner_capital">Owner capital / equity</option>
                   <option value="general_farm_cash">General farm cash</option>
                   <option value="loan">Loan funding</option>
                   <option value="grant">Grant / subsidy</option>
@@ -339,7 +342,7 @@ export function AddInputCostForm({ batchId, onSuccess }: AddInputCostFormProps) 
                 </select>
               </label>
               <label className="text-sm font-bold">Description
-                <input required value={addFundsData.description} onChange={(e) => setAddFundsData({ ...addFundsData, description: e.target.value })} className="form-input mt-2 w-full" placeholder="e.g. Owner injection August" />
+                <input required value={addFundsData.description} onChange={(e) => setAddFundsData({ ...addFundsData, description: e.target.value })} className="form-input mt-2 w-full" placeholder="e.g. Farm cash deposit" />
               </label>
               <label className="text-sm font-bold">Amount received
                 <input required min="0.01" step="0.01" type="number" value={addFundsData.amount} onChange={(e) => setAddFundsData({ ...addFundsData, amount: e.target.value })} className="form-input mt-2 w-full" />

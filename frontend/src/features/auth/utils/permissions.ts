@@ -21,3 +21,11 @@ export function canAdministerUsers(user: AuthUser | null): boolean {
       (user.is_superuser || user.roles.some((role) => role.slug === "admin"))
   );
 }
+
+export function canAccessOwnerCapital(user: AuthUser | null): boolean {
+  return Boolean(
+    user &&
+      (user.is_superuser ||
+        user.roles.some((role) => role.slug === "admin" || role.slug === "director"))
+  );
+}

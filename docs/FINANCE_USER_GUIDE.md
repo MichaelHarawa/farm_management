@@ -55,3 +55,19 @@ Casual labour begins as a draft. Approve it, post the payable, then open the lin
 ## Technical administration
 
 **Administration** is not a Finance submenu. It is restricted to administrators and manages login accounts only: create a system user, assign an access role, activate or deactivate access, review last login, and set a temporary password. An employee may exist without a login and a system user may exist without an employee record. The last active administrator cannot be deactivated or stripped of administrator access.
+
+## Owner capital
+
+Administrators and directors can open **Finance → Owner Capital**. First create a stable owner/contributor identity, then record the bank/cash receipt. A receipt may be designated across one or many batches immediately or later. Leave it unassigned when the intended batch is not yet known; do not create a second receipt merely to change the designation.
+
+Owner-source balances and their use are sensitive. Farm managers and supervisors can record the underlying purchase as a payable, but an administrator or director must assign owner-capital cash to its payment. General farm cash, loan, grant and other-income sources continue to follow the ordinary finance permissions.
+
+The workspace keeps three ideas separate:
+
+- **Introduced** is actual owner cash received and is counted once.
+- **Designated** is the intended batch use and does not move cash.
+- **Actually spent** comes from posted expenditure or payroll payments that selected that owner's funding source.
+
+Use **Return of Owner Capital** only when principal is genuinely repaid. Use **Owner Drawing**, **Owner Compensation**, or **Owner Profit Distribution** for their distinct purposes. These options are available when recording an expenditure. Reverse an incorrect designation or unused receipt with a reason; a receipt that has already funded posted spending cannot be reversed until the spending is corrected through its controlled reversal workflow.
+
+Legacy owner-capital receipts with no reliable contributor appear under **Unknown legacy owner**. Do not rename or guess them from a description. Reconcile them against bank records and source documents before making an explicit controlled assignment.

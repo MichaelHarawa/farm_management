@@ -5,7 +5,7 @@ from decimal import Decimal, InvalidOperation
 
 from django.db import transaction
 from django.utils import timezone
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import PermissionDenied, ValidationError
 
 from apps.poultry.models import Batch
 
@@ -21,12 +21,15 @@ from ..models import (
     ExpenditureStatus,
     FinancePaymentStatus,
     FundingSource,
+    FundingSourceType,
     PayrollEntry,
     PayrollLiability,
     PayrollPayment,
     PayrollPaymentFunding,
     PayrollPaymentStatus,
 )
+from ..permissions import has_owner_capital_access
+from .action_audit import record_finance_action
 from .profitability import available_funding_source_cash
 
 
@@ -232,6 +235,15 @@ def record_salary_payment(*, payroll_entry_id: int, amount, payment_date, paymen
     sources = {s.pk: s for s in FundingSource.objects.select_for_update().filter(pk__in=totals)}
     if set(sources) != set(totals):
         raise ValidationError({"funding_allocations": "A selected funding source does not exist."})
+    owner_source_ids = [
+        source_id
+        for source_id, source in sources.items()
+        if source.source_type == FundingSourceType.OWNER_CAPITAL
+    ]
+    if owner_source_ids and not has_owner_capital_access(user):
+        raise PermissionDenied(
+            "Only administrators and directors can assign owner-capital cash."
+        )
     for source_id, required in totals.items():
         available = available_funding_source_cash(sources[source_id])
         if required > available:
@@ -249,6 +261,21 @@ def record_salary_payment(*, payroll_entry_id: int, amount, payment_date, paymen
         PayrollPaymentFunding(payment=payment, funding_source_id=source_id, amount=value)
         for source_id, value in totals.items()
     ])
+    if owner_source_ids:
+        record_finance_action(
+            actor=user,
+            action="owner_funded_payroll_payment_recorded",
+            entity_type="finance.PayrollPayment",
+            entity_id=payment.pk,
+            after_data={
+                "payroll_entry_id": entry.pk,
+                "payment_date": payment.payment_date,
+                "owner_funding": [
+                    {"funding_source_id": source_id, "amount": totals[source_id]}
+                    for source_id in owner_source_ids
+                ],
+            },
+        )
     ensure_salary_expense(entry, user=user)
     sync_entry_status(entry)
     return payment
@@ -256,17 +283,38 @@ def record_salary_payment(*, payroll_entry_id: int, amount, payment_date, paymen
 
 @transaction.atomic
 def reverse_salary_payment(*, payment_id: int, reason: str, user) -> PayrollPayment:
-    payment = PayrollPayment.objects.select_for_update().select_related("payroll_entry").get(pk=payment_id)
+    payment = PayrollPayment.objects.select_for_update().select_related("payroll_entry").prefetch_related(
+        "funding_allocations__funding_source"
+    ).get(pk=payment_id)
     if payment.status == PayrollPaymentStatus.REVERSED:
         return payment
     reason = (reason or "").strip()
     if not reason:
         raise ValidationError({"reason": "A reversal reason is required."})
+    owner_funding = [
+        row
+        for row in payment.funding_allocations.all()
+        if row.funding_source.source_type == FundingSourceType.OWNER_CAPITAL
+    ]
+    if owner_funding and not has_owner_capital_access(user):
+        raise PermissionDenied(
+            "Only administrators and directors can reverse owner-capital use."
+        )
     payment.status = PayrollPaymentStatus.REVERSED
     payment.reversed_at = timezone.now()
     payment.reversed_by = user
     payment.reversal_reason = reason
     payment.save(update_fields=["status", "reversed_at", "reversed_by", "reversal_reason", "updated_at"])
+    if owner_funding:
+        record_finance_action(
+            actor=user,
+            action="owner_funded_payroll_payment_reversed",
+            entity_type="finance.PayrollPayment",
+            entity_id=payment.pk,
+            before_data={"status": PayrollPaymentStatus.POSTED},
+            after_data={"status": payment.status},
+            reason=reason,
+        )
     sync_entry_status(payment.payroll_entry)
     return payment
 

@@ -17,6 +17,8 @@ import type {
   EmployeeProfile,
   FinanceDashboard,
   MonthlyReport,
+  OwnerContributionReport,
+  OwnerContributor,
   PaginatedResponse,
   PayrollEntry,
   ReceivablesReport,
@@ -166,6 +168,25 @@ export async function getAssetDepreciation(returnTo: string): Promise<AssetDepre
   });
 
   return normalizeList(data);
+}
+
+export async function getOwnerContributors(
+  returnTo: string
+): Promise<OwnerContributor[]> {
+  const data = await authenticatedBackendFetch<
+    OwnerContributor[] | PaginatedResponse<OwnerContributor>
+  >(`${financeApiPaths.owners}?page_size=100`, { returnTo, cache: "no-store" });
+  return normalizeList(data);
+}
+
+export async function getOwnerContributionReport(
+  returnTo: string,
+  query = ""
+): Promise<OwnerContributionReport> {
+  return authenticatedBackendFetch<OwnerContributionReport>(
+    `${financeApiPaths.ownerContributionReport}${query}`,
+    { returnTo, cache: "no-store" }
+  );
 }
 
 export async function getMonthlyReport(

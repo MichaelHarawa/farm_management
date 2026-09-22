@@ -1,0 +1,730 @@
+{
+  "analysis_basis": "lifecycle_management_cost",
+  "calculation_version": "batch-portfolio-v2",
+  "selected_batch_ids": [
+    4,
+    3,
+    1
+  ],
+  "selected_batch_count": 3,
+  "included_batch_count": 3,
+  "profitability_status": "mixed",
+  "summary": {
+    "revenue": "4847000.00",
+    "cash_collected": "3950000.00",
+    "accounts_receivable": "897000.00",
+    "direct_batch_cost": "8149200.00",
+    "allocated_production_cost": "346758.06",
+    "total_production_cost": "8495958.06",
+    "batch_gross_profit": "-3648958.06",
+    "batch_gross_margin_percent": "-75.28",
+    "selling_cost": "0.00",
+    "central_selling_cost": "180000.00",
+    "total_selling_cost": "180000.00",
+    "allocated_administration_cost": "108000.00",
+    "allocated_finance_cost": "0.00",
+    "allocated_tax": "0.00",
+    "total_attributed_cost": "8783958.06",
+    "management_net_position": "-3936958.06",
+    "management_net_margin_percent": "-81.22",
+    "forecast_revenue_at_completion": "3584500.00",
+    "forecast_cost_at_completion": "3795840.10",
+    "forecast_final_profit": "-211340.10",
+    "forecast_available_batch_count": 1,
+    "forecast_unavailable_batch_count": 2,
+    "fully_loaded_batch_profit": "-3648958.06",
+    "fully_loaded_margin_percent": "-75.28",
+    "birds_placed": 628,
+    "valid_bird_units_sold": 259,
+    "remaining_live_birds": 317,
+    "survived_birds": 576,
+    "survivor_cost_numerator": "8495958.06",
+    "survivor_cost_batch_count": 3,
+    "cost_per_survived_bird": "14749.93",
+    "mortality": 52,
+    "mortality_rate_percent": "8.28",
+    "collection_rate_percent": "81.49",
+    "profit_per_bird_sold": "-14088.64",
+    "production_cost_per_saleable_bird": "14749.93",
+    "break_even_selling_price_per_remaining_bird": "11510.91",
+    "additional_revenue_required_to_break_even": "3648958.06",
+    "active_batch_cost_exposure": "4956202.26",
+    "management_cost_breakdown": [
+      {
+        "key": "direct_batch",
+        "label": "Direct batch costs",
+        "basis": "Directly recorded against this batch",
+        "amount": "8149200.00"
+      },
+      {
+        "key": "production_overhead",
+        "label": "Allocated production overhead",
+        "basis": "Stored production allocations",
+        "amount": "346758.06"
+      },
+      {
+        "key": "selling",
+        "label": "Selling and distribution",
+        "basis": "Direct allocations plus period revenue share",
+        "amount": "180000.00"
+      },
+      {
+        "key": "administration",
+        "label": "Farm administration",
+        "basis": "Period bird-day share",
+        "amount": "108000.00"
+      },
+      {
+        "key": "finance",
+        "label": "Finance costs",
+        "basis": "Period revenue share",
+        "amount": "0.00"
+      },
+      {
+        "key": "tax",
+        "label": "Recorded tax",
+        "basis": "Period revenue share",
+        "amount": "0.00"
+      }
+    ]
+  },
+  "results": [
+    {
+      "batch": 4,
+      "batch_id": "BATCH-20260824-0001",
+      "status": "active",
+      "profitability_status": "provisional",
+      "included_in_portfolio_summary": true,
+      "revenue": "0.00",
+      "cash_collected": "0.00",
+      "accounts_receivable": "0.00",
+      "direct_batch_cost": "1527500.00",
+      "allocated_production_cost": "25144.05",
+      "total_production_cost": "1552644.05",
+      "batch_gross_profit": "-1552644.05",
+      "batch_gross_margin_percent": null,
+      "selling_cost": "0.00",
+      "allocated_administration_cost": "4411.85",
+      "fully_loaded_batch_profit": "-1552644.05",
+      "fully_loaded_margin_percent": null,
+      "birds_placed": 220,
+      "valid_bird_units_sold": 0,
+      "remaining_live_birds": 203,
+      "raw_remaining_live_birds": 203,
+      "bird_balance_valid": true,
+      "bird_balance_error": null,
+      "survived_birds": 203,
+      "cost_per_survived_bird": "7648.49",
+      "profit_per_bird_sold": null,
+      "mortality": 17,
+      "mortality_rate_percent": "7.73",
+      "collection_rate_percent": null,
+      "provisional_saleable_birds": 203,
+      "provisional_cost_per_saleable_bird": "7648.49",
+      "final_cost_per_bird_sold": null,
+      "break_even_selling_price_per_remaining_bird": "7648.49",
+      "additional_revenue_required_to_break_even": "1552644.05",
+      "active_batch_cost_exposure": "1552644.05",
+      "central_selling_cost": "0.00",
+      "total_selling_cost": "0.00",
+      "allocated_finance_cost": "0.00",
+      "allocated_tax": "0.00",
+      "total_attributed_cost": "1557055.90",
+      "management_net_position": "-1557055.90",
+      "management_net_margin_percent": null,
+      "actual_result_basis": "actual_to_date",
+      "result_interpretation": "Provisional actual-to-date; not a final loss or profit.",
+      "forecast_revenue_at_completion": null,
+      "forecast_cost_at_completion": null,
+      "forecast_final_profit": null,
+      "forecast_available": false,
+      "forecast_missing_inputs": [
+        "selling_price",
+        "mortality_assumption",
+        "remaining_feed_cost",
+        "remaining_other_cost"
+      ],
+      "forecast_actual_revenue": "0.00",
+      "forecast_estimated_future_revenue": null,
+      "forecast_costs_incurred": "1557055.90",
+      "forecast_estimated_remaining_cost": null,
+      "forecast_expected_birds_sold": null,
+      "forecast_assumptions": {
+        "selling_price": null,
+        "remaining_bird_mortality_percent": null,
+        "remaining_feed_cost": null,
+        "remaining_other_and_shared_cost": null,
+        "estimated_at": "2026-09-18"
+      },
+      "forecast_basis": "Actual sales plus expected sales of currently live birds after the stated mortality assumption, less costs incurred and the entered remaining feed and other/shared costs.",
+      "allocation_trace": [
+        {
+          "source_period": 2,
+          "period_start": "2026-08-01",
+          "period_end": "2026-08-31",
+          "administration_driver": "bird_days",
+          "administration_numerator": "880.0000",
+          "administration_denominator": "10771.0000",
+          "administration_percentage": "8.1701",
+          "selling_finance_tax_driver": "revenue_share",
+          "selling_numerator": "0.00",
+          "selling_denominator": "3508500.00",
+          "selling_percentage": "0.0000",
+          "calculation_version": "management-allocation-v2"
+        },
+        {
+          "source_period": 3,
+          "period_start": "2026-09-01",
+          "period_end": "2026-09-30",
+          "administration_driver": "bird_days",
+          "administration_numerator": "3724.5000",
+          "administration_denominator": "6801.5000",
+          "administration_percentage": "54.7600",
+          "selling_finance_tax_driver": "revenue_share",
+          "selling_numerator": "0.00",
+          "selling_denominator": "1338500.00",
+          "selling_percentage": "0.0000",
+          "calculation_version": "management-allocation-v2"
+        }
+      ],
+      "management_cost_breakdown": [
+        {
+          "key": "direct_batch",
+          "label": "Direct batch costs",
+          "amount": "1527500.00",
+          "basis": "Directly recorded against this batch"
+        },
+        {
+          "key": "production_overhead",
+          "label": "Allocated production overhead",
+          "amount": "25144.05",
+          "basis": "Stored production allocations",
+          "components": [
+            {
+              "label": "Production asset depreciation",
+              "amount": "81.70"
+            },
+            {
+              "label": "Production payroll (salary expenditure recognized once)",
+              "amount": "10294.31"
+            },
+            {
+              "label": "Labour, consumables and shared production",
+              "amount": "14768.04"
+            }
+          ]
+        },
+        {
+          "key": "selling",
+          "label": "Selling and distribution",
+          "amount": "0.00",
+          "basis": "Direct allocations plus period revenue share",
+          "components": [
+            {
+              "label": "Direct and stored selling allocations",
+              "amount": "0.00"
+            },
+            {
+              "label": "Selling payroll (salary expenditure recognized once)",
+              "amount": "0.00"
+            },
+            {
+              "label": "Selling asset depreciation",
+              "amount": "0.00"
+            }
+          ]
+        },
+        {
+          "key": "administration",
+          "label": "Farm administration",
+          "amount": "4411.85",
+          "basis": "Period bird-day share",
+          "components": [
+            {
+              "label": "Administration payroll (salary expenditure recognized once)",
+              "amount": "4411.85"
+            },
+            {
+              "label": "Administration labour",
+              "amount": "0.00"
+            },
+            {
+              "label": "Administration consumables",
+              "amount": "0.00"
+            },
+            {
+              "label": "General overhead",
+              "amount": "0.00"
+            },
+            {
+              "label": "Administration asset depreciation",
+              "amount": "0.00"
+            }
+          ]
+        },
+        {
+          "key": "finance",
+          "label": "Finance costs",
+          "amount": "0.00",
+          "basis": "Period revenue share"
+        },
+        {
+          "key": "tax",
+          "label": "Recorded tax",
+          "amount": "0.00",
+          "basis": "Period revenue share"
+        }
+      ]
+    },
+    {
+      "batch": 3,
+      "batch_id": "BATCH-20260724-0001",
+      "status": "selling",
+      "profitability_status": "provisional",
+      "included_in_portfolio_summary": true,
+      "revenue": "1262500.00",
+      "cash_collected": "365500.00",
+      "accounts_receivable": "897000.00",
+      "direct_batch_cost": "3286500.00",
+      "allocated_production_cost": "117058.21",
+      "total_production_cost": "3403558.21",
+      "batch_gross_profit": "-2141058.21",
+      "batch_gross_margin_percent": "-169.59",
+      "selling_cost": "0.00",
+      "allocated_administration_cost": "27503.85",
+      "fully_loaded_batch_profit": "-2141058.21",
+      "fully_loaded_margin_percent": "-169.59",
+      "birds_placed": 208,
+      "valid_bird_units_sold": 68,
+      "remaining_live_birds": 114,
+      "raw_remaining_live_birds": 114,
+      "bird_balance_valid": true,
+      "bird_balance_error": null,
+      "survived_birds": 182,
+      "cost_per_survived_bird": "18700.87",
+      "profit_per_bird_sold": "-31486.15",
+      "mortality": 26,
+      "mortality_rate_percent": "12.50",
+      "collection_rate_percent": "28.95",
+      "provisional_saleable_birds": 182,
+      "provisional_cost_per_saleable_bird": "18700.87",
+      "final_cost_per_bird_sold": null,
+      "break_even_selling_price_per_remaining_bird": "18781.21",
+      "additional_revenue_required_to_break_even": "2141058.21",
+      "active_batch_cost_exposure": "3403558.21",
+      "central_selling_cost": "0.00",
+      "total_selling_cost": "0.00",
+      "allocated_finance_cost": "0.00",
+      "allocated_tax": "0.00",
+      "total_attributed_cost": "3431062.06",
+      "management_net_position": "-2168562.06",
+      "management_net_margin_percent": "-171.77",
+      "actual_result_basis": "actual_to_date",
+      "result_interpretation": "Provisional actual-to-date; not a final loss or profit.",
+      "forecast_revenue_at_completion": null,
+      "forecast_cost_at_completion": null,
+      "forecast_final_profit": null,
+      "forecast_available": false,
+      "forecast_missing_inputs": [
+        "selling_price",
+        "mortality_assumption",
+        "remaining_feed_cost",
+        "remaining_other_cost"
+      ],
+      "forecast_actual_revenue": "1262500.00",
+      "forecast_estimated_future_revenue": null,
+      "forecast_costs_incurred": "3431062.06",
+      "forecast_estimated_remaining_cost": null,
+      "forecast_expected_birds_sold": null,
+      "forecast_assumptions": {
+        "selling_price": null,
+        "remaining_bird_mortality_percent": null,
+        "remaining_feed_cost": null,
+        "remaining_other_and_shared_cost": null,
+        "estimated_at": "2026-09-18"
+      },
+      "forecast_basis": "Actual sales plus expected sales of currently live birds after the stated mortality assumption, less costs incurred and the entered remaining feed and other/shared costs.",
+      "allocation_trace": [
+        {
+          "source_period": 2,
+          "period_start": "2026-08-01",
+          "period_end": "2026-08-31",
+          "administration_driver": "bird_days",
+          "administration_numerator": "5486.0000",
+          "administration_denominator": "10771.0000",
+          "administration_percentage": "50.9331",
+          "selling_finance_tax_driver": "revenue_share",
+          "selling_numerator": "0.00",
+          "selling_denominator": "3508500.00",
+          "selling_percentage": "0.0000",
+          "calculation_version": "management-allocation-v2"
+        },
+        {
+          "source_period": 3,
+          "period_start": "2026-09-01",
+          "period_end": "2026-09-30",
+          "administration_driver": "bird_days",
+          "administration_numerator": "3071.0000",
+          "administration_denominator": "6801.5000",
+          "administration_percentage": "45.1518",
+          "selling_finance_tax_driver": "revenue_share",
+          "selling_numerator": "1262500.00",
+          "selling_denominator": "1338500.00",
+          "selling_percentage": "94.3220",
+          "calculation_version": "management-allocation-v2"
+        }
+      ],
+      "management_cost_breakdown": [
+        {
+          "key": "direct_batch",
+          "label": "Direct batch costs",
+          "amount": "3286500.00",
+          "basis": "Directly recorded against this batch"
+        },
+        {
+          "key": "production_overhead",
+          "label": "Allocated production overhead",
+          "amount": "117058.21",
+          "basis": "Stored production allocations",
+          "components": [
+            {
+              "label": "Production asset depreciation",
+              "amount": "509.33"
+            },
+            {
+              "label": "Production payroll (salary expenditure recognized once)",
+              "amount": "64175.66"
+            },
+            {
+              "label": "Labour, consumables and shared production",
+              "amount": "52373.22"
+            }
+          ]
+        },
+        {
+          "key": "selling",
+          "label": "Selling and distribution",
+          "amount": "0.00",
+          "basis": "Direct allocations plus period revenue share",
+          "components": [
+            {
+              "label": "Direct and stored selling allocations",
+              "amount": "0.00"
+            },
+            {
+              "label": "Selling payroll (salary expenditure recognized once)",
+              "amount": "0.00"
+            },
+            {
+              "label": "Selling asset depreciation",
+              "amount": "0.00"
+            }
+          ]
+        },
+        {
+          "key": "administration",
+          "label": "Farm administration",
+          "amount": "27503.85",
+          "basis": "Period bird-day share",
+          "components": [
+            {
+              "label": "Administration payroll (salary expenditure recognized once)",
+              "amount": "27503.85"
+            },
+            {
+              "label": "Administration labour",
+              "amount": "0.00"
+            },
+            {
+              "label": "Administration consumables",
+              "amount": "0.00"
+            },
+            {
+              "label": "General overhead",
+              "amount": "0.00"
+            },
+            {
+              "label": "Administration asset depreciation",
+              "amount": "0.00"
+            }
+          ]
+        },
+        {
+          "key": "finance",
+          "label": "Finance costs",
+          "amount": "0.00",
+          "basis": "Period revenue share"
+        },
+        {
+          "key": "tax",
+          "label": "Recorded tax",
+          "amount": "0.00",
+          "basis": "Period revenue share"
+        }
+      ]
+    },
+    {
+      "batch": 1,
+      "batch_id": "BATCH-20260712-0001",
+      "status": "closed",
+      "profitability_status": "pending_finalization",
+      "included_in_portfolio_summary": true,
+      "revenue": "3584500.00",
+      "cash_collected": "3584500.00",
+      "accounts_receivable": "0.00",
+      "direct_batch_cost": "3335200.00",
+      "allocated_production_cost": "204555.80",
+      "total_production_cost": "3539755.80",
+      "batch_gross_profit": "44744.20",
+      "batch_gross_margin_percent": "1.25",
+      "selling_cost": "0.00",
+      "allocated_administration_cost": "76084.30",
+      "fully_loaded_batch_profit": "44744.20",
+      "fully_loaded_margin_percent": "1.25",
+      "birds_placed": 200,
+      "valid_bird_units_sold": 191,
+      "remaining_live_birds": 0,
+      "raw_remaining_live_birds": 0,
+      "bird_balance_valid": true,
+      "bird_balance_error": null,
+      "survived_birds": 191,
+      "cost_per_survived_bird": "18532.75",
+      "profit_per_bird_sold": "234.26",
+      "mortality": 9,
+      "mortality_rate_percent": "4.50",
+      "collection_rate_percent": "100.00",
+      "provisional_saleable_birds": 191,
+      "provisional_cost_per_saleable_bird": "18532.75",
+      "final_cost_per_bird_sold": "18532.75",
+      "break_even_selling_price_per_remaining_bird": null,
+      "additional_revenue_required_to_break_even": "0.00",
+      "active_batch_cost_exposure": "0.00",
+      "calculation_basis": "current_unfinalized",
+      "central_selling_cost": "180000.00",
+      "total_selling_cost": "180000.00",
+      "allocated_finance_cost": "0.00",
+      "allocated_tax": "0.00",
+      "total_attributed_cost": "3795840.10",
+      "management_net_position": "-211340.10",
+      "management_net_margin_percent": "-5.90",
+      "actual_result_basis": "actual_to_date",
+      "result_interpretation": "Final actual result for the completed batch.",
+      "forecast_revenue_at_completion": "3584500.00",
+      "forecast_cost_at_completion": "3795840.10",
+      "forecast_final_profit": "-211340.10",
+      "forecast_available": true,
+      "forecast_missing_inputs": [],
+      "forecast_actual_revenue": "3584500.00",
+      "forecast_estimated_future_revenue": "0.00",
+      "forecast_costs_incurred": "3795840.10",
+      "forecast_estimated_remaining_cost": "0.00",
+      "forecast_expected_birds_sold": 0,
+      "forecast_assumptions": {
+        "selling_price": null,
+        "remaining_bird_mortality_percent": null,
+        "remaining_feed_cost": null,
+        "remaining_other_and_shared_cost": null,
+        "estimated_at": "2026-09-18"
+      },
+      "forecast_basis": "Completed-batch actual result; no future sales or remaining costs estimated.",
+      "allocation_trace": [
+        {
+          "source_period": 1,
+          "period_start": "2026-07-01",
+          "period_end": "2026-07-31",
+          "administration_driver": "bird_days",
+          "administration_numerator": "4679.0000",
+          "administration_denominator": "4679.0000",
+          "administration_percentage": "100.0000",
+          "selling_finance_tax_driver": "bird_days_fallback",
+          "selling_numerator": "4679.0000",
+          "selling_denominator": "4679.0000",
+          "selling_percentage": "100.0000",
+          "calculation_version": "management-allocation-v2"
+        },
+        {
+          "source_period": 2,
+          "period_start": "2026-08-01",
+          "period_end": "2026-08-31",
+          "administration_driver": "bird_days",
+          "administration_numerator": "4405.0000",
+          "administration_denominator": "10771.0000",
+          "administration_percentage": "40.8969",
+          "selling_finance_tax_driver": "revenue_share",
+          "selling_numerator": "3508500.00",
+          "selling_denominator": "3508500.00",
+          "selling_percentage": "100.0000",
+          "calculation_version": "management-allocation-v2"
+        },
+        {
+          "source_period": 3,
+          "period_start": "2026-09-01",
+          "period_end": "2026-09-30",
+          "administration_driver": "bird_days",
+          "administration_numerator": "6.0000",
+          "administration_denominator": "6801.5000",
+          "administration_percentage": "0.0882",
+          "selling_finance_tax_driver": "revenue_share",
+          "selling_numerator": "76000.00",
+          "selling_denominator": "1338500.00",
+          "selling_percentage": "5.6780",
+          "calculation_version": "management-allocation-v2"
+        }
+      ],
+      "management_cost_breakdown": [
+        {
+          "key": "direct_batch",
+          "label": "Direct batch costs",
+          "amount": "3335200.00",
+          "basis": "Directly recorded against this batch"
+        },
+        {
+          "key": "production_overhead",
+          "label": "Allocated production overhead",
+          "amount": "204555.80",
+          "basis": "Stored production allocations",
+          "components": [
+            {
+              "label": "Production asset depreciation",
+              "amount": "667.03"
+            },
+            {
+              "label": "Production payroll (salary expenditure recognized once)",
+              "amount": "177530.03"
+            },
+            {
+              "label": "Labour, consumables and shared production",
+              "amount": "26358.74"
+            }
+          ]
+        },
+        {
+          "key": "selling",
+          "label": "Selling and distribution",
+          "amount": "180000.00",
+          "basis": "Direct allocations plus period revenue share",
+          "components": [
+            {
+              "label": "Direct and stored selling allocations",
+              "amount": "0.00"
+            },
+            {
+              "label": "Selling payroll (salary expenditure recognized once)",
+              "amount": "180000.00"
+            },
+            {
+              "label": "Selling asset depreciation",
+              "amount": "0.00"
+            }
+          ]
+        },
+        {
+          "key": "administration",
+          "label": "Farm administration",
+          "amount": "76084.30",
+          "basis": "Period bird-day share",
+          "components": [
+            {
+              "label": "Administration payroll (salary expenditure recognized once)",
+              "amount": "76084.30"
+            },
+            {
+              "label": "Administration labour",
+              "amount": "0.00"
+            },
+            {
+              "label": "Administration consumables",
+              "amount": "0.00"
+            },
+            {
+              "label": "General overhead",
+              "amount": "0.00"
+            },
+            {
+              "label": "Administration asset depreciation",
+              "amount": "0.00"
+            }
+          ]
+        },
+        {
+          "key": "finance",
+          "label": "Finance costs",
+          "amount": "0.00",
+          "basis": "Period revenue share"
+        },
+        {
+          "key": "tax",
+          "label": "Recorded tax",
+          "amount": "0.00",
+          "basis": "Period revenue share"
+        }
+      ]
+    }
+  ],
+  "warnings": [
+    {
+      "code": "lifecycle_management_cost_basis",
+      "severity": "info",
+      "message": "Lifecycle management-cost view: active batches remain provisional; closed batches become final when their accounting period is closed.",
+      "solution": "Use active-batch figures for operational decisions only. Recalculate and close the accounting period before treating a closed batch result as final.",
+      "action_label": "Review accounting periods",
+      "action_href": "/finance/payroll#period-actions"
+    },
+    {
+      "code": "central_costs_attributed",
+      "severity": "info",
+      "message": "The management net position attributes central administration by bird-days and selling, finance costs, and tax by period revenue share.",
+      "solution": "Use the detailed cost bridge to review each attribution. Correct source payroll, expense, asset, finance-cost, or tax entries in their finance register.",
+      "action_label": "Review monthly source records",
+      "action_href": "/finance/monthly"
+    },
+    {
+      "code": "management_allocation_not_ledger_posting",
+      "severity": "info",
+      "message": "Management overhead attribution is a reporting view; it does not create or change accounting ledger allocation records.",
+      "solution": "Treat these shares as management analysis. Use the expenditure and payroll registers when an accounting allocation itself must be corrected.",
+      "action_label": "Review expenditures",
+      "action_href": "/finance/expenditures"
+    },
+    {
+      "code": "ias_41_fair_value_not_recorded",
+      "severity": "info",
+      "message": "Living-bird fair value is not recorded; this report is not an IAS 41 biological-asset valuation.",
+      "solution": "Treat this as an internal management-cost report. A qualified accountant should prepare any IAS 41 fair-value adjustment outside this report until biological-asset valuation is supported in the system.",
+      "action_label": "Review monthly management report",
+      "action_href": "/finance/monthly"
+    },
+    {
+      "code": "input_cost_recognition_basis",
+      "severity": "info",
+      "message": "Poultry InputCosts are recognized as batch costs when entered; unused feed or medicine is deferred only when purchased and issued through finance consumable lots.",
+      "solution": "Purchase shared feed and medicine as consumable lots and issue them to batches as used when inventory deferral and stock control are required.",
+      "action_label": "Open consumable inventory",
+      "action_href": "/finance/consumables#consumable-lots"
+    },
+    {
+      "code": "cash_receipt_ledger_limitation",
+      "severity": "info",
+      "message": "Lifecycle cash collected is reconciled to the sale summary; period reports use the dated receipt ledger and sales-cohort collection measures.",
+      "solution": "Use the receivables register to review and follow up outstanding sales. Record later cash through the farm's controlled accounting process rather than changing the original sale; a dated receipt ledger is not yet available.",
+      "action_label": "Review receivables",
+      "action_href": "/finance/receivables"
+    },
+    {
+      "code": "closed_batch_snapshot_controls",
+      "severity": "info",
+      "message": "Closed batches use their stored final snapshot. Corrections require a controlled reopen or reversal workflow so finalized profit does not drift.",
+      "solution": "If a finalized figure is wrong, reopen its accounting period with a documented reason, make the correction, recalculate, and close it again.",
+      "action_label": "Review accounting periods",
+      "action_href": "/finance/payroll#period-actions"
+    },
+    {
+      "code": "pending_batch_finalization",
+      "severity": "warning",
+      "message": "A closed flock is awaiting accounting-period close and allocation reconciliation before its immutable final snapshot is created.",
+      "solution": "Review allocations for the batch's accounting period, resolve open warnings, then close the period to generate the final batch snapshot.",
+      "action_label": "Review accounting periods",
+      "action_href": "/finance/payroll#period-actions"
+    }
+  ]
+}

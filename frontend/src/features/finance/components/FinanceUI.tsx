@@ -1,5 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { getOptionalCurrentUser } from "@/features/auth/server/current-user";
+import { canAccessOwnerCapital } from "@/features/auth/utils/permissions";
 
 export type FinanceChartPoint = {
   label: string;
@@ -57,12 +59,16 @@ export function FinancePageShell({
   );
 }
 
-export function FinanceNav() {
+export async function FinanceNav() {
+  const user = await getOptionalCurrentUser();
   const links = [
     ["Overview", "/finance"],
     ["Sales & Receivables", "/finance/receivables"],
     ["Purchases & Payables", "/finance/expenditures"],
     ["Funding & Use", "/finance/revenue-usage"],
+    ...(canAccessOwnerCapital(user)
+      ? [["Owner Capital", "/finance/owner-capital"]]
+      : []),
     ["People & Payroll", "/finance/payroll"],
     ["Inventory", "/finance/consumables"],
     ["Assets", "/finance/assets"],

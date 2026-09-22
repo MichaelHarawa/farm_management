@@ -728,6 +728,9 @@ export type FundingSource = {
   available_balance?: DecimalString | null;
   display_name: string;
   batch_code: string | null;
+  owner: number | null;
+  owner_public_id: string | null;
+  owner_name: string | null;
 };
 
 export type PaginatedFundingSources = {
@@ -773,6 +776,10 @@ export type BatchFundingMix = {
   other_batch_sales_percent: DecimalString | null;
   other_sources: DecimalString;
   other_sources_percent: DecimalString | null;
+  owner_capital: DecimalString;
+  owner_capital_percent: DecimalString | null;
+  non_owner_sources: DecimalString;
+  non_owner_sources_percent: DecimalString | null;
   basis: string;
   transaction_page?: {
     count: number;
@@ -812,4 +819,131 @@ export type BatchFundingMix = {
     source_batch_code: string | null;
     allocation_date: string;
   }>;
+};
+
+export type OwnerContributor = {
+  id: number;
+  public_id: string;
+  display_name: string;
+  notes: string;
+  is_active: boolean;
+  created_by: number | null;
+  created_by_name: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type OwnerDesignation = {
+  id: number;
+  batch_id: number;
+  batch_code: string;
+  amount: DecimalString;
+  designation_date: string;
+  current_status: "posted" | "reversed";
+  reversed_at: string | null;
+  reversal_reason: string;
+};
+
+export type OwnerContributionReceipt = {
+  id: number;
+  owner_id: number | null;
+  owner_name: string;
+  funding_source_id: number;
+  source_description: string;
+  amount: DecimalString;
+  receipt_date: string;
+  reference: string;
+  notes: string;
+  current_status: "posted" | "reversed";
+  reversed_at: string | null;
+  reversal_reason: string;
+  designated_as_of: DecimalString;
+  unassigned_as_of: DecimalString;
+  designations: OwnerDesignation[];
+};
+
+export type OwnerCapitalPage = {
+  count: number;
+  page: number;
+  page_size: number;
+  pages: number;
+  next: number | null;
+  previous: number | null;
+};
+
+export type OwnerContributionReport = {
+  currency: "MWK";
+  basis: string;
+  date_from: string | null;
+  date_to: string;
+  owner_filter: number | "unknown" | null;
+  batch_filter: number[];
+  summary: {
+    opening_cash_balance: DecimalString;
+    cash_introduced_in_period: DecimalString;
+    cash_used_in_period: DecimalString;
+    closing_cash_balance: DecimalString;
+    cash_introduced_to_date: DecimalString;
+    cash_used_to_date: DecimalString;
+    capital_returns_in_period: DecimalString;
+    capital_returns_to_date: DecimalString;
+    net_contributed_capital: DecimalString;
+    designated_to_batches_as_of: DecimalString;
+    unassigned_contributions_as_of: DecimalString;
+    farm_wide_use_in_period: DecimalString;
+    farm_wide_use_to_date: DecimalString;
+    owner_drawings_to_date: DecimalString;
+    owner_compensation_to_date: DecimalString;
+    profit_distributions_to_date: DecimalString;
+    unknown_owner_receipt_count: number;
+    unknown_owner_receipt_amount: DecimalString;
+  };
+  owners: Array<{
+    owner_id: number | null;
+    owner_public_id: string | null;
+    owner_name: string;
+    cash_introduced_to_date: DecimalString;
+    cash_used_to_date: DecimalString;
+    capital_returns_to_date: DecimalString;
+    net_contributed_capital: DecimalString;
+    remaining_cash: DecimalString;
+    designated_as_of: DecimalString;
+  }>;
+  selected_batch_summary: {
+    batch_count: number;
+    designated_as_of: DecimalString;
+    owner_cash_spent_in_period: DecimalString;
+    owner_cash_spent_to_date: DecimalString;
+  };
+  batches: Array<{
+    batch_id: number;
+    batch_code: string;
+    designated_as_of: DecimalString;
+    owner_cash_spent_to_date: DecimalString;
+    owner_cash_spent_in_period: DecimalString;
+    owners: number[];
+    has_unknown_owner: boolean;
+  }>;
+  receipts: OwnerContributionReceipt[];
+  timeline: Array<{
+    date: string;
+    event_type: string;
+    reference: string;
+    description: string;
+    owner_id: number | null;
+    owner_name: string;
+    inflow: DecimalString;
+    outflow: DecimalString;
+    capital_movement: DecimalString;
+    running_cash_balance: DecimalString;
+    running_net_contributed_capital: DecimalString;
+    source_href: string | null;
+  }>;
+  batch_page: OwnerCapitalPage;
+  receipt_page: OwnerCapitalPage;
+  timeline_page: OwnerCapitalPage;
+  timeline_opening_cash_balance: DecimalString;
+  timeline_opening_net_contributed_capital: DecimalString;
+  timeline_closing_cash_balance: DecimalString;
+  timeline_closing_net_contributed_capital: DecimalString;
 };

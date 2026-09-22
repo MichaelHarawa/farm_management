@@ -64,11 +64,12 @@ export default function BatchRevenueUsageDetailPage() {
       <section className="mt-8 rounded-xl border border-[var(--line)] bg-white p-5">
         <p className="finance-eyebrow">Cost-bearing view</p>
         <h2 className="mt-2 text-2xl font-extrabold">Sources used to pay {fundingMix.batch_code}&apos;s expenditures</h2>
-        <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
           <Metric label="Batch expenditure" value={formatCurrency(fundingMix.total_batch_expenditure)} detail={`${formatPercent(fundingMix.funding_coverage_percent)} payment source traced`} />
           <Metric label="Own batch sales" value={formatCurrency(fundingMix.own_batch_sales)} detail={formatPercent(fundingMix.own_batch_sales_percent)} />
           <Metric label="Other batch sales" value={formatCurrency(fundingMix.other_batch_sales)} detail={formatPercent(fundingMix.other_batch_sales_percent)} />
-          <Metric label="Other sources" value={formatCurrency(fundingMix.other_sources)} detail={formatPercent(fundingMix.other_sources_percent)} />
+          <Metric label="Owner capital" value={formatCurrency(fundingMix.owner_capital)} detail={formatPercent(fundingMix.owner_capital_percent)} />
+          <Metric label="Other non-sales funds" value={formatCurrency(fundingMix.non_owner_sources)} detail={formatPercent(fundingMix.non_owner_sources_percent)} />
           <Metric label="Unpaid / unassigned" value={formatCurrency(fundingMix.unpaid_or_unassigned)} detail="Cost not yet linked to a payment source" />
         </div>
         <p className="mt-5 rounded-lg bg-[#f6f3eb] p-4 text-sm leading-6 text-[var(--navy-muted)]">{fundingMix.basis}</p>

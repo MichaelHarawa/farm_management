@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
 from django.db import transaction
@@ -9,7 +9,7 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -42,7 +42,11 @@ from .models import (
     FundingAllocation,
     FundingReceipt,
     FundingReceiptStatus,
+    FundingClassification,
     FundingSourceType,
+    FinanceActionEvent,
+    OwnerContributor,
+    OwnerReceiptDesignation,
     SalePayment,
     PayrollEntry,
     PayrollPayment,
@@ -54,7 +58,11 @@ from .models import (
     InventoryLocation,
     AssetLifecycleEvent,
 )
-from .permissions import FinancePermission
+from .permissions import (
+    FinancePermission,
+    OwnerCapitalPermission,
+    has_owner_capital_access,
+)
 from .serializers import (
     AccountingPeriodSerializer,
     AdHocLabourPaymentSerializer,
@@ -78,6 +86,11 @@ from .serializers import (
     SharedExpenseSerializer,
     SharedConsumableLotSerializer,
     FundingReceiptSerializer,
+    FinanceActionEventSerializer,
+    OwnerContributionCommandSerializer,
+    OwnerContributorSerializer,
+    OwnerDesignationCommandSerializer,
+    OwnerReceiptDesignationSerializer,
     RecordSalePaymentSerializer,
     SalePaymentSerializer,
     StockMovementSerializer,
@@ -118,6 +131,15 @@ from .services.expenditures import (
     reconciliation_summary,
     project_shared_expense,
     reverse_expenditure,
+)
+from .services.action_audit import record_finance_action
+from .services.funding_attribution import expenditure_payment_beneficiary_shares
+from .services.owner_capital import (
+    add_owner_designations,
+    owner_contribution_report,
+    record_owner_contribution,
+    reverse_funding_receipt,
+    reverse_owner_designation,
 )
 
 
@@ -1007,6 +1029,213 @@ class FinanceRegisterPagination(PageNumberPagination):
     max_page_size = 100
 
 
+class OwnerContributorViewSet(
+    mixins.CreateModelMixin,
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.UpdateModelMixin,
+    viewsets.GenericViewSet,
+):
+    serializer_class = OwnerContributorSerializer
+    permission_classes = (OwnerCapitalPermission,)
+    pagination_class = FinanceRegisterPagination
+    queryset = OwnerContributor.objects.select_related("created_by").all()
+    search_fields = ["display_name", "notes"]
+    filterset_fields = ["is_active"]
+
+    def perform_create(self, serializer):
+        owner = serializer.save(created_by=self.request.user)
+        record_finance_action(
+            actor=self.request.user,
+            action="owner_contributor_created",
+            entity_type="finance.OwnerContributor",
+            entity_id=owner.pk,
+            after_data={
+                "public_id": owner.public_id,
+                "display_name": owner.display_name,
+                "is_active": owner.is_active,
+            },
+        )
+
+    def perform_update(self, serializer):
+        current = self.get_object()
+        before = {
+            "display_name": current.display_name,
+            "notes": current.notes,
+            "is_active": current.is_active,
+        }
+        owner = serializer.save()
+        record_finance_action(
+            actor=self.request.user,
+            action="owner_contributor_updated",
+            entity_type="finance.OwnerContributor",
+            entity_id=owner.pk,
+            before_data=before,
+            after_data={
+                "display_name": owner.display_name,
+                "notes": owner.notes,
+                "is_active": owner.is_active,
+            },
+        )
+
+
+class OwnerReceiptDesignationViewSet(viewsets.ReadOnlyModelViewSet):
+    serializer_class = OwnerReceiptDesignationSerializer
+    permission_classes = (OwnerCapitalPermission,)
+    pagination_class = FinanceRegisterPagination
+    queryset = OwnerReceiptDesignation.objects.select_related(
+        "receipt__funding_source__owner", "batch", "created_by", "reversed_by"
+    ).all()
+    filterset_fields = ["receipt", "batch", "status", "designation_date"]
+
+    @action(detail=False, methods=["post"], url_path="for-receipt/(?P<receipt_id>[^/.]+)")
+    def for_receipt(self, request, receipt_id=None):
+        get_object_or_404(FundingReceipt, pk=receipt_id)
+        serializer = OwnerDesignationCommandSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        rows = add_owner_designations(
+            receipt_id=int(receipt_id),
+            designation_date=serializer.validated_data["designation_date"],
+            designations=serializer.validated_data["designations"],
+            user=request.user,
+        )
+        return Response(
+            self.get_serializer(rows, many=True).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    @action(detail=True, methods=["post"])
+    def reverse(self, request, pk=None):
+        self.get_object()
+        row = reverse_owner_designation(
+            designation_id=int(pk),
+            reason=request.data.get("reason", ""),
+            user=request.user,
+        )
+        return Response(self.get_serializer(row).data)
+
+
+class FinanceActionEventViewSet(viewsets.ReadOnlyModelViewSet):
+    serializer_class = FinanceActionEventSerializer
+    permission_classes = (OwnerCapitalPermission,)
+    pagination_class = FinanceRegisterPagination
+    queryset = FinanceActionEvent.objects.select_related("actor").all()
+    filterset_fields = ["action", "entity_type", "entity_id", "actor"]
+
+
+class OwnerContributionView(APIView):
+    permission_classes = (OwnerCapitalPermission,)
+
+    def post(self, request):
+        serializer = OwnerContributionCommandSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        receipt, created = record_owner_contribution(
+            owner_id=data["owner"].pk,
+            funding_source_id=(data.get("funding_source").pk if data.get("funding_source") else None),
+            source_description=data.get("source_description", ""),
+            amount=data["amount"],
+            receipt_date=data["receipt_date"],
+            reference=data.get("reference", ""),
+            notes=data.get("notes", ""),
+            designation_date=data.get("designation_date"),
+            designations=data.get("designations", []),
+            idempotency_key=data["idempotency_key"],
+            user=request.user,
+        )
+        receipt = FundingReceipt.objects.select_related(
+            "funding_source__owner", "created_by", "reversed_by"
+        ).get(pk=receipt.pk)
+        return Response(
+            FundingReceiptSerializer(receipt, context={"request": request}).data,
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
+
+
+def _parse_report_date(value, field_name):
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        raise ValidationError({field_name: "Use YYYY-MM-DD."})
+
+
+def _nested_page(rows, request, *, prefix: str, default_size=20):
+    try:
+        page = max(int(request.query_params.get(f"{prefix}_page", 1)), 1)
+        size = min(
+            max(int(request.query_params.get(f"{prefix}_page_size", default_size)), 1),
+            100,
+        )
+    except (TypeError, ValueError):
+        raise ValidationError({f"{prefix}_page": "Page values must be positive integers."})
+    count = len(rows)
+    pages = max((count + size - 1) // size, 1)
+    page = min(page, pages)
+    start = (page - 1) * size
+    return rows[start:start + size], {
+        "count": count,
+        "page": page,
+        "page_size": size,
+        "pages": pages,
+        "next": page + 1 if page < pages else None,
+        "previous": page - 1 if page > 1 else None,
+    }
+
+
+class OwnerContributionReportView(APIView):
+    permission_classes = (OwnerCapitalPermission,)
+
+    def get(self, request):
+        owner_value = request.query_params.get("owner", "").strip()
+        unknown_owner = owner_value == "unknown"
+        owner_id = None
+        if owner_value and not unknown_owner:
+            try:
+                owner_id = int(owner_value)
+            except ValueError:
+                raise ValidationError({"owner": "Select a valid owner."})
+        batch_values = [
+            value.strip()
+            for raw in request.query_params.getlist("batch")
+            for value in raw.split(",")
+            if value.strip()
+        ]
+        try:
+            batch_ids = {int(value) for value in batch_values}
+        except ValueError:
+            raise ValidationError({"batch": "Select valid poultry batches."})
+        filters = {
+            "date_from": _parse_report_date(request.query_params.get("date_from"), "date_from"),
+            "date_to": _parse_report_date(request.query_params.get("date_to"), "date_to"),
+            "owner_id": owner_id,
+            "unknown_owner": unknown_owner,
+            "batch_ids": batch_ids,
+        }
+        report = owner_contribution_report(**filters)
+        is_export = request.query_params.get("export") == "1"
+        if not is_export:
+            for key, prefix in (("batches", "batch"), ("receipts", "receipt"), ("timeline", "timeline")):
+                report[key], report[f"{prefix}_page"] = _nested_page(
+                    report[key], request, prefix=prefix
+                )
+        record_finance_action(
+            actor=request.user,
+            action="owner_contribution_report_viewed",
+            entity_type="finance.OwnerContributionReport",
+            after_data={
+                "date_from": filters["date_from"],
+                "date_to": filters["date_to"],
+                "owner_id": owner_id,
+                "unknown_owner": unknown_owner,
+                "batch_ids": sorted(batch_ids),
+                "full_filtered_export": is_export,
+            },
+        )
+        return Response(json_safe(report))
+
+
 class ExpenditureViewSet(viewsets.ModelViewSet):
     """
     CRUD + Post action for expenditures.
@@ -1027,6 +1256,62 @@ class ExpenditureViewSet(viewsets.ModelViewSet):
     ]
     search_fields = ["description", "payee", "expenditure_reference", "external_reference"]
     pagination_class = ExpenditurePagination
+
+    def _enforce_owner_payment_access(self, rows):
+        rows = rows or []
+        owner_only = {
+            FundingClassification.OWNER_CAPITAL_RETURN,
+            FundingClassification.OWNER_DRAWING,
+            FundingClassification.OWNER_COMPENSATION,
+            FundingClassification.OWNER_DISTRIBUTION,
+        }
+        sensitive = [row for row in rows if row.get("classification") in owner_only]
+        all_source_ids = [row.get("funding_source") for row in rows]
+        uses_owner_cash = FundingSource.objects.filter(
+            pk__in=all_source_ids,
+            source_type=FundingSourceType.OWNER_CAPITAL,
+        ).exists()
+        if uses_owner_cash and not has_owner_capital_access(self.request.user):
+            raise PermissionDenied(
+                "Only administrators and directors can assign owner-capital cash."
+            )
+        if not sensitive:
+            return
+        if not has_owner_capital_access(self.request.user):
+            raise PermissionDenied(
+                "Only administrators and directors can classify owner payments."
+            )
+        source_ids = [row.get("funding_source") for row in sensitive]
+        if FundingSource.objects.filter(pk__in=source_ids).exclude(
+            source_type=FundingSourceType.OWNER_CAPITAL
+        ).exists():
+            raise ValidationError(
+                {"funding_allocations": "Owner payment classifications require an owner-capital source."}
+            )
+
+    def _audit_owner_payment(self, expenditure, action_name):
+        owner_only = {
+            FundingClassification.OWNER_CAPITAL_RETURN,
+            FundingClassification.OWNER_DRAWING,
+            FundingClassification.OWNER_COMPENSATION,
+            FundingClassification.OWNER_DISTRIBUTION,
+        }
+        rows = list(
+            expenditure.funding_allocations.filter(
+                classification__in=owner_only
+            ).values("id", "funding_source_id", "amount", "classification", "allocation_date")
+        )
+        if rows:
+            record_finance_action(
+                actor=self.request.user,
+                action=action_name,
+                entity_type="finance.Expenditure",
+                entity_id=expenditure.pk,
+                after_data={
+                    "expenditure_reference": expenditure.expenditure_reference,
+                    "owner_payment_rows": rows,
+                },
+            )
 
     def get_queryset(self):
         queryset = super().get_queryset()
@@ -1071,6 +1356,14 @@ class ExpenditureViewSet(viewsets.ModelViewSet):
         batch available cash. Supports passing funding_allocations in the body.
         """
         funding_data = request.data.get("funding_allocations") if "funding_allocations" in request.data else None
+        rows_to_check = funding_data
+        if rows_to_check is None:
+            rows_to_check = list(
+                self.get_object().funding_allocations.values(
+                    "funding_source", "classification"
+                )
+            )
+        self._enforce_owner_payment_access(rows_to_check)
         cost_data = request.data.get("cost_allocations")
         allow_unpaid = request.data.get("payment_status") in {"credit", "unpaid", "partial"}
         expenditure = post_expenditure(
@@ -1080,20 +1373,28 @@ class ExpenditureViewSet(viewsets.ModelViewSet):
             cost_rows=cost_data,
             allow_unpaid=allow_unpaid,
         )
+        self._audit_owner_payment(expenditure, "owner_payment_posted")
         return Response(ExpenditureSerializer(expenditure).data)
 
     @action(detail=True, methods=["post"])
     def void(self, request, pk=None):
+        current = self.get_object()
+        current_rows = list(
+            current.funding_allocations.values("funding_source", "classification")
+        )
+        self._enforce_owner_payment_access(current_rows)
         expenditure = reverse_expenditure(
             expenditure_id=pk,
             reason=request.data.get("reason"),
             user=request.user,
         )
+        self._audit_owner_payment(current, "owner_payment_reversed")
         return Response(ExpenditureSerializer(expenditure).data)
 
     @action(detail=True, methods=["post"], url_path="assign-funding")
     def assign_funding(self, request, pk=None):
         """Controlled reconciliation for historical posted, wholly unfunded rows."""
+        self._enforce_owner_payment_access(request.data.get("funding_allocations", []))
         expenditure = record_expenditure_payment(
             expenditure_id=pk,
             funding_rows=request.data.get("funding_allocations", []) or [],
@@ -1101,10 +1402,12 @@ class ExpenditureViewSet(viewsets.ModelViewSet):
             payment_date=request.data.get("payment_date"),
             user=request.user,
         )
+        self._audit_owner_payment(expenditure, "owner_payment_recorded")
         return Response(ExpenditureSerializer(expenditure).data)
 
     @action(detail=True, methods=["post"], url_path="record-payment")
     def record_payment(self, request, pk=None):
+        self._enforce_owner_payment_access(request.data.get("funding_allocations", []))
         expenditure = record_expenditure_payment(
             expenditure_id=pk,
             funding_rows=request.data.get("funding_allocations", []) or [],
@@ -1112,6 +1415,7 @@ class ExpenditureViewSet(viewsets.ModelViewSet):
             payment_date=request.data.get("payment_date"),
             user=request.user,
         )
+        self._audit_owner_payment(expenditure, "owner_payment_recorded")
         return Response(ExpenditureSerializer(expenditure).data)
 
     @action(detail=False, methods=["get"], url_path="reconciliation-report")
@@ -1128,9 +1432,60 @@ class ExpenditureViewSet(viewsets.ModelViewSet):
 
 
 class FundingSourceViewSet(viewsets.ModelViewSet):
-    queryset = FundingSource.objects.select_related("batch").all()
+    queryset = FundingSource.objects.select_related("batch", "owner").all()
     serializer_class = FundingSourceSerializer
     permission_classes = (FinancePermission,)
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        if not has_owner_capital_access(self.request.user):
+            queryset = queryset.exclude(source_type=FundingSourceType.OWNER_CAPITAL)
+        return queryset
+
+    def _protect_owner_write(self, source_type):
+        if (
+            source_type == FundingSourceType.OWNER_CAPITAL
+            and not has_owner_capital_access(self.request.user)
+        ):
+            raise PermissionDenied("Only administrators and directors can manage owner capital.")
+
+    def perform_create(self, serializer):
+        source_type = serializer.validated_data.get("source_type")
+        self._protect_owner_write(source_type)
+        source = serializer.save()
+        if source_type == FundingSourceType.OWNER_CAPITAL:
+            record_finance_action(
+                actor=self.request.user,
+                action="owner_funding_source_created",
+                entity_type="finance.FundingSource",
+                entity_id=source.pk,
+                after_data={"owner_id": source.owner_id, "description": source.description},
+            )
+
+    def perform_update(self, serializer):
+        current = self.get_object()
+        requested_type = serializer.validated_data.get("source_type", current.source_type)
+        self._protect_owner_write(current.source_type)
+        self._protect_owner_write(requested_type)
+        before = {
+            "owner_id": current.owner_id,
+            "description": current.description,
+            "is_active": current.is_active,
+        }
+        source = serializer.save()
+        if current.source_type == FundingSourceType.OWNER_CAPITAL or requested_type == FundingSourceType.OWNER_CAPITAL:
+            record_finance_action(
+                actor=self.request.user,
+                action="owner_funding_source_updated",
+                entity_type="finance.FundingSource",
+                entity_id=source.pk,
+                before_data=before,
+                after_data={
+                    "owner_id": source.owner_id,
+                    "description": source.description,
+                    "is_active": source.is_active,
+                },
+            )
 
     def list(self, request, *args, **kwargs):
         queryset = self.get_queryset().filter(is_active=True)
@@ -1196,10 +1551,20 @@ class FundingReceiptViewSet(
     mixins.RetrieveModelMixin,
     viewsets.GenericViewSet,
 ):
-    queryset = FundingReceipt.objects.all().select_related("funding_source")
+    queryset = FundingReceipt.objects.all().select_related(
+        "funding_source__owner", "created_by", "reversed_by"
+    )
     serializer_class = FundingReceiptSerializer
     permission_classes = (FinancePermission,)
     filterset_fields = ["funding_source", "status"]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        if not has_owner_capital_access(self.request.user):
+            queryset = queryset.exclude(
+                funding_source__source_type=FundingSourceType.OWNER_CAPITAL
+            )
+        return queryset
 
     def perform_create(self, serializer):
         source = serializer.validated_data["funding_source"]
@@ -1207,37 +1572,38 @@ class FundingReceiptViewSet(
             raise ValidationError(
                 {"funding_source": "Batch collection balances come from sale payments."}
             )
+        if source.source_type == FundingSourceType.OWNER_CAPITAL:
+            if not has_owner_capital_access(self.request.user):
+                raise PermissionDenied("Only administrators and directors can record owner capital.")
+            if source.owner_id is None:
+                raise ValidationError(
+                    {"funding_source": "New owner-capital receipts require a named owner."}
+                )
+            raise ValidationError(
+                {
+                    "funding_source": (
+                        "Record owner capital through the owner-contributions workflow "
+                        "so identity, idempotency, designations, and audit history remain complete."
+                    )
+                }
+            )
         serializer.save(created_by=self.request.user)
 
     @action(detail=True, methods=["post"])
     def reverse(self, request, pk=None):
-        reason = (request.data.get("reason") or "").strip()
-        if not reason:
-            raise ValidationError({"reason": "A reversal reason is required."})
-        with transaction.atomic():
-            receipt = FundingReceipt.objects.select_for_update().select_related(
-                "funding_source"
-            ).get(pk=pk)
-            if receipt.status != FundingReceiptStatus.POSTED:
-                raise ValidationError({"detail": "Only posted receipts can be reversed."})
-            source = FundingSource.objects.select_for_update().get(
-                pk=receipt.funding_source_id
-            )
-            from .services.profitability import available_funding_source_cash
-
-            if available_funding_source_cash(source) < receipt.amount:
-                raise ValidationError(
-                    {"detail": "This receipt funds posted expenditures and cannot be reversed."}
-                )
-            receipt.status = FundingReceiptStatus.REVERSED
-            receipt.reversed_at = timezone.now()
-            receipt.reversed_by = request.user
-            receipt.reversal_reason = reason
-            receipt.save(
-                update_fields=[
-                    "status", "reversed_at", "reversed_by", "reversal_reason", "updated_at"
-                ]
-            )
+        receipt = get_object_or_404(
+            FundingReceipt.objects.select_related("funding_source"), pk=pk
+        )
+        if (
+            receipt.funding_source.source_type == FundingSourceType.OWNER_CAPITAL
+            and not has_owner_capital_access(request.user)
+        ):
+            raise PermissionDenied("Only administrators and directors can reverse owner capital.")
+        receipt = reverse_funding_receipt(
+            receipt_id=int(pk),
+            reason=request.data.get("reason", ""),
+            user=request.user,
+        )
         return Response(self.get_serializer(receipt).data)
 
 
@@ -1403,16 +1769,6 @@ class CrossBatchFinancingReportView(APIView):
         flows = []
         for cost_allocation in cost_allocations:
             expenditure = cost_allocation.expenditure
-            allocated_total = sum(
-                (
-                    row.allocated_amount
-                    for row in expenditure.cost_allocations.all()
-                ),
-                Decimal("0.00"),
-            )
-            if allocated_total <= Decimal("0.00"):
-                continue
-            cost_share = cost_allocation.allocated_amount / allocated_total
             for funding in expenditure.funding_allocations.all():
                 source = funding.funding_source
                 if (
@@ -1425,15 +1781,21 @@ class CrossBatchFinancingReportView(APIView):
                     cost_allocation.batch_id
                 ) != batch_id:
                     continue
+                attribution = expenditure_payment_beneficiary_shares(
+                    expenditure, funding.amount
+                )
+                attributed_amount = attribution["allocation_shares"].get(
+                    cost_allocation.pk, Decimal("0.00")
+                )
+                if attributed_amount <= Decimal("0.00"):
+                    continue
                 flows.append(
                     {
                         "funding_batch_id": source.batch_id,
                         "funding_batch_code": source.batch.batch_id,
                         "expenditure_id": expenditure.pk,
                         "expenditure_desc": expenditure.description,
-                        "amount_funded": (
-                            funding.amount * cost_share
-                        ).quantize(Decimal("0.01")),
+                        "amount_funded": attributed_amount,
                         "allocated_to_batch_id": cost_allocation.batch_id,
                         "allocated_to_batch_code": cost_allocation.batch.batch_id,
                         "allocated_amount": cost_allocation.allocated_amount,

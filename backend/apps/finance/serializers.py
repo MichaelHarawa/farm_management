@@ -703,24 +703,125 @@ def ensure_batch_not_finalized(batch, field_name, period=None):
 from .models import (
     Expenditure,
     ExpenditureCategory,
+    FinanceActionEvent,
     FundingSource,
     FundingAllocation,
     FundingReceipt,
+    FundingClassification,
+    FundingSourceType,
+    OwnerContributor,
+    OwnerReceiptDesignation,
     SalePayment,
     AccountingNature,
 )
+from .permissions import has_owner_capital_access
+
+
+class OwnerContributorSerializer(serializers.ModelSerializer):
+    created_by_name = serializers.CharField(
+        source="created_by.get_username", read_only=True, allow_null=True
+    )
+
+    class Meta:
+        model = OwnerContributor
+        fields = [
+            "id", "public_id", "display_name", "notes", "is_active",
+            "created_by", "created_by_name", "created_at", "updated_at",
+        ]
+        read_only_fields = [
+            "public_id", "created_by", "created_by_name", "created_at", "updated_at",
+        ]
+
+
+class OwnerReceiptDesignationSerializer(serializers.ModelSerializer):
+    owner_id = serializers.IntegerField(
+        source="receipt.funding_source.owner_id", read_only=True, allow_null=True
+    )
+    owner_name = serializers.CharField(
+        source="receipt.funding_source.owner.display_name", read_only=True, allow_null=True
+    )
+    batch_code = serializers.CharField(source="batch.batch_id", read_only=True)
+    created_by_name = serializers.CharField(
+        source="created_by.get_username", read_only=True, allow_null=True
+    )
+    reversed_by_name = serializers.CharField(
+        source="reversed_by.get_username", read_only=True, allow_null=True
+    )
+
+    class Meta:
+        model = OwnerReceiptDesignation
+        fields = [
+            "id", "receipt", "owner_id", "owner_name", "batch", "batch_code",
+            "amount", "designation_date", "notes", "status", "created_by",
+            "created_by_name", "created_at", "reversed_at", "reversed_by",
+            "reversed_by_name", "reversal_reason",
+        ]
+        read_only_fields = fields
+
+
+class FinanceActionEventSerializer(serializers.ModelSerializer):
+    actor_name = serializers.CharField(source="actor.get_username", read_only=True)
+
+    class Meta:
+        model = FinanceActionEvent
+        fields = [
+            "id", "actor", "actor_name", "action", "entity_type", "entity_id",
+            "before_data", "after_data", "reason", "created_at",
+        ]
+        read_only_fields = fields
+
+
+class OwnerContributionCommandSerializer(serializers.Serializer):
+    owner = serializers.PrimaryKeyRelatedField(
+        queryset=OwnerContributor.objects.filter(is_active=True)
+    )
+    funding_source = serializers.PrimaryKeyRelatedField(
+        queryset=FundingSource.objects.filter(
+            source_type=FundingSourceType.OWNER_CAPITAL,
+            is_active=True,
+        ),
+        required=False,
+        allow_null=True,
+    )
+    source_description = serializers.CharField(required=False, allow_blank=True, default="")
+    amount = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=Decimal("0.01"))
+    receipt_date = serializers.DateField()
+    reference = serializers.CharField(required=False, allow_blank=True, default="")
+    notes = serializers.CharField(required=False, allow_blank=True, default="")
+    idempotency_key = serializers.CharField(max_length=120)
+    designation_date = serializers.DateField(required=False)
+    designations = serializers.ListField(
+        child=serializers.DictField(), required=False, default=list
+    )
+
+    def validate(self, attrs):
+        source = attrs.get("funding_source")
+        owner = attrs["owner"]
+        if source and source.owner_id != owner.pk:
+            raise serializers.ValidationError(
+                {"funding_source": "The selected source belongs to a different owner."}
+            )
+        return attrs
+
+
+class OwnerDesignationCommandSerializer(serializers.Serializer):
+    designation_date = serializers.DateField()
+    designations = serializers.ListField(child=serializers.DictField(), allow_empty=False)
 
 
 class FundingSourceSerializer(serializers.ModelSerializer):
     available_balance = serializers.SerializerMethodField()
     display_name = serializers.CharField(source="__str__", read_only=True)
     batch_code = serializers.CharField(source="batch.batch_id", read_only=True, allow_null=True)
+    owner_public_id = serializers.SerializerMethodField()
+    owner_name = serializers.SerializerMethodField()
 
     class Meta:
         model = FundingSource
         fields = [
-            "id", "source_type", "batch", "description", "notes", "is_active",
-            "created_at", "updated_at", "available_balance", "display_name", "batch_code",
+            "id", "source_type", "batch", "owner", "owner_public_id", "owner_name",
+            "description", "notes", "is_active", "created_at", "updated_at",
+            "available_balance", "display_name", "batch_code",
         ]
         read_only_fields = ["created_at", "updated_at", "available_balance"]
 
@@ -731,9 +832,26 @@ class FundingSourceSerializer(serializers.ModelSerializer):
         from .services.profitability import available_funding_source_cash
         return str(available_funding_source_cash(obj))
 
+    def _may_view_owner(self):
+        request = self.context.get("request")
+        return has_owner_capital_access(getattr(request, "user", None))
+
+    def get_owner_public_id(self, obj):
+        return str(obj.owner.public_id) if obj.owner_id and self._may_view_owner() else None
+
+    def get_owner_name(self, obj):
+        return obj.owner.display_name if obj.owner_id and self._may_view_owner() else None
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if not self._may_view_owner():
+            data["owner"] = None
+        return data
+
     def validate(self, attrs):
         source_type = attrs.get("source_type", getattr(self.instance, "source_type", None))
         batch = attrs.get("batch", getattr(self.instance, "batch", None))
+        owner = attrs.get("owner", getattr(self.instance, "owner", None))
         if self.instance is None and source_type == "batch_collection":
             raise serializers.ValidationError(
                 {"source_type": "Batch collection sources are created automatically from posted sale payments."}
@@ -742,21 +860,57 @@ class FundingSourceSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {"batch": "Only batch collection sources can reference a poultry batch."}
             )
+        if owner is not None and source_type != FundingSourceType.OWNER_CAPITAL:
+            raise serializers.ValidationError(
+                {"owner": "Only owner-capital sources can reference an owner."}
+            )
+        if source_type == FundingSourceType.OWNER_CAPITAL and owner is not None and not owner.is_active:
+            raise serializers.ValidationError({"owner": "Select an active owner."})
+        if self.instance is None and source_type == FundingSourceType.OWNER_CAPITAL and owner is None:
+            raise serializers.ValidationError(
+                {"owner": "New owner-capital sources require a named owner."}
+            )
         return attrs
 
 
 class FundingReceiptSerializer(serializers.ModelSerializer):
+    source_type = serializers.CharField(source="funding_source.source_type", read_only=True)
+    source_display = serializers.CharField(source="funding_source.__str__", read_only=True)
+    owner_id = serializers.SerializerMethodField()
+    owner_name = serializers.SerializerMethodField()
+    created_by_name = serializers.CharField(
+        source="created_by.get_username", read_only=True, allow_null=True
+    )
+    reversed_by_name = serializers.CharField(
+        source="reversed_by.get_username", read_only=True, allow_null=True
+    )
+
     class Meta:
         model = FundingReceipt
         fields = [
-            "id", "funding_source", "amount", "receipt_date", "reference",
-            "notes", "status", "created_by", "created_at", "reversed_at",
-            "reversed_by", "reversal_reason",
+            "id", "funding_source", "source_type", "source_display", "owner_id",
+            "owner_name", "amount", "receipt_date", "reference", "notes", "status",
+            "created_by", "created_by_name", "created_at", "reversed_at",
+            "reversed_by", "reversed_by_name", "reversal_reason", "idempotency_key",
         ]
         read_only_fields = [
             "status", "created_by", "created_at", "reversed_at", "reversed_by",
-            "reversal_reason",
+            "reversal_reason", "idempotency_key",
         ]
+
+    def _owner(self, obj):
+        request = self.context.get("request")
+        if not has_owner_capital_access(getattr(request, "user", None)):
+            return None
+        return obj.funding_source.owner
+
+    def get_owner_id(self, obj):
+        owner = self._owner(obj)
+        return owner.pk if owner else None
+
+    def get_owner_name(self, obj):
+        owner = self._owner(obj)
+        return owner.display_name if owner else None
 
 
 class ExpenditureSerializer(serializers.ModelSerializer):
@@ -904,6 +1058,72 @@ class ExpenditureSerializer(serializers.ModelSerializer):
             if not attrs.get("other_nature_detail") and self.instance and self.instance.status == "posted":
                 raise serializers.ValidationError(
                     {"other_nature_detail": "Details required when nature is Other."}
+                )
+        owner_only = {
+            FundingClassification.OWNER_CAPITAL_RETURN,
+            FundingClassification.OWNER_DRAWING,
+            FundingClassification.OWNER_COMPENSATION,
+            FundingClassification.OWNER_DISTRIBUTION,
+        }
+        funding_rows = attrs.get("funding_allocations_input") or []
+        request = self.context.get("request")
+        all_source_ids = [row.get("funding_source") for row in funding_rows]
+        uses_owner_cash = FundingSource.objects.filter(
+            pk__in=all_source_ids,
+            source_type=FundingSourceType.OWNER_CAPITAL,
+        ).exists()
+        if uses_owner_cash and not has_owner_capital_access(
+            getattr(request, "user", None)
+        ):
+            raise serializers.ValidationError(
+                {"funding_allocations_input": "Only administrators and directors can assign owner-capital cash."}
+            )
+        if any(row.get("classification") in owner_only for row in funding_rows):
+            if not has_owner_capital_access(getattr(request, "user", None)):
+                raise serializers.ValidationError(
+                    {"funding_allocations_input": "Only administrators and directors can classify owner payments."}
+                )
+            source_ids = [
+                row.get("funding_source")
+                for row in funding_rows
+                if row.get("classification") in owner_only
+            ]
+            non_owner_sources = FundingSource.objects.filter(
+                pk__in=source_ids,
+            ).exclude(source_type=FundingSourceType.OWNER_CAPITAL)
+            if non_owner_sources.exists():
+                raise serializers.ValidationError(
+                    {"funding_allocations_input": "Owner payment classifications require an owner-capital source."}
+                )
+        equity_outflows = {
+            FundingClassification.OWNER_CAPITAL_RETURN,
+            FundingClassification.OWNER_DRAWING,
+            FundingClassification.OWNER_DISTRIBUTION,
+        }
+        if any(row.get("classification") in equity_outflows for row in funding_rows):
+            nature = attrs.get(
+                "accounting_nature",
+                self.instance.accounting_nature if self.instance else None,
+            )
+            if nature != AccountingNature.OWNER_WITHDRAWAL:
+                raise serializers.ValidationError(
+                    {
+                        "accounting_nature": (
+                            "Capital returns, drawings and profit distributions must "
+                            "use Owner Withdrawal."
+                        )
+                    }
+                )
+            planned_costs = attrs.get("cost_allocations_input")
+            if planned_costs is None and self.instance is not None:
+                planned_costs = self.instance.cost_allocation_plan
+            if planned_costs:
+                raise serializers.ValidationError(
+                    {
+                        "cost_allocations_input": (
+                            "Owner equity outflows cannot be charged to poultry batches."
+                        )
+                    }
                 )
         return attrs
 
