@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { MobileRecordList } from "@/components/ui/MobileRecordList";
+import { PaginatedTableBody } from "@/components/ui/PaginatedTableBody";
 import { getBatchPortfolioReport } from "@/features/finance/api/finance";
 import { BatchSelectionFilter } from "@/features/finance/components/BatchSelectionFilter";
 import { FinanceWarningList } from "@/features/finance/components/FinanceWarningList";
@@ -244,6 +245,7 @@ export default async function FinanceBatchAnalysisPage({ searchParams }: PagePro
 
           <Panel title="Selected Batch Comparison">
             <MobileRecordList
+              pageSize={10}
               emptyMessage="No selected batches are available."
               records={report.results.map((batch) => ({
                 key: batch.batch,
@@ -277,7 +279,7 @@ export default async function FinanceBatchAnalysisPage({ searchParams }: PagePro
                     <th className="py-3 text-right">Details</th>
                   </tr>
                 </thead>
-                <tbody>
+                <PaginatedTableBody columnCount={10} itemLabel="selected batches">
                   {report.results.map((batch) => (
                     <tr key={batch.batch} className="border-b border-[var(--line)]">
                       <td className="py-4 pr-4 font-extrabold text-[var(--navy)]">
@@ -314,7 +316,7 @@ export default async function FinanceBatchAnalysisPage({ searchParams }: PagePro
                       </td>
                     </tr>
                   ))}
-                </tbody>
+                </PaginatedTableBody>
               </table>
             </div>
           </Panel>

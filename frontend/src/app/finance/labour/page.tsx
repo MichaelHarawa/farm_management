@@ -13,6 +13,7 @@ import {
 import { formatCurrency, formatDate, formatLabel } from "@/features/finance/utils/formatters";
 import { LabourWorkflowActions } from "@/features/finance/components/LabourWorkflowActions";
 import { MobileRecordList } from "@/components/ui/MobileRecordList";
+import { PaginatedTableBody } from "@/components/ui/PaginatedTableBody";
 
 export default async function FinanceLabourPage() {
   const [periods, labour, batches] = await Promise.all([
@@ -46,6 +47,7 @@ export default async function FinanceLabourPage() {
         {labour.length ? (
           <>
           <MobileRecordList
+            pageSize={10}
             records={labour.map((item) => ({
               key: item.id,
               title: item.worker_name,
@@ -74,7 +76,7 @@ export default async function FinanceLabourPage() {
                   <th className="py-3 pr-4">Workflow</th>
                 </tr>
               </thead>
-              <tbody>
+              <PaginatedTableBody columnCount={7} itemLabel="labour records">
                 {labour.map((item) => (
                   <tr key={item.id} className="border-b border-[var(--line)]">
                     <td className="py-4 pr-4 font-bold">{item.worker_name}</td>
@@ -88,7 +90,7 @@ export default async function FinanceLabourPage() {
                     <td className="py-4 pr-4"><LabourWorkflowActions labour={item} /></td>
                   </tr>
                 ))}
-              </tbody>
+              </PaginatedTableBody>
             </table>
           </div>
           </>

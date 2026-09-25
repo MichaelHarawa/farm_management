@@ -1,4 +1,8 @@
-import type { ReactNode } from "react";
+"use client";
+
+import { useState, type ReactNode } from "react";
+
+import { PaginationControls } from "./PaginationControls";
 
 export type MobileRecord = {
   key: string | number;
@@ -14,13 +18,23 @@ export function MobileRecordList({
   emptyMessage,
   className = "",
   desktopBreakpoint = "md",
+  pageSize,
+  itemLabel = "records",
 }: {
   records: MobileRecord[];
   emptyMessage: string;
   className?: string;
   desktopBreakpoint?: "md" | "lg";
+  pageSize?: number;
+  itemLabel?: string;
 }) {
+  const [currentPage, setCurrentPage] = useState(1);
   const desktopHiddenClass = desktopBreakpoint === "lg" ? "lg:hidden" : "md:hidden";
+  const effectivePageSize = pageSize ?? Math.max(1, records.length);
+  const totalPages = Math.max(1, Math.ceil(records.length / effectivePageSize));
+  const safePage = Math.min(currentPage, totalPages);
+  const startIndex = (safePage - 1) * effectivePageSize;
+  const pageRecords = records.slice(startIndex, startIndex + effectivePageSize);
 
   if (!records.length) {
     return <p className={`rounded-xl border border-dashed border-[var(--line)] bg-white/60 p-5 text-sm text-[var(--navy-muted)] ${desktopHiddenClass} ${className}`}>{emptyMessage}</p>;
@@ -28,7 +42,7 @@ export function MobileRecordList({
 
   return (
     <div className={`grid gap-3 ${desktopHiddenClass} ${className}`}>
-      {records.map((record) => (
+      {pageRecords.map((record) => (
         <article key={record.key} className="min-w-0 rounded-xl border border-[var(--line)] bg-white p-4 shadow-sm">
           <div className="flex min-w-0 items-start justify-between gap-3">
             <div className="min-w-0">
@@ -48,6 +62,15 @@ export function MobileRecordList({
           {record.actions ? <div className="mt-4 flex flex-wrap gap-2 border-t border-[var(--line)] pt-3">{record.actions}</div> : null}
         </article>
       ))}
+      <PaginationControls
+        currentPage={safePage}
+        totalPages={totalPages}
+        totalItems={records.length}
+        pageSize={effectivePageSize}
+        itemLabel={itemLabel}
+        onPageChange={setCurrentPage}
+        className="rounded-xl border border-[var(--line)] bg-white px-4 py-3"
+      />
     </div>
   );
 }

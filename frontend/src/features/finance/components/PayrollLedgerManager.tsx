@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { MobileRecordList } from "@/components/ui/MobileRecordList";
+import { PaginatedTableBody } from "@/components/ui/PaginatedTableBody";
 import { clientApiFetch } from "@/lib/client-api";
 import type { PoultryBatch } from "@/features/poultry/types";
 import type { PayrollEntry, PayrollPayment } from "../types";
@@ -133,6 +134,7 @@ export function PayrollLedgerManager({ entries, batches }: { entries: PayrollEnt
 
   return <>
     <MobileRecordList
+      pageSize={10}
       emptyMessage="No payroll entries have been generated."
       records={entries.map((entry) => ({
         key: entry.id,
@@ -150,10 +152,10 @@ export function PayrollLedgerManager({ entries, batches }: { entries: PayrollEnt
     />
     <div className="hidden overflow-x-auto md:block"><table className="min-w-full border-collapse text-sm">
       <thead><tr className="border-b border-[var(--line)] text-left text-[var(--navy-muted)]"><th className="py-3 pr-4">Employee / period</th><th className="py-3 pr-4">Gross</th><th className="py-3 pr-4">Deductions / net</th><th className="py-3 pr-4">Paid / outstanding</th><th className="py-3 pr-4">Status</th><th className="py-3">Action</th></tr></thead>
-      <tbody>{entries.map((entry) => <tr key={entry.id} className="border-b border-[var(--line)]">
+      <PaginatedTableBody columnCount={6} itemLabel="payroll entries">{entries.map((entry) => <tr key={entry.id} className="border-b border-[var(--line)]">
         <td className="py-4 pr-4 font-bold">{entry.employee_name}</td><td className="py-4 pr-4">{formatCurrency(entry.gross_salary)}</td><td className="py-4 pr-4">{formatCurrency(entry.deductions)} / {formatCurrency(entry.net_salary_payable)}</td><td className="py-4 pr-4">{formatCurrency(entry.amount_paid)} / {formatCurrency(entry.outstanding_salary)}</td><td className="py-4 pr-4 capitalize">{entry.payment_status.replaceAll("_", " ")}</td>
         <td className="py-4"><div className="flex flex-wrap gap-2"><button disabled={Number(entry.outstanding_salary) <= 0} className="rounded-lg border border-[var(--navy)] px-3 py-2 font-bold disabled:opacity-40" onClick={() => openPayment(entry, "advance")}>Record advance</button><button disabled={Number(entry.outstanding_salary) <= 0} className="rounded-lg bg-[var(--gold)] px-3 py-2 font-extrabold text-[var(--navy)] disabled:opacity-40" onClick={() => openPayment(entry, "salary")}>Pay remaining salary</button><button className="rounded-lg bg-[var(--navy)] px-3 py-2 font-bold text-white" onClick={() => openAllocation(entry)}>Allocate cost</button></div></td>
-      </tr>)}</tbody>
+      </tr>)}</PaginatedTableBody>
     </table></div>
 
     {active ? <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-2 sm:p-4" role="dialog" aria-modal="true"><div className="max-h-[96vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-[var(--line)] bg-[var(--surface-white)] p-4 shadow-2xl sm:max-h-[90vh] sm:rounded-3xl sm:p-6">

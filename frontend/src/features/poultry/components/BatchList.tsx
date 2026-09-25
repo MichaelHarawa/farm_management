@@ -15,6 +15,7 @@ import {
 import { useForm, type SubmitHandler } from "react-hook-form";
 
 import { MobileRecordList } from "@/components/ui/MobileRecordList";
+import { PaginatedTableBody } from "@/components/ui/PaginatedTableBody";
 import { getApiErrorMessage } from "@/lib/errors";
 import {
   confirmPoultryBatchDelivery,
@@ -266,6 +267,7 @@ export function BatchList({ batches, addBatchAction }: BatchListProps) {
       </div>
 
       <MobileRecordList
+        pageSize={10}
         className="p-3"
         emptyMessage="No batches match the selected time window."
         records={visibleBatches.map((batch) => {
@@ -302,18 +304,11 @@ export function BatchList({ batches, addBatchAction }: BatchListProps) {
             </tr>
           </thead>
 
-          <tbody>
-            {visibleBatches.length === 0 ? (
-              <tr>
-                <td
-                  colSpan={6}
-                  className="px-6 py-10 text-center text-sm text-[var(--navy-muted)]"
-                >
-                  No batches match the selected time window.
-                </td>
-              </tr>
-            ) : null}
-
+          <PaginatedTableBody
+            columnCount={6}
+            itemLabel="batches"
+            emptyMessage="No batches match the selected time window."
+          >
             {visibleBatches.map((batch) => {
               const daysToMaturity = getDaysToMaturity(
                 batch.expected_maturity_date
@@ -416,7 +411,7 @@ export function BatchList({ batches, addBatchAction }: BatchListProps) {
                 </tr>
               );
             })}
-          </tbody>
+          </PaginatedTableBody>
         </table>
       </div>
 

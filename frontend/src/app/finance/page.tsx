@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { MobileRecordList } from "@/components/ui/MobileRecordList";
+import { PaginatedTableBody } from "@/components/ui/PaginatedTableBody";
 import { getFinanceDashboard } from "@/features/finance/api/finance";
 import { BatchAnalysisFilter } from "@/features/finance/components/BatchAnalysisFilter";
 import { FinanceWarningList } from "@/features/finance/components/FinanceWarningList";
@@ -65,6 +66,7 @@ export default async function FinanceDashboardPage({ searchParams }: { searchPar
 
         <Panel title="Performance by batch">
           <MobileRecordList
+            pageSize={10}
             emptyMessage="No batch performance records are available."
             records={analysis.portfolio.results.map((row) => ({
               key: row.batch,
@@ -84,7 +86,7 @@ export default async function FinanceDashboardPage({ searchParams }: { searchPar
           <div className="hidden overflow-x-auto md:block">
             <table className="w-full min-w-[1120px] text-left text-sm">
               <thead><tr className="border-b"><th className="p-3">Batch</th><th className="p-3 text-right">Mortality</th><th className="p-3 text-right">Production cost</th><th className="p-3 text-right">Cost to sell</th><th className="p-3 text-right">Gross profit</th><th className="p-3 text-right">Net profit</th><th className="p-3 text-right">Break-even / bird</th><th className="p-3 text-right">Remaining-bird price needed</th></tr></thead>
-              <tbody>{analysis.portfolio.results.map((row) => <tr key={row.batch} className="border-b">
+              <PaginatedTableBody columnCount={8} itemLabel="batch results">{analysis.portfolio.results.map((row) => <tr key={row.batch} className="border-b">
                 <td className="p-3"><Link className="font-bold underline" href={`/finance/batches/${row.batch}`}>{row.batch_id}</Link><span className="block text-xs text-[var(--navy-muted)]">{formatLabel(row.profitability_status)}</span></td>
                 <td className="p-3 text-right">{row.mortality} <span className="block text-xs text-[var(--navy-muted)]">{row.mortality_rate_percent ?? "N/A"}%</span></td>
                 <td className="p-3 text-right">{formatCurrency(row.total_production_cost)}</td>
@@ -93,7 +95,7 @@ export default async function FinanceDashboardPage({ searchParams }: { searchPar
                 <td className="p-3 text-right font-bold">{formatCurrency(row.management_net_position)}</td>
                 <td className="p-3 text-right">{row.break_even_price_per_bird_all_costs === null ? "N/A" : formatCurrency(row.break_even_price_per_bird_all_costs)}</td>
                 <td className="p-3 text-right">{row.break_even_selling_price_per_remaining_bird === null ? "N/A" : formatCurrency(row.break_even_selling_price_per_remaining_bird)}</td>
-              </tr>)}</tbody>
+              </tr>)}</PaginatedTableBody>
             </table>
           </div>
           <p className="mt-4 rounded-lg bg-[var(--gold-soft)] p-4 text-sm leading-6"><strong>Pricing guide:</strong> the fully loaded break-even estimate is {summary.break_even_price_per_bird_all_costs === null ? "unavailable until a survivor denominator exists" : `${formatCurrency(summary.break_even_price_per_bird_all_costs)} per survived bird`}. The price needed on remaining birds is {summary.break_even_selling_price_per_remaining_bird === null ? "not applicable" : formatCurrency(summary.break_even_selling_price_per_remaining_bird)} based on costs already incurred and revenue already recorded.</p>

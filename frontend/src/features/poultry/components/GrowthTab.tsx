@@ -2,6 +2,7 @@
 
 import { formatNumber } from "../utils/formatters";
 import type { PoultryBatch, WeightSamplesResponse } from "../types";
+import { PaginatedTableBody } from "@/components/ui/PaginatedTableBody";
 
 type GrowthTabProps = {
   batch: PoultryBatch;
@@ -58,7 +59,7 @@ export function GrowthTab({
                     <th className="py-2">Status</th>
                   </tr>
                 </thead>
-                <tbody>
+                <PaginatedTableBody columnCount={5} itemLabel="weight samples">
                   {series.map((p, idx) => (
                     <tr key={idx} className="border-b last:border-0">
                       <td className="py-2 pr-3 font-semibold">{formatNumber(p.age_in_days)}</td>
@@ -79,7 +80,7 @@ export function GrowthTab({
                       </td>
                     </tr>
                   ))}
-                </tbody>
+                </PaginatedTableBody>
               </table>
             </div>
           </div>

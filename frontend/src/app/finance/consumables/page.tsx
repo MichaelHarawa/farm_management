@@ -22,6 +22,7 @@ import {
 } from "@/features/finance/utils/formatters";
 import { getPoultryBatches } from "@/features/poultry/api/batches";
 import { MobileRecordList } from "@/components/ui/MobileRecordList";
+import { PaginatedTableBody } from "@/components/ui/PaginatedTableBody";
 
 export default async function FinanceConsumablesPage() {
   const [periods, lots, usages, movements, batches] = await Promise.all([
@@ -89,7 +90,7 @@ export default async function FinanceConsumablesPage() {
                   <th className="py-3 pr-4">Status</th>
                 </tr>
               </thead>
-              <tbody>
+              <PaginatedTableBody columnCount={6} itemLabel="consumable lots">
                 {lots.map((lot) => (
                   <tr key={lot.id} className="border-b border-[var(--line)]">
                     <td className="py-4 pr-4">
@@ -109,7 +110,7 @@ export default async function FinanceConsumablesPage() {
                     </td>
                   </tr>
                 ))}
-              </tbody>
+              </PaginatedTableBody>
             </table>
           </div>
           </>
@@ -143,7 +144,7 @@ export default async function FinanceConsumablesPage() {
                   <th className="py-3 pr-4">Driver</th>
                 </tr>
               </thead>
-              <tbody>
+              <PaginatedTableBody columnCount={6} itemLabel="usage records">
                 {usages.map((usage) => (
                   <tr key={usage.id} className="border-b border-[var(--line)]">
                     <td className="py-4 pr-4">{formatDate(usage.usage_date)}</td>
@@ -158,7 +159,7 @@ export default async function FinanceConsumablesPage() {
                     <td className="py-4 pr-4">{formatLabel(usage.allocation_driver)}</td>
                   </tr>
                 ))}
-              </tbody>
+              </PaginatedTableBody>
             </table>
           </div>
           </>
@@ -168,7 +169,7 @@ export default async function FinanceConsumablesPage() {
       </Panel>
 
       <Panel id="stock-movements" title="Immutable Stock Movement Ledger">
-        {movements.length ? <><MobileRecordList records={movements.map((movement) => ({ key: movement.id, title: movement.item_name, subtitle: `${formatLabel(movement.movement_type)} · ${formatDate(movement.movement_date)}`, fields: [{ label: "Batch", value: movement.batch_code || "Farm stock" }, { label: "Quantity", value: formatNumber(movement.quantity) }, { label: "Cost", value: formatCurrency(movement.total_cost) }] }))} emptyMessage="No stock movements have been posted." /><div className="hidden overflow-x-auto md:block"><table className="min-w-full text-sm"><thead><tr className="border-b text-left"><th className="py-3 pr-4">Date</th><th className="py-3 pr-4">Movement</th><th className="py-3 pr-4">Item</th><th className="py-3 pr-4">Batch</th><th className="py-3 pr-4 text-right">Quantity</th><th className="py-3 pr-4 text-right">Cost</th></tr></thead><tbody>{movements.map((movement) => <tr key={movement.id} className="border-b"><td className="py-3 pr-4">{formatDate(movement.movement_date)}</td><td className="py-3 pr-4">{formatLabel(movement.movement_type)}</td><td className="py-3 pr-4 font-bold">{movement.item_name}</td><td className="py-3 pr-4">{movement.batch_code || "Farm stock"}</td><td className="py-3 pr-4 text-right">{formatNumber(movement.quantity)}</td><td className="py-3 pr-4 text-right">{formatCurrency(movement.total_cost)}</td></tr>)}</tbody></table></div></> : <EmptyState message="No stock movements have been posted." />}
+        {movements.length ? <><MobileRecordList records={movements.map((movement) => ({ key: movement.id, title: movement.item_name, subtitle: `${formatLabel(movement.movement_type)} · ${formatDate(movement.movement_date)}`, fields: [{ label: "Batch", value: movement.batch_code || "Farm stock" }, { label: "Quantity", value: formatNumber(movement.quantity) }, { label: "Cost", value: formatCurrency(movement.total_cost) }] }))} emptyMessage="No stock movements have been posted." /><div className="hidden overflow-x-auto md:block"><table className="min-w-full text-sm"><thead><tr className="border-b text-left"><th className="py-3 pr-4">Date</th><th className="py-3 pr-4">Movement</th><th className="py-3 pr-4">Item</th><th className="py-3 pr-4">Batch</th><th className="py-3 pr-4 text-right">Quantity</th><th className="py-3 pr-4 text-right">Cost</th></tr></thead><PaginatedTableBody columnCount={6} itemLabel="stock movements">{movements.map((movement) => <tr key={movement.id} className="border-b"><td className="py-3 pr-4">{formatDate(movement.movement_date)}</td><td className="py-3 pr-4">{formatLabel(movement.movement_type)}</td><td className="py-3 pr-4 font-bold">{movement.item_name}</td><td className="py-3 pr-4">{movement.batch_code || "Farm stock"}</td><td className="py-3 pr-4 text-right">{formatNumber(movement.quantity)}</td><td className="py-3 pr-4 text-right">{formatCurrency(movement.total_cost)}</td></tr>)}</PaginatedTableBody></table></div></> : <EmptyState message="No stock movements have been posted." />}
       </Panel>
     </FinancePageShell>
   );

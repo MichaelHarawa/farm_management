@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+import { PaginatedTableBody } from "@/components/ui/PaginatedTableBody";
+
 import {
   getOwnerContributionReport,
   getOwnerContributors,
@@ -148,7 +150,7 @@ export default async function OwnerCapitalPage({ searchParams }: PageProps) {
       ) : null}
 
       <Panel title="Owner Accounts">
-        <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead><tr className="border-b"><th className="p-3">Owner</th><th className="p-3 text-right">Introduced</th><th className="p-3 text-right">Designated</th><th className="p-3 text-right">Actually spent</th><th className="p-3 text-right">Capital returned</th><th className="p-3 text-right">Cash remaining</th></tr></thead><tbody>{report.owners.map((owner) => <tr className="border-b" key={owner.owner_id ?? "unknown"}><td className="p-3 font-bold">{owner.owner_name}</td><td className="p-3 text-right">{formatCurrency(owner.cash_introduced_to_date)}</td><td className="p-3 text-right">{formatCurrency(owner.designated_as_of)}</td><td className="p-3 text-right">{formatCurrency(owner.cash_used_to_date)}</td><td className="p-3 text-right">{formatCurrency(owner.capital_returns_to_date)}</td><td className="p-3 text-right font-bold">{formatCurrency(owner.remaining_cash)}</td></tr>)}</tbody></table></div>
+        <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead><tr className="border-b"><th className="p-3">Owner</th><th className="p-3 text-right">Introduced</th><th className="p-3 text-right">Designated</th><th className="p-3 text-right">Actually spent</th><th className="p-3 text-right">Capital returned</th><th className="p-3 text-right">Cash remaining</th></tr></thead><PaginatedTableBody columnCount={6} itemLabel="owner accounts">{report.owners.map((owner) => <tr className="border-b" key={owner.owner_id ?? "unknown"}><td className="p-3 font-bold">{owner.owner_name}</td><td className="p-3 text-right">{formatCurrency(owner.cash_introduced_to_date)}</td><td className="p-3 text-right">{formatCurrency(owner.designated_as_of)}</td><td className="p-3 text-right">{formatCurrency(owner.cash_used_to_date)}</td><td className="p-3 text-right">{formatCurrency(owner.capital_returns_to_date)}</td><td className="p-3 text-right font-bold">{formatCurrency(owner.remaining_cash)}</td></tr>)}</PaginatedTableBody></table></div>
       </Panel>
 
       <Panel title="Batch Attribution">

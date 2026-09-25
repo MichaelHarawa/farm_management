@@ -1,5 +1,6 @@
 import { getEmployees } from "@/features/finance/api/finance";
 import { MobileRecordList } from "@/components/ui/MobileRecordList";
+import { PaginatedTableBody } from "@/components/ui/PaginatedTableBody";
 import { EmployeeCreateDialog } from "@/features/finance/components/FinanceForms";
 import {
   EmptyState,
@@ -31,6 +32,7 @@ export default async function FinanceEmployeesPage() {
         {employees.length ? (
           <>
           <MobileRecordList
+            pageSize={10}
             emptyMessage="No employees have been created yet."
             records={employees.map((employee) => ({
               key: employee.id,
@@ -57,7 +59,7 @@ export default async function FinanceEmployeesPage() {
                   <th className="py-3 pr-4">Status</th>
                 </tr>
               </thead>
-              <tbody>
+              <PaginatedTableBody columnCount={6} itemLabel="employees">
                 {employees.map((employee) => (
                   <tr key={employee.id} className="border-b border-[var(--line)]">
                     <td className="py-4 pr-4">
@@ -78,7 +80,7 @@ export default async function FinanceEmployeesPage() {
                     <td className="py-4 pr-4">{employee.is_active ? "Active" : "Inactive"}</td>
                   </tr>
                 ))}
-              </tbody>
+              </PaginatedTableBody>
             </table>
           </div>
           </>

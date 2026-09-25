@@ -16,6 +16,7 @@ import {
 import type { BatchProfitabilityReport, BatchRevenueUtilization } from "@/features/finance/types";
 import { BackendApiError } from "@/lib/server/backend-api";
 import { MobileRecordList } from "@/components/ui/MobileRecordList";
+import { PaginatedTableBody } from "@/components/ui/PaginatedTableBody";
 
 type PageProps = {
   params: Promise<{
@@ -197,7 +198,7 @@ export default async function FinanceBatchProfitabilityPage({ params }: PageProp
                 <th className="py-3 pr-4 text-right">Numerator / denominator</th><th className="py-3 pr-4 text-right">Admin share</th>
                 <th className="py-3 pr-4">Selling / finance / tax driver</th><th className="py-3 text-right">Share</th>
               </tr></thead>
-              <tbody>{report.allocation_trace.map((trace) => (
+              <PaginatedTableBody columnCount={6} itemLabel="allocation periods">{report.allocation_trace.map((trace) => (
                 <tr key={trace.source_period} className="border-b border-[var(--line)]">
                   <td className="py-3 pr-4">{trace.period_start} – {trace.period_end}</td>
                   <td className="py-3 pr-4">{formatLabel(trace.administration_driver)}</td>
@@ -206,7 +207,7 @@ export default async function FinanceBatchProfitabilityPage({ params }: PageProp
                   <td className="py-3 pr-4">{formatLabel(trace.selling_finance_tax_driver)}</td>
                   <td className="py-3 text-right">{formatPercent(trace.selling_percentage)}</td>
                 </tr>
-              ))}</tbody>
+              ))}</PaginatedTableBody>
             </table>
           </div>
         </Panel>

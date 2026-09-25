@@ -21,6 +21,7 @@ import {
 } from "@/features/finance/utils/formatters";
 import Link from "next/link";
 import { MobileRecordList } from "@/components/ui/MobileRecordList";
+import { PaginatedTableBody } from "@/components/ui/PaginatedTableBody";
 
 export default async function FinanceAssetsPage() {
   const [periods, categories, assets] = await Promise.all([
@@ -64,6 +65,7 @@ export default async function FinanceAssetsPage() {
         {assets.length ? (
           <>
           <MobileRecordList
+            pageSize={10}
             emptyMessage="No fixed assets have been recorded."
             records={assets.map((asset) => ({
               key: asset.id,
@@ -91,7 +93,7 @@ export default async function FinanceAssetsPage() {
                   <th className="py-3 pr-4">Method</th>
                 </tr>
               </thead>
-              <tbody>
+              <PaginatedTableBody columnCount={6} itemLabel="assets">
                 {assets.map((asset) => (
                   <tr key={asset.id} className="border-b border-[var(--line)]">
                     <td className="py-4 pr-4">
@@ -115,7 +117,7 @@ export default async function FinanceAssetsPage() {
                     <td className="py-4 pr-4">{formatLabel(asset.depreciation_method)}</td>
                   </tr>
                 ))}
-              </tbody>
+              </PaginatedTableBody>
             </table>
           </div>
           </>
