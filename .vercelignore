@@ -1,6 +1,7 @@
 .env
 .env.*
 !.env.example
+.vercel-deploy-upload/
 venv/
 .venv/
 **/.venv/
