@@ -48,12 +48,12 @@ export function FinancePageShell({
             </p>
           </div>
           {actions ? (
-            <div className="mt-5 min-w-0 w-full">{actions}</div>
+            <div className="mt-5 w-full min-w-0">{actions}</div>
           ) : null}
         </div>
       </section>
-      <section className="px-5 py-8 sm:px-8">
-        <div className="mx-auto grid max-w-7xl gap-6">{children}</div>
+      <section className="min-w-0 px-4 py-6 sm:px-8 sm:py-8">
+        <div className="mx-auto grid min-w-0 max-w-7xl gap-6">{children}</div>
       </section>
     </main>
   );
@@ -80,17 +80,17 @@ export async function FinanceNav() {
 
 
   return (
-    <nav className="grid min-w-0 w-full justify-items-center gap-2">
-      <div className="flex w-full snap-x gap-2 overflow-x-auto pb-2 sm:flex-wrap sm:justify-center sm:overflow-visible sm:pb-0">
+    <nav className="grid w-full min-w-0 justify-items-center gap-3">
+      <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-center">
         {primaryLinks.map(([label, href]) => (
-          <Link key={href} href={href} className="shrink-0 snap-start rounded-full border border-[var(--line)] bg-white/60 px-4 py-2 text-xs font-bold uppercase tracking-[0.14em] text-[var(--navy-muted)] transition hover:bg-[var(--gold-soft)] hover:text-[var(--navy)]">{label}</Link>
+          <Link key={href} href={href} className="inline-flex min-h-10 min-w-0 items-center justify-center rounded-xl border border-[var(--line)] bg-white/70 px-3 py-2 text-center text-[0.68rem] font-extrabold uppercase tracking-[0.1em] text-[var(--navy-muted)] transition hover:border-[var(--gold)] hover:bg-[var(--gold-soft)] hover:text-[var(--navy)] sm:rounded-full sm:px-4 sm:text-xs sm:tracking-[0.14em]">{label}</Link>
         ))}
       </div>
-      <details className="relative text-center">
-        <summary className="cursor-pointer list-none text-xs font-bold text-[var(--navy-muted)] underline">More finance tools</summary>
-        <div className="mt-2 flex flex-wrap justify-center gap-2">
+      <details className="w-full text-center sm:w-auto">
+        <summary className="mx-auto flex min-h-9 w-full cursor-pointer list-none items-center justify-center rounded-xl border border-dashed border-[var(--line)] bg-white/35 px-4 text-xs font-bold text-[var(--navy-muted)] transition hover:bg-white/70 sm:w-fit sm:border-0 sm:bg-transparent sm:underline">More finance tools</summary>
+        <div className="mt-2 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-center">
           {secondaryLinks.map(([label, href]) => (
-            <Link key={href} href={href} className="rounded-full border border-[var(--line)] bg-white/70 px-4 py-2 text-xs font-bold text-[var(--navy-muted)] hover:bg-[var(--gold-soft)]">{label}</Link>
+            <Link key={href} href={href} className="inline-flex min-h-10 min-w-0 items-center justify-center rounded-xl border border-[var(--line)] bg-white/70 px-3 py-2 text-center text-xs font-bold text-[var(--navy-muted)] hover:bg-[var(--gold-soft)] sm:rounded-full sm:px-4">{label}</Link>
           ))}
         </div>
       </details>
@@ -138,7 +138,7 @@ export function Panel({
   children: ReactNode;
 }) {
   return (
-    <section id={id} className="rounded-lg border border-[var(--line)] bg-[var(--surface-cream)] p-4 shadow-[var(--shadow-card)] sm:p-5">
+    <section id={id} className="min-w-0 overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--surface-cream)] p-4 shadow-[var(--shadow-card)] sm:p-5">
       <h2 className="text-lg font-extrabold text-[var(--navy)]">{title}</h2>
       <div className="mt-5">{children}</div>
     </section>
