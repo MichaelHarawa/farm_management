@@ -558,6 +558,62 @@ class Sales(models.Model):
         if errors:
             raise ValidationError(errors)
 
+
+class SaleSellingCostCategory(models.TextChoices):
+    TRANSPORT = "transport", "Transport"
+    PACKAGING = "packaging", "Packaging"
+    COMMISSION = "commission", "Commission"
+    MARKET_FEE = "market_fee", "Market fee"
+    OTHER = "other", "Other selling cost"
+
+
+class SaleSellingCost(models.Model):
+    """A cost incurred specifically to complete one recorded sale.
+
+    These rows are management-cost evidence attached to the sale. They are not
+    customer master records and they do not create or imply a second sale.
+    """
+
+    sale = models.ForeignKey(
+        Sales,
+        on_delete=models.CASCADE,
+        related_name="selling_costs",
+    )
+    category = models.CharField(
+        max_length=24,
+        choices=SaleSellingCostCategory.choices,
+        default=SaleSellingCostCategory.TRANSPORT,
+        db_index=True,
+    )
+    amount = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal("0.01"))],
+    )
+    notes = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_sale_selling_costs",
+    )
+
+    class Meta:
+        ordering = ["created_at", "pk"]
+        indexes = [
+            models.Index(fields=["sale", "category"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.get_category_display()} for {self.sale.sale_id}"
+
+    def clean(self):
+        super().clean()
+        if self.amount <= Decimal("0.00"):
+            raise ValidationError({"amount": "Selling cost must be greater than zero."})
+
 class Mortality(models.Model):
     batch = models.ForeignKey(
     Batch,

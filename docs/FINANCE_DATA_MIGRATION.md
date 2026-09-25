@@ -74,3 +74,19 @@ After deployment run:
 6. verify the four customer-cost categories and source caps before relying on contribution labels.
 
 Rollback remains forward-only. Reverse incorrect attribution rows and relink a sale through the controlled workflow; never delete the customer or overwrite the historical buyer text. Do not unapply these migrations after customer links or attributions exist.
+
+## Revised Phase 3 migrations 0027 and poultry 0034
+
+Management replaced the active customer-contribution entry workflow with per-sale selling costs. Existing Phase 3 customer tables and nullable sale links are retained for compatibility; no historical rows are deleted or guessed.
+
+`finance.0027_payrollpayment_payment_kind` adds `payment_kind` with `salary` as the default for every existing payroll payment. New records may be `advance` or `salary`; both continue using the existing funding and reversal ledgers.
+
+`poultry.0034_salesellingcost` adds the sale child ledger for transport, packaging, commission, market fee, and other completion costs. Existing sales begin with no child rows and therefore retain a zero selling-cost total.
+
+After deployment run:
+
+1. `python backend/manage.py migrate`;
+2. `python backend/manage.py check`;
+3. `python backend/manage.py finance_preflight`;
+4. record a test sale with two selling-cost rows and confirm the batch net position decreases by their sum;
+5. record a test advance and confirm both remaining salary and funding-source availability decrease by the same amount.

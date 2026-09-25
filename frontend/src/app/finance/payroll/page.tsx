@@ -27,8 +27,8 @@ export default async function FinancePayrollPage() {
   return (
     <FinancePageShell
       eyebrow="Finance / Payroll"
-      title="Payroll allocation."
-      detail="Generate monthly salary snapshots and allocate production portions by bird-days."
+      title="Payroll payments."
+      detail="Generate salary records, record advances, pay the remaining salary from selected cash sources, and allocate the wage cost to batches or administration."
       actions={<FinanceNav />}
     >
       <Panel title="Payroll Actions">

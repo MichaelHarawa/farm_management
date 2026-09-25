@@ -23,8 +23,6 @@ export const saleSchema = z
       .min(2, "Buyer name must contain at least 2 characters.")
       .max(200, "Buyer name cannot exceed 200 characters."),
 
-    customer: z.string(),
-
     buyer_type: z.enum([
       "market_vendor",
       "retail",
@@ -63,6 +61,20 @@ export const saleSchema = z
       .trim()
       .min(2, "Notes must contain at least 2 characters.")
       .max(1000, "Notes cannot exceed 1,000 characters."),
+
+    selling_costs: z.array(
+      z.object({
+        category: z.enum([
+          "transport",
+          "packaging",
+          "commission",
+          "market_fee",
+          "other",
+        ]),
+        amount: z.number().positive("Selling cost must be greater than zero."),
+        notes: z.string().trim().max(500, "Cost notes cannot exceed 500 characters."),
+      })
+    ),
   })
   .superRefine((values, context) => {
     const saleTotal = values.quantity_sold * values.unit_price;

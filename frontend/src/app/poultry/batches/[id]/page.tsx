@@ -1,13 +1,11 @@
 import { notFound } from "next/navigation";
 
-import {
-  getCustomers,
-  getBatchProfitability,
-} from "@/features/finance/api/finance";
+import { getBatchProfitability } from "@/features/finance/api/finance";
 import {
   getBatchFeedInputCosts,
   getBatchFeedUsage,
   getBatchFeedMetrics,
+  getBatchSellByRecommendation,
   getBatchInputCosts,
   getBatchMortality,
   getBatchSales,
@@ -101,9 +99,6 @@ export default async function BatchDetailPage({
     feedInputCosts,
     sales,
     mortalities,
-    feedUsages,
-    feedMetrics,
-    vaccinations,
   ] = await Promise.all([
       getBatchInputCosts(
         batchId,
@@ -121,19 +116,19 @@ export default async function BatchDetailPage({
         batchId,
         returnTo
       ),
-      getBatchFeedUsage(
-        batchId,
-        returnTo
-      ),
-      getBatchFeedMetrics(
-        batchId,
-        returnTo
-      ),
-      getBatchVaccinations(
-        batchId,
-        returnTo
-      ),
     ]);
+
+  const [
+    feedUsages,
+    feedMetrics,
+    sellByRecommendation,
+    vaccinations,
+  ] = await Promise.all([
+    getBatchFeedUsage(batchId, returnTo),
+    getBatchFeedMetrics(batchId, returnTo),
+    getBatchSellByRecommendation(batchId, returnTo),
+    getBatchVaccinations(batchId, returnTo),
+  ]);
 
   // Dynamic import here guarantees that "next/headers" is only touched inside a Server Component.
   const { getBatchWeightSamples: fetchWeightSamples } = await import("@/features/poultry/api/weight-samples");
@@ -151,8 +146,6 @@ export default async function BatchDetailPage({
       throw error;
     }
   );
-  const customers = await getCustomers(returnTo).catch(() => []);
-
   return (
     <BatchDetailView
       key={initialTab}
@@ -165,9 +158,9 @@ export default async function BatchDetailPage({
       mortalities={mortalities}
       feedUsages={feedUsages}
       feedMetrics={feedMetrics}
+      sellByRecommendation={sellByRecommendation}
       vaccinations={vaccinations}
       weightSamplesResponse={weightSamplesResponse}
-      customers={customers}
     />
   );
 }

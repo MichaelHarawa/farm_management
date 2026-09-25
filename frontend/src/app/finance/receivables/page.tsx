@@ -167,7 +167,7 @@ export default function FinanceReceivablesPage() {
 
   return (
     <main className="mx-auto max-w-[1320px] px-5 py-8 sm:px-8 lg:px-12">
-      <Link href={backHref} className="text-sm font-extrabold text-[var(--navy)] underline decoration-[var(--gold)] decoration-2 underline-offset-4">
+      <Link prefetch={false} href={backHref} className="text-sm font-extrabold text-[var(--navy)] underline decoration-[var(--gold)] decoration-2 underline-offset-4">
         ← {backLabel}
       </Link>
       <div className="mt-6 flex flex-wrap items-end justify-between gap-4">

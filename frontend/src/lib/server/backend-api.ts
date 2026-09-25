@@ -76,11 +76,26 @@ export async function backendApiFetch<T>(
     );
   }
 
-  const response = await fetch(url, {
+  const requestOptions = {
     ...options,
     headers,
-    cache: "no-store",
-  });
+    cache: "no-store" as const,
+  };
+  const method = (options.method ?? "GET").toUpperCase();
+  let response: Response;
+
+  try {
+    response = await fetch(url, requestOptions);
+  } catch (error) {
+    const canRetry = (method === "GET" || method === "HEAD") && !options.signal?.aborted;
+    if (!canRetry) throw error;
+
+    // A server-component navigation can briefly overlap with link prefetching.
+    // Retry read-only requests once when the connection itself fails; HTTP
+    // errors still follow the normal response handling below.
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    response = await fetch(url, requestOptions);
+  }
 
   if (response.status === 204) {
     return null as T;

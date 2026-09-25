@@ -7,7 +7,6 @@ import { X } from "lucide-react";
 
 import type {
   BatchProfitabilityReport,
-  Customer,
 } from "@/features/finance/types";
 import type {
   InputCost,
@@ -17,6 +16,7 @@ import type {
   PoultryMortality,
   PoultrySale,
   PoultryVaccination,
+  SellByRecommendation,
 } from "../types";
 import {
   formatCurrency,
@@ -42,7 +42,7 @@ type BatchDetailViewProps = {
   feedMetrics: PoultryFeedMetrics;
   vaccinations: PoultryVaccination[];
   weightSamplesResponse?: import("../types").WeightSamplesResponse | null;
-  customers?: Customer[];
+  sellByRecommendation: SellByRecommendation;
   initialTab?: BatchDetailTab;
 };
 
@@ -369,6 +369,13 @@ function saleDetail(sale: PoultrySale): TableRowDetail {
       { label: "Quantity", value: formatNumber(sale.quantity_sold) },
       { label: "Unit Price", value: formatCurrency(sale.unit_price) },
       { label: "Total", value: formatCurrency(calculateSaleTotal(sale)) },
+      { label: "Additional Selling Costs", value: formatCurrency(sale.total_selling_cost || 0) },
+      {
+        label: "Selling Cost Detail",
+        value: sale.selling_costs?.length
+          ? sale.selling_costs.map((cost) => `${cost.category_label}: ${formatCurrency(cost.amount)}${cost.notes ? ` (${cost.notes})` : ""}`).join("; ")
+          : "None recorded",
+      },
       { label: "Amount Paid", value: formatCurrency(sale.amount_paid) },
       { label: "Balance", value: formatCurrency(sale.balance) },
       { label: "Buyer", value: sale.buyer_name },
@@ -468,9 +475,9 @@ export function BatchDetailView({
   mortalities,
   feedUsages,
   feedMetrics,
+  sellByRecommendation,
   vaccinations,
   weightSamplesResponse,
-  customers = [],
   initialTab = "overview",
 }: BatchDetailViewProps) {
   const [activeTab, setActiveTab] = useState<BatchDetailTab>(initialTab);
@@ -773,6 +780,7 @@ export function BatchDetailView({
               batch={batch}
               metrics={metrics}
               profitabilityReport={profitabilityReport}
+              recommendation={sellByRecommendation}
               latestRecords={latestRecords}
               nextCare={nextCare}
             />
@@ -876,7 +884,7 @@ export function BatchDetailView({
         title="Record sale"
         onClose={() => setOpenModal(null)}
       >
-        <AddSaleForm batchId={batch.id} customers={customers} />
+        <AddSaleForm batchId={batch.id} />
       </DetailModal>
 
       <DetailModal
@@ -1180,6 +1188,7 @@ type OverviewTabProps = {
   batch: PoultryBatch;
   metrics: Metrics;
   profitabilityReport: BatchProfitabilityReport | null;
+  recommendation: SellByRecommendation;
   latestRecords: LatestRecord[];
   nextCare: VaccinationScheduleItem | undefined;
 };
@@ -1188,6 +1197,7 @@ function OverviewTab({
   batch,
   metrics,
   profitabilityReport,
+  recommendation,
   latestRecords,
   nextCare,
 }: OverviewTabProps) {
@@ -1320,6 +1330,8 @@ function OverviewTab({
           </aside>
         </div>
       </Card>
+
+      <SellByGuidanceCard recommendation={recommendation} />
 
       {profitabilityReport ? (
         <Card className="p-6 lg:p-8">
@@ -1780,9 +1792,13 @@ type SalesTabProps = {
 };
 
 function SalesTab({ batch, sales, metrics, followUpSale }: SalesTabProps) {
+  const totalSellingCosts = sales.reduce(
+    (total, sale) => total + Number(sale.total_selling_cost || 0),
+    0
+  );
   return (
     <div className="mt-8 grid gap-8">
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
         <KpiCard
           label="Total Sales Value"
           value={formatCurrency(metrics.totalSales)}
@@ -1798,6 +1814,11 @@ function SalesTab({ batch, sales, metrics, followUpSale }: SalesTabProps) {
           value={formatCurrency(metrics.totalBalance)}
           detail={`${sales.filter((sale) => sale.balance > 0).length} partial-payment sale`}
           tone={metrics.totalBalance > 0 ? "danger" : "default"}
+        />
+        <KpiCard
+          label="Cost to Complete Sales"
+          value={formatCurrency(totalSellingCosts)}
+          detail="Transport and other sale-specific costs"
         />
       </div>
 
@@ -1835,13 +1856,14 @@ function SalesTab({ batch, sales, metrics, followUpSale }: SalesTabProps) {
           </Link>
         </div>
         <SimpleTable
-          columns={["Sale ID", "Date", "Qty", "Status", "Amount"]}
+          columns={["Sale ID", "Date", "Qty", "Status", "Sale Value", "Selling Costs"]}
           rows={sales.map((sale) => [
             sale.sale_id,
             formatDisplayDate(sale.sale_date),
             formatNumber(sale.quantity_sold),
             formatLabel(sale.payment_status),
             formatCurrency(calculateSaleTotal(sale)),
+            formatCurrency(sale.total_selling_cost || 0),
           ])}
           rowDetails={sales.map(saleDetail)}
           emptyMessage="No sales have been recorded."
@@ -1987,6 +2009,43 @@ function MortalityTab({
         </Card>
       </div>
     </div>
+  );
+}
+
+function SellByGuidanceCard({ recommendation }: { recommendation: SellByRecommendation }) {
+  return (
+    <Card className="p-6 lg:p-8">
+      <SectionLabel>Sell-by guidance</SectionLabel>
+      {recommendation.status === "complete" ? (
+        <div className="mt-5">
+          <h2 className="text-3xl font-extrabold">Batch selling complete</h2>
+          <p className="mt-3 text-sm leading-6 text-[#747b8d]">No live birds remain, so no further feed-purchase projection is required.</p>
+        </div>
+      ) : recommendation.status === "insufficient_data" ? (
+        <div className="mt-5">
+          <h2 className="text-3xl font-extrabold">More records are needed</h2>
+          <p className="mt-3 text-sm leading-6 text-[#747b8d]">Record {recommendation.missing_inputs.join(", ")} before the system can produce a defensible sell-by estimate.</p>
+        </div>
+      ) : (
+        <div className="mt-5 grid gap-6 lg:grid-cols-[1fr_0.7fr]">
+          <div>
+            <h2 className="text-3xl font-extrabold">Aim to finish selling by {formatDisplayDate(recommendation.recommended_sell_by!)}</h2>
+            <p className="mt-3 text-base leading-7 text-[#747b8d]">
+              Sell about <strong>{formatNumber(recommendation.birds_to_sell_per_day)} birds per day</strong>. Keeping the remaining flock for another {recommendation.projection_days} days is estimated to require <strong>{recommendation.bags_to_avoid} more {formatNumber(Number(recommendation.typical_bag_size_kg))} kg bags</strong>, costing about <strong>{formatCurrency(Number(recommendation.avoidable_feed_purchase_cost))}</strong>.
+            </p>
+            <p className="mt-3 text-base leading-7 text-[#747b8d]">
+              The price reference is <strong>{formatCurrency(Number(recommendation.average_historical_selling_price))} per bird</strong>, calculated from recorded historical bird sales. The projected net position after that extra feed is <strong>{formatSignedCurrency(Number(recommendation.projected_net_after_extra_feed))}</strong>{Number(recommendation.projected_loss_after_extra_feed) > 0 ? `, including an estimated ${formatCurrency(Number(recommendation.projected_loss_after_extra_feed))} loss.` : "."}
+            </p>
+          </div>
+          <div className="rounded-xl bg-[#f6f3eb] p-5 text-sm leading-6">
+            <p><strong>Current feed rate:</strong> {recommendation.current_feed_rate_kg_per_bird_day ?? "Unavailable"} kg per bird-day</p>
+            <p><strong>Historical feed rate:</strong> {recommendation.historical_feed_rate_kg_per_bird_day ?? "Unavailable"} kg per bird-day</p>
+            <p><strong>Observed feed cost:</strong> {formatCurrency(Number(recommendation.feed_cost_per_kg))} per kg</p>
+            <p className="mt-3 text-[#747b8d]">{recommendation.basis}</p>
+          </div>
+        </div>
+      )}
+    </Card>
   );
 }
 

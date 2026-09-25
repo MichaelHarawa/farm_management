@@ -442,6 +442,7 @@ class PayrollEntryViewSet(viewsets.ModelViewSet):
             idempotency_key=str(request.data.get("idempotency_key", "")),
             external_reference=str(request.data.get("external_reference", "")),
             user=request.user,
+            payment_kind=str(request.data.get("payment_kind", "salary")),
         )
         return Response(PayrollPaymentSerializer(payment).data, status=status.HTTP_201_CREATED)
 

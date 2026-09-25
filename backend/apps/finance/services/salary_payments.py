@@ -25,6 +25,7 @@ from ..models import (
     PayrollEntry,
     PayrollLiability,
     PayrollPayment,
+    PayrollPaymentKind,
     PayrollPaymentFunding,
     PayrollPaymentStatus,
 )
@@ -189,7 +190,8 @@ def set_salary_cost_allocations(*, payroll_entry_id: int, rows, user) -> Payroll
 
 @transaction.atomic
 def record_salary_payment(*, payroll_entry_id: int, amount, payment_date, payment_method: str,
-                          funding_rows, idempotency_key: str, external_reference: str, user):
+                          funding_rows, idempotency_key: str, external_reference: str, user,
+                          payment_kind: str = PayrollPaymentKind.SALARY):
     entry = PayrollEntry.objects.select_for_update().get(pk=payroll_entry_id)
     if entry.expenditure_id and entry.expenditure.funding_allocations.exists():
         raise ValidationError(
@@ -218,6 +220,8 @@ def record_salary_payment(*, payroll_entry_id: int, amount, payment_date, paymen
             raise ValidationError({"payment_date": "Enter a valid payment date."})
     if not payment_method.strip():
         raise ValidationError({"payment_method": "Payment method is required."})
+    if payment_kind not in PayrollPaymentKind.values:
+        raise ValidationError({"payment_kind": "Use advance or salary."})
     if not isinstance(funding_rows, list) or not funding_rows:
         raise ValidationError({"funding_allocations": "Select at least one funding source."})
     totals = {}
@@ -253,6 +257,7 @@ def record_salary_payment(*, payroll_entry_id: int, amount, payment_date, paymen
         amount=amount,
         payment_date=payment_date,
         payment_method=payment_method.strip(),
+        payment_kind=payment_kind,
         external_reference=(external_reference or "").strip(),
         idempotency_key=key,
         posted_by=user,
@@ -270,6 +275,7 @@ def record_salary_payment(*, payroll_entry_id: int, amount, payment_date, paymen
             after_data={
                 "payroll_entry_id": entry.pk,
                 "payment_date": payment.payment_date,
+                "payment_kind": payment.payment_kind,
                 "owner_funding": [
                     {"funding_source_id": source_id, "amount": totals[source_id]}
                     for source_id in owner_source_ids
@@ -278,6 +284,23 @@ def record_salary_payment(*, payroll_entry_id: int, amount, payment_date, paymen
         )
     ensure_salary_expense(entry, user=user)
     sync_entry_status(entry)
+    record_finance_action(
+        actor=user,
+        action=(
+            "salary_advance_recorded"
+            if payment_kind == PayrollPaymentKind.ADVANCE
+            else "salary_payment_recorded"
+        ),
+        entity_type="finance.PayrollPayment",
+        entity_id=payment.pk,
+        after_data={
+            "payroll_entry_id": entry.pk,
+            "amount": payment.amount,
+            "payment_date": payment.payment_date,
+            "payment_kind": payment.payment_kind,
+            "remaining_salary": entry.outstanding_salary,
+        },
+    )
     return payment
 
 

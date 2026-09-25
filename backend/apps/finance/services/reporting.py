@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -55,8 +56,17 @@ from ..models import (
     SharedExpenseScope,
 )
 from apps.poultry.services.batch_lifecycle import calculate_bird_balance
-from .profitability import batch_profitability, money, percent
+from .profitability import (
+    batch_portfolio_report,
+    batch_profitability,
+    money,
+    percent,
+    portfolio_expenditure_funding_mix,
+)
 from .warnings import finance_warning
+
+
+ZERO = Decimal("0.00")
 
 
 PRE_PRODUCTION_BATCH_STATUSES = [
@@ -1254,21 +1264,6 @@ def dashboard_warnings(period: AccountingPeriod | None = None) -> list[dict[str,
             }
         )
 
-    unlinked_customer_sales = _period_sales(period) if period else Sales.objects.exclude(
-        payment_status=PaymentStatus.CANCELLED
-    )
-    unlinked_customer_sales = unlinked_customer_sales.filter(customer__isnull=True)
-    if unlinked_customer_sales.exists():
-        warnings.append(
-            {
-                "code": "sales_without_customer_identity",
-                "severity": "warning",
-                "message": (
-                    f"{unlinked_customer_sales.count()} valid sale(s) are not linked "
-                    "to a customer."
-                ),
-            }
-        )
 
     expired_lots = SharedConsumableLot.objects.filter(
         expiry_date__lt=today,
@@ -1417,6 +1412,73 @@ def dashboard_indicators(filters=None) -> dict:
             },
         }
 
+    requested_batch_ids = (
+        filters.getlist("batch") if hasattr(filters, "getlist") else []
+    )
+    selected_ids = []
+    for value in requested_batch_ids:
+        try:
+            selected_ids.append(int(value))
+        except (TypeError, ValueError):
+            continue
+    dashboard_batches = Batch.objects.filter(
+        status__in=[
+            BatchStatus.ACTIVE,
+            BatchStatus.MATURE,
+            BatchStatus.SELLING,
+            BatchStatus.CLOSED,
+        ]
+    ).order_by("entry_date", "pk")
+    available_batch_rows = list(
+        dashboard_batches.values(
+            "id", "batch_id", "bird_type", "status", "entry_date"
+        )
+    )
+    if selected_ids:
+        selected_batches = list(dashboard_batches.filter(pk__in=selected_ids))
+    else:
+        selected_batches = list(dashboard_batches)
+    portfolio = batch_portfolio_report(selected_batches)
+    funding_mix = portfolio_expenditure_funding_mix(
+        selected_batches,
+        total_attributed_cost=portfolio["summary"]["total_attributed_cost"],
+    )
+    entry_dates = {batch.pk: batch.entry_date.date() for batch in selected_batches}
+    batch_codes = {batch.pk: batch.batch_id for batch in selected_batches}
+    trend_rows = (
+        Sales.objects.filter(
+            batch_id__in=entry_dates,
+            product_type__in=[ProductType.LIVE_CHICKEN, ProductType.DRESSED_CHICKEN],
+        )
+        .exclude(payment_status=PaymentStatus.CANCELLED)
+        .order_by("sale_date", "pk")
+    )
+    trend: dict[tuple[int, date], dict] = defaultdict(
+        lambda: {"quantity": 0, "revenue": ZERO}
+    )
+    for sale in trend_rows:
+        key = (sale.batch_id, sale.sale_date.date())
+        trend[key]["quantity"] += sale.quantity_sold
+        trend[key]["revenue"] += sale.sale_total
+    sales_trend = []
+    for (batch_id, sale_day), values in sorted(
+        trend.items(), key=lambda item: (item[0][1], item[0][0])
+    ):
+        age_day = max((sale_day - entry_dates[batch_id]).days, 0)
+        if age_day < 28:
+            continue
+        sales_trend.append(
+            {
+                "batch_id": batch_id,
+                "batch_code": batch_codes[batch_id],
+                "date": sale_day,
+                "age_day": age_day,
+                "is_early_sale": False,
+                "quantity": values["quantity"],
+                "revenue": money(values["revenue"]),
+            }
+        )
+
     return {
         "generated_at": timezone.now(),
         "active_batches": active_batches.count(),
@@ -1474,6 +1536,18 @@ def dashboard_indicators(filters=None) -> dict:
             for period in periods
         ],
         "warnings": dashboard_warnings(latest_period),
+        "batch_analysis": {
+            "available_batches": available_batch_rows,
+            "selected_batch_ids": [batch.pk for batch in selected_batches],
+            "portfolio": portfolio,
+            "funding_mix": funding_mix,
+            "sales_trend": sales_trend,
+            "sales_trend_basis": (
+                "Bird-sale revenue by flock age from day 28 onward. Sales recorded "
+                "before four weeks remain in revenue and profitability totals but are "
+                "excluded from this trend."
+            ),
+        },
     }
 
 

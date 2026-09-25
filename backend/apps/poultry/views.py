@@ -27,6 +27,7 @@ from apps.poultry.services.feed_metrics import (
     feed_summary,
     recalculate_feed_event_populations,
     record_feed_usage,
+    sell_by_recommendation,
 )
 from apps.poultry.services.growth import (
     compute_growth_series,
@@ -250,7 +251,7 @@ class BatchViewset(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retrie
         poultry_batch = self.get_object()
 
         if request.method == "GET":
-            sales = poultry_batch.sales_row.all().order_by("-created_at")
+            sales = poultry_batch.sales_row.prefetch_related("selling_costs").order_by("-created_at")
             serializer = self.get_serializer(sales, many=True)
             return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -329,6 +330,10 @@ class BatchViewset(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retrie
     @action(detail=True, methods=["get"], url_path="feed-metrics")
     def feed_metrics(self, request, pk=None):
         return Response(feed_summary(self.get_object()))
+
+    @action(detail=True, methods=["get"], url_path="sell-by-recommendation")
+    def sell_by_guidance(self, request, pk=None):
+        return Response(sell_by_recommendation(self.get_object()))
 
     @action(detail=True, methods=["post"], url_path="recalculate-feed-metrics")
     def recalculate_feed_metrics(self, request, pk=None):

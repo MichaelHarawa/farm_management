@@ -3,10 +3,9 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
-import { useForm, useWatch, type SubmitHandler } from "react-hook-form";
+import { useFieldArray, useForm, useWatch, type SubmitHandler } from "react-hook-form";
 
 import { getApiErrorMessage } from "@/lib/errors";
-import type { Customer } from "@/features/finance/types";
 import { createBatchSale } from "../api/sales";
 import type { CreateSalePayload } from "../types";
 import { formatCurrency } from "../utils/formatters";
@@ -42,10 +41,7 @@ const paymentMethodOptions = [
   { value: "credit", label: "Credit" },
 ] as const;
 
-type AddSaleFormProps = {
-  batchId: number;
-  customers: Customer[];
-};
+type AddSaleFormProps = { batchId: number };
 
 function getDefaultSaleDate(): string {
   const date = new Date();
@@ -54,7 +50,7 @@ function getDefaultSaleDate(): string {
   return date.toISOString().slice(0, 16);
 }
 
-export function AddSaleForm({ batchId, customers }: AddSaleFormProps) {
+export function AddSaleForm({ batchId }: AddSaleFormProps) {
   const router = useRouter();
   const [serverError, setServerError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -75,7 +71,6 @@ export function AddSaleForm({ batchId, customers }: AddSaleFormProps) {
       quantity_sold: 1,
       unit_price: 0,
       buyer_name: "",
-      customer: "",
       buyer_type: "market_vendor",
       buyer_type_other: "",
       payment_status: "partial",
@@ -84,6 +79,7 @@ export function AddSaleForm({ batchId, customers }: AddSaleFormProps) {
       receivable_follow_up_name: "",
       sold_by_name: "",
       notes: "Recorded through Farmnotes.",
+      selling_costs: [],
     },
     mode: "onBlur",
   });
@@ -102,6 +98,7 @@ export function AddSaleForm({ batchId, customers }: AddSaleFormProps) {
     control,
     name: "buyer_type",
   });
+  const sellingCosts = useFieldArray({ control, name: "selling_costs" });
   const paymentStatus = useWatch({
     control,
     name: "payment_status",
@@ -125,6 +122,11 @@ export function AddSaleForm({ batchId, customers }: AddSaleFormProps) {
   const saleTotal = quantitySold * unitPrice;
   const effectiveAmountPaid = paymentStatus === "paid" ? saleTotal : amountPaid;
   const balance = Math.max(saleTotal - effectiveAmountPaid, 0);
+  const sellingCostValues = useWatch({ control, name: "selling_costs" }) ?? [];
+  const totalSellingCosts = sellingCostValues.reduce(
+    (total, row) => total + (Number(row.amount) || 0),
+    0
+  );
 
   const onSubmit: SubmitHandler<SaleFormValues> = async (values) => {
     setServerError(null);
@@ -137,7 +139,6 @@ export function AddSaleForm({ batchId, customers }: AddSaleFormProps) {
         : values.amount_paid;
     const payload: CreateSalePayload = {
       ...values,
-      customer: values.customer ? Number(values.customer) : null,
       due_date: values.due_date || null,
       buyer_type_other:
         values.buyer_type === "other" ? values.buyer_type_other.trim() : "",
@@ -160,7 +161,6 @@ export function AddSaleForm({ batchId, customers }: AddSaleFormProps) {
         quantity_sold: 1,
         unit_price: 0,
         buyer_name: "",
-        customer: "",
         buyer_type: "market_vendor",
         buyer_type_other: "",
         payment_status: "partial",
@@ -169,6 +169,7 @@ export function AddSaleForm({ batchId, customers }: AddSaleFormProps) {
         receivable_follow_up_name: "",
         sold_by_name: "",
         notes: "Recorded through Farmnotes.",
+        selling_costs: [],
       });
 
       setSuccessMessage("The sale was recorded successfully.");
@@ -237,37 +238,6 @@ export function AddSaleForm({ batchId, customers }: AddSaleFormProps) {
             className="form-input"
           />
         </FormField>
-
-        {customers.length ? (
-          <FormField label="Existing customer" error={errors.customer?.message}>
-            <select
-              id="sale-customer"
-              {...register("customer", {
-                onChange: (event) => {
-                  const customer = customers.find(
-                    (item) => item.id === Number(event.target.value)
-                  );
-                  if (customer) {
-                    setValue("buyer_name", customer.display_name, { shouldValidate: true });
-                    if (buyerTypeOptions.some((option) => option.value === customer.customer_type)) {
-                      setValue(
-                        "buyer_type",
-                        customer.customer_type as SaleFormValues["buyer_type"],
-                        { shouldValidate: true }
-                      );
-                    }
-                  }
-                },
-              })}
-              className="form-input"
-            >
-              <option value="">New or unlinked buyer</option>
-              {customers.filter((customer) => customer.is_active).map((customer) => (
-                <option key={customer.id} value={customer.id}>{customer.display_name}</option>
-              ))}
-            </select>
-          </FormField>
-        ) : null}
 
         <FormField label="Buyer name" error={errors.buyer_name?.message}>
           <input
@@ -405,9 +375,52 @@ export function AddSaleForm({ batchId, customers }: AddSaleFormProps) {
         </div>
       </div>
 
+      <section className="rounded-xl border border-[var(--line)] bg-white/55 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.15em] text-[var(--navy-muted)]">Additional selling costs</p>
+            <p className="mt-1 text-sm text-[var(--navy-muted)]">Transport, packaging, commission, market fees, or another cost incurred to complete this sale.</p>
+          </div>
+          <button
+            type="button"
+            className="rounded-lg border border-[var(--navy)] px-4 py-2 font-bold"
+            onClick={() => sellingCosts.append({ category: "transport", amount: 0, notes: "" })}
+          >
+            Add selling cost
+          </button>
+        </div>
+        {sellingCosts.fields.length ? (
+          <div className="mt-4 grid gap-4">
+            {sellingCosts.fields.map((field, index) => (
+              <div key={field.id} className="grid gap-3 rounded-lg border border-[var(--line)] p-3 lg:grid-cols-[180px_180px_1fr_auto] lg:items-start">
+                <FormField label="Cost type" error={errors.selling_costs?.[index]?.category?.message}>
+                  <select className="form-input" {...register(`selling_costs.${index}.category`)}>
+                    <option value="transport">Transport</option>
+                    <option value="packaging">Packaging</option>
+                    <option value="commission">Commission</option>
+                    <option value="market_fee">Market fee</option>
+                    <option value="other">Other selling cost</option>
+                  </select>
+                </FormField>
+                <FormField label="Amount" error={errors.selling_costs?.[index]?.amount?.message}>
+                  <input className="form-input" type="number" min="1" step="1" {...register(`selling_costs.${index}.amount`, { valueAsNumber: true })} />
+                </FormField>
+                <FormField label="Optional notes" error={errors.selling_costs?.[index]?.notes?.message}>
+                  <input className="form-input" placeholder="Example: delivery to customer location" {...register(`selling_costs.${index}.notes`)} />
+                </FormField>
+                <button type="button" className="mt-7 font-bold text-red-700 underline" onClick={() => sellingCosts.remove(index)}>Remove</button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-4 text-sm text-[var(--navy-muted)]">No additional selling cost for this sale.</p>
+        )}
+      </section>
+
       <div className="grid gap-4 border-t border-[var(--line)] pt-5 sm:grid-cols-[1fr_auto] sm:items-center">
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-3 sm:grid-cols-3">
           <SummaryFigure label="Sale Total" value={formatCurrency(saleTotal)} />
+          <SummaryFigure label="Selling Costs" value={formatCurrency(totalSellingCosts)} />
           <SummaryFigure label="Balance Due" value={formatCurrency(balance)} />
         </div>
 

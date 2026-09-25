@@ -14,6 +14,7 @@ from .models import(
     PaymentStatus,
     InputCosts,
     Sales,
+    SaleSellingCost,
     Mortality,
     FeedUsage,
     FlockAdjustment,
@@ -332,6 +333,24 @@ class BatchForecastAssumptionSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Enter a selling price greater than zero.")
         return value
 
+class SaleSellingCostSerializer(serializers.ModelSerializer):
+    category_label = serializers.CharField(
+        source="get_category_display", read_only=True
+    )
+
+    class Meta:
+        model = SaleSellingCost
+        fields = (
+            "id",
+            "category",
+            "category_label",
+            "amount",
+            "notes",
+            "created_at",
+        )
+        read_only_fields = ("id", "category_label", "created_at")
+
+
 class SalesSerializer(serializers.ModelSerializer):
     created_by_name = serializers.SerializerMethodField()
     customer_name = serializers.CharField(
@@ -342,6 +361,8 @@ class SalesSerializer(serializers.ModelSerializer):
         decimal_places=2,
         read_only=True,
     )
+    selling_costs = SaleSellingCostSerializer(many=True, required=False)
+    total_selling_cost = serializers.SerializerMethodField()
 
     class Meta:
         model = Sales
@@ -357,6 +378,8 @@ class SalesSerializer(serializers.ModelSerializer):
             "usd_exchange_rate",
             "usd_equivalent",
             "sale_total",
+            "selling_costs",
+            "total_selling_cost",
             "buyer_name",
             "customer",
             "customer_name",
@@ -385,6 +408,7 @@ class SalesSerializer(serializers.ModelSerializer):
             "created_by",
             "created_by_name",
             "usd_equivalent",
+            "total_selling_cost",
         )
         extra_kwargs = {
             "amount_paid": {"required": False},
@@ -484,6 +508,12 @@ class SalesSerializer(serializers.ModelSerializer):
             return ""
 
         return obj.created_by.get_full_name() or obj.created_by.username
+
+    def get_total_selling_cost(self, obj):
+        return sum(
+            (row.amount for row in obj.selling_costs.all()),
+            Decimal("0.00"),
+        ).quantize(Decimal("0.01"))
 
 class MortalitySerializer(serializers.ModelSerializer):
     created_by_name = serializers.SerializerMethodField()
@@ -587,7 +617,6 @@ class FeedUsageSerializer(serializers.ModelSerializer):
             return ""
 
         return obj.created_by.get_full_name() or obj.created_by.username
-
 
 class FlockAdjustmentSerializer(serializers.ModelSerializer):
     class Meta:

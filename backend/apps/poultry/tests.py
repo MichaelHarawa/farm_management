@@ -9,14 +9,18 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from .models import (
-    Batch, BuyerType, ChicksSource, FeedSource, FeedType, FeedUsage,
+    Batch, BuyerType, ChicksSource, FeedSource, FeedType, FeedUsage, InputCosts,
     Mortality, PaymentMethod, PaymentStatus, ProductType, Sales, UnitMeasurement,
 )
 from .serializers import SalesSerializer
 from .services.batch_lifecycle import create_sale_with_lifecycle
 from .services.feed_metrics import (
     bird_days_between, feed_summary, recalculate_feed_event_populations,
-    record_feed_usage,
+    record_feed_usage, sell_by_recommendation,
+)
+from apps.finance.services.profitability import (
+    batch_profitability,
+    portfolio_expenditure_funding_mix,
 )
 
 
@@ -156,6 +160,54 @@ class SalesModelTests(SimpleTestCase):
         self.assertIn("buyer_type_other", error.exception.message_dict)
 
 
+class SaleSellingCostTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(username="sales-cost-user")
+        arrival = timezone.make_aware(datetime.combine(date(2026, 8, 1), time(hour=8)))
+        self.batch = Batch.objects.create(
+            batch_id="SELLING-COST-1",
+            bird_type="broilers",
+            source=ChicksSource.PROTO,
+            entry_date=arrival,
+            expected_maturity_date=arrival + timedelta(days=42),
+            quantity=100,
+            actual_quantity_received=100,
+            created_by=self.user,
+        )
+
+    def test_nested_sale_costs_are_recorded_and_reduce_profit(self):
+        sale = create_sale_with_lifecycle(
+            batch_id=self.batch.pk,
+            created_by=self.user,
+            **sale_payload(
+                quantity_sold=2,
+                unit_price=Decimal("7500.00"),
+                amount_paid=Decimal("15000.00"),
+                payment_status=PaymentStatus.PAID,
+                selling_costs=[
+                    {"category": "transport", "amount": "1200.00", "notes": "Delivery"},
+                    {"category": "packaging", "amount": "300.00", "notes": "Crates"},
+                ],
+            ),
+        )
+
+        serialized = SalesSerializer(sale).data
+        report = batch_profitability(self.batch)
+        funding_mix = portfolio_expenditure_funding_mix(
+            [self.batch], total_attributed_cost=report["total_attributed_cost"]
+        )
+
+        self.assertEqual(sale.selling_costs.count(), 2)
+        self.assertEqual(Decimal(serialized["total_selling_cost"]), Decimal("1500.00"))
+        self.assertEqual(report["selling_cost"], Decimal("1500.00"))
+        self.assertEqual(report["management_net_position"], Decimal("13500.00"))
+        unassigned = next(
+            row for row in funding_mix["groups"]
+            if row["key"] == "unpaid_or_unassigned"
+        )
+        self.assertEqual(unassigned["amount"], Decimal("1500.00"))
+
+
 class DatedFeedMetricsTests(TestCase):
     def setUp(self):
         self.user = get_user_model().objects.create_user(username="feed-auditor")
@@ -236,6 +288,32 @@ class DatedFeedMetricsTests(TestCase):
         )
         with self.assertRaises(Exception):
             self.feed(self.arrival + timedelta(hours=2))
+
+    def test_sell_by_guidance_uses_recorded_feed_cost_and_target_price_fallback(self):
+        self.batch.target_selling_price = Decimal("7500.00")
+        self.batch.save(update_fields=["target_selling_price", "updated_at"])
+        self.feed(self.arrival + timedelta(days=1), quantity=50, hours=24)
+        InputCosts.objects.create(
+            batch=self.batch,
+            item="Finisher feed",
+            category="Feed",
+            quantity=1,
+            unit=50,
+            unit_measurement="kg",
+            unit_cost=Decimal("10.00"),
+            purchase_date=self.arrival + timedelta(days=1),
+            notes="Feed evidence",
+            created_by=self.user,
+        )
+
+        guidance = sell_by_recommendation(self.batch)
+
+        self.assertEqual(guidance["status"], "ready")
+        self.assertEqual(guidance["average_historical_selling_price"], Decimal("7500.00"))
+        self.assertEqual(guidance["feed_cost_per_kg"], Decimal("10.00"))
+        self.assertEqual(guidance["typical_bag_size_kg"], Decimal("50.00"))
+        self.assertGreater(guidance["bags_to_avoid"], 0)
+        self.assertGreater(guidance["avoidable_feed_purchase_cost"], Decimal("0.00"))
 
 
 class PoultryDashboardTests(TestCase):

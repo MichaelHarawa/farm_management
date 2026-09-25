@@ -5,6 +5,7 @@ from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
+from django.http import QueryDict
 from django.utils import timezone
 from rest_framework.test import APIClient
 
@@ -139,6 +140,52 @@ class FinanceServiceTests(TestCase):
         self.assertEqual(allocations[batch_a.id], Decimal("311538.46"))
         self.assertEqual(allocations[batch_b.id], Decimal("288461.54"))
         self.assertEqual(sum(allocations.values()), Decimal("600000.00"))
+
+    def test_dashboard_batch_filter_drives_portfolio_and_age_based_sales_trend(self):
+        batch_a = self.batch(quantity=100, entry=date(2026, 1, 1))
+        batch_b = self.batch(quantity=80, entry=date(2026, 2, 1))
+        create_sale_with_lifecycle(
+            batch_id=batch_a.pk,
+            created_by=self.user,
+            **self.sale_payload(
+                sale_date=aware(date(2026, 1, 11)),
+                quantity_sold=2,
+                unit_price=Decimal("100.00"),
+                amount_paid=Decimal("200.00"),
+            ),
+        )
+        create_sale_with_lifecycle(
+            batch_id=batch_a.pk,
+            created_by=self.user,
+            **self.sale_payload(
+                sale_date=aware(date(2026, 1, 31)),
+                quantity_sold=1,
+                unit_price=Decimal("150.00"),
+                amount_paid=Decimal("150.00"),
+            ),
+        )
+        create_sale_with_lifecycle(
+            batch_id=batch_b.pk,
+            created_by=self.user,
+            **self.sale_payload(
+                sale_date=aware(date(2026, 3, 3)),
+                quantity_sold=3,
+                unit_price=Decimal("200.00"),
+                amount_paid=Decimal("600.00"),
+            ),
+        )
+        filters = QueryDict("", mutable=True)
+        filters.setlist("batch", [str(batch_a.pk)])
+
+        dashboard = dashboard_indicators(filters)
+        analysis = dashboard["batch_analysis"]
+
+        self.assertEqual(analysis["selected_batch_ids"], [batch_a.pk])
+        self.assertEqual(analysis["portfolio"]["selected_batch_count"], 1)
+        self.assertEqual(analysis["portfolio"]["summary"]["revenue"], Decimal("350.00"))
+        self.assertEqual(len(analysis["sales_trend"]), 1)
+        self.assertEqual(analysis["sales_trend"][0]["age_day"], 30)
+        self.assertFalse(analysis["sales_trend"][0]["is_early_sale"])
 
     def test_batch_closes_when_all_live_birds_are_accounted_for(self):
         batch = self.batch(quantity=200)
@@ -833,7 +880,7 @@ class FinanceServiceTests(TestCase):
         # Collection totals now come from the append-only payment ledger.
         # Includes unified expenditure attribution, management-period discovery,
         # and one grouped asset-depreciation breakdown query (no per-batch N+1).
-        with self.assertNumQueries(16):
+        with self.assertNumQueries(17):
             report = batch_portfolio_report([batch_a, batch_b])
         summary = report["summary"]
 

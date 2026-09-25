@@ -32,6 +32,9 @@ export const poultryApiPaths = {
   feedMetrics: (batchId: number) =>
     `${POULTRY_ROOT}/${batchId}/feed-metrics`,
 
+  sellByRecommendation: (batchId: number) =>
+    `${POULTRY_ROOT}/${batchId}/sell-by-recommendation`,
+
   vaccinations: (batchId: number) =>
     `${POULTRY_ROOT}/${batchId}/drugs_vaccine`,
 

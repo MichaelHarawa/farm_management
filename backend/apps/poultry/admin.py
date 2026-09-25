@@ -9,6 +9,7 @@ from .models import (
     InputCosts,
     Mortality,
     Sales,
+    SaleSellingCost,
 )
 
 
@@ -33,6 +34,14 @@ class SalesAdmin(admin.ModelAdmin):
     list_filter = ("product_type", "payment_status", "sale_date")
     search_fields = ("sale_id", "batch__batch_id", "buyer_name", "receivable_follow_up_name")
     autocomplete_fields = ("batch", "created_by")
+
+
+@admin.register(SaleSellingCost)
+class SaleSellingCostAdmin(admin.ModelAdmin):
+    list_display = ("sale", "category", "amount", "created_at")
+    list_filter = ("category", "created_at")
+    search_fields = ("sale__sale_id", "sale__buyer_name", "notes")
+    autocomplete_fields = ("sale", "created_by")
 
 
 @admin.register(Mortality)

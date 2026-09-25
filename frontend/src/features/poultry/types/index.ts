@@ -168,6 +168,15 @@ export type PoultrySale = {
   updated_at: string;
   created_by: string | null;
   created_by_name: string;
+  selling_costs: Array<{
+    id: number;
+    category: "transport" | "packaging" | "commission" | "market_fee" | "other";
+    category_label: string;
+    amount: number;
+    notes: string;
+    created_at: string;
+  }>;
+  total_selling_cost: number;
 };
 
 export type PoultryMortality = {
@@ -238,6 +247,36 @@ export type PoultryFeedMetrics = {
   stage_feed_kg: Record<string, string>;
   same_timestamp_ordering: string;
   calculation_version: string;
+};
+
+export type SellByRecommendation = {
+  status: "ready" | "insufficient_data" | "complete";
+  recommended_sell_by: string | null;
+  current_age_days: number;
+  current_live_birds: number;
+  birds_to_sell_per_day: number;
+  average_historical_selling_price: string | null;
+  current_feed_rate_kg_per_bird_day: string | null;
+  historical_feed_rate_kg_per_bird_day: string | null;
+  recommended_feed_rate_kg_per_bird_day: string | null;
+  typical_bag_size_kg: string;
+  feed_cost_per_kg: string | null;
+  projection_days: number;
+  projected_extra_feed_kg: string | null;
+  bags_to_avoid: number | null;
+  avoidable_feed_purchase_cost: string | null;
+  current_management_net_position: string | null;
+  projected_net_after_extra_feed: string | null;
+  projected_loss_after_extra_feed: string | null;
+  missing_inputs: string[];
+  evidence: {
+    historical_feed_batch_count: number;
+    historical_sale_quantity: number;
+    feed_cost_batch_count: number;
+    historical_finish_batch_count: number;
+    historical_finish_age_days: number;
+  };
+  basis: string;
 };
 
 export type PoultryDashboardBatch = {
@@ -378,7 +417,6 @@ export type CreateSalePayload = {
   quantity_sold: number;
   unit_price: number;
   buyer_name: string;
-  customer: number | null;
   buyer_type: BuyerType;
   buyer_type_other: string;
   payment_status: PaymentStatus;
@@ -388,6 +426,11 @@ export type CreateSalePayload = {
   receivable_follow_up_name: string;
   sold_by_name: string;
   notes: string;
+  selling_costs: Array<{
+    category: "transport" | "packaging" | "commission" | "market_fee" | "other";
+    amount: number;
+    notes: string;
+  }>;
 };
 
 export type CreateMortalityPayload = {

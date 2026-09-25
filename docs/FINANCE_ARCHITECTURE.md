@@ -101,16 +101,16 @@ Owner identities, contribution workflows, reports, assignment of owner cash to a
 | View append-only owner finance actions | Yes | Yes | No |
 | Assign owner-capital cash as an expenditure source | Yes | Yes | No; record a payable for authorized funding |
 
-## Phase 3: customer contribution
+## Phase 3: batch selling economics
 
-`Customer` is the stable buyer identity used for analysis. `Sales.customer` is optional so historical rows remain valid, while `Sales.buyer_name` preserves the name written on the original sale. The system never merges or links customers merely because names match; historical linking is an explicit, audited user action. Deactivating a customer prevents new selection without deleting sales or contribution history.
+`SaleSellingCost` records the incremental cost of completing an individual sale. Categories are transport, packaging, commission, market fee, and other; every row has an amount and optional note. The child rows are created atomically with the sale and are exposed with a computed sale-level total.
 
-Customer contribution uses recognized, non-cancelled sales revenue, not cash received:
+Sale-specific costs are included once in `selling_cost_total`. They reduce fully loaded batch net position but do not alter direct production cost or gross profit. This preserves the distinction between raising the flock and getting a completed sale to the buyer.
 
-`customer contribution = revenue - direct delivery cost - support cost - rework cost - acquisition cost`
+The active workflow deliberately relies on the original `Sales.buyer_name` instead of requiring a customer master. Previously added nullable customer and attribution tables remain for backward-compatible preservation of existing data, but they are not navigation destinations or required sale inputs.
 
-Cash collected and receivables are shown beside contribution but do not replace revenue in the formula. The four cost categories are mutually exclusive. Direct delivery automatically includes the sold share of the existing canonical production cost per survived bird. That share is calculated over every valid bird sale in the source batch before report filters are applied, leaving the unsold share with the batch and preventing filtered reports from changing the denominator.
+Batch analysis accepts repeated batch IDs. The same selection drives the portfolio totals, funding-origin mix, age-based sales series, and per-batch comparison. Funding origin is derived from posted expenditure funding allocations and remains separate from the batch that bears the cost.
 
-`CustomerCostAttribution` links other customer-specific costs to their recognized expenditure, payroll, labour, or allocation source. Each row stores customer, optional sale and batch, economic date/period, one category, actual-or-estimated status, basis, reason, actor, and canonical economic-source key. Source and canonical-source caps prevent the same recognized cost from being assigned twice. A source already included in the automatic batch production basis cannot be attributed again as a customer cost. Documented estimates are analytical rows only and do not manufacture expenditure or journal entries.
+`PayrollPayment.payment_kind` distinguishes an advance from an ordinary salary payment. Both use the existing append-only payment and funding ledgers. Therefore an advance reduces the payroll entry's outstanding salary and consumes the selected cash source without creating a second wage expense.
 
-Attributions are append-only and corrected by reversal. As-of reports include a row until its reversal date, so a later correction cannot rewrite an earlier report. Reports expose source drill-down, coverage by cost category, product mix, customer concentration, system recommendations, and documented management labels. Missing categories are reported as incomplete rather than assumed to be zero.
+Sell-by guidance is advisory. It uses dated feed consumption, bird-days, recorded feed cost, comparable completed-batch finish age, and quantity-weighted selling price. If a feed rate, feed cost, or price is unavailable, the API reports the missing inputs rather than fabricating a recommendation.

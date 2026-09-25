@@ -11,6 +11,7 @@ from apps.finance.models import (
     AccountingPeriod, AllocationSourceType, CostAllocation, EmployeeProfile, EmploymentType,
     FinancePaymentStatus, FundingReceipt, FundingSource, FundingSourceType,
     PayrollPayment, PayrollPaymentStatus,
+    PayrollPaymentKind,
 )
 from apps.finance.services.payroll import generate_payroll_for_period
 from apps.finance.services.expenditures import record_expenditure_payment
@@ -101,6 +102,25 @@ class SalaryPaymentLedgerTests(TestCase):
             f"/api/v1/finance/payroll-entries/{self.entry.pk}"
         )
         self.assertIn(anonymous.status_code, {401, 403})
+
+    def test_advance_is_labelled_and_reduces_salary_and_funding_balance(self):
+        advance = record_salary_payment(
+            payroll_entry_id=self.entry.pk,
+            amount="70.00",
+            payment_date="2026-01-15",
+            payment_method="Cash",
+            payment_kind=PayrollPaymentKind.ADVANCE,
+            funding_rows=[{"funding_source": self.source.pk, "amount": "70.00"}],
+            idempotency_key="salary-advance",
+            external_reference="ADV-1",
+            user=self.manager,
+        )
+
+        self.entry.refresh_from_db()
+        self.assertEqual(advance.payment_kind, PayrollPaymentKind.ADVANCE)
+        self.assertEqual(self.entry.outstanding_salary, Decimal("200.00"))
+        self.assertEqual(self.entry.payment_status, FinancePaymentStatus.PARTIAL)
+        self.assertEqual(available_funding_source_cash(self.source), Decimal("430.00"))
 
     def test_salary_cost_split_is_independent_of_funding(self):
         set_salary_cost_allocations(

@@ -88,6 +88,7 @@ export type PayrollPayment = {
   amount: DecimalString;
   payment_date: string;
   payment_method: string;
+  payment_kind: "advance" | "salary";
   external_reference: string;
   status: "posted" | "reversed";
   posted_by_name: string | null;
@@ -346,6 +347,7 @@ export type BatchProfitabilityReport = {
   provisional_cost_per_saleable_bird: DecimalString | null;
   final_cost_per_bird_sold: DecimalString | null;
   break_even_selling_price_per_remaining_bird: DecimalString | null;
+  break_even_price_per_bird_all_costs: DecimalString | null;
   additional_revenue_required_to_break_even: DecimalString;
   active_batch_cost_exposure: DecimalString;
 
@@ -394,6 +396,7 @@ export type BatchPortfolioSummary = {
   profit_per_bird_sold: DecimalString | null;
   production_cost_per_saleable_bird: DecimalString | null;
   break_even_selling_price_per_remaining_bird: DecimalString | null;
+  break_even_price_per_bird_all_costs: DecimalString | null;
   additional_revenue_required_to_break_even: DecimalString;
   active_batch_cost_exposure: DecimalString;
 };
@@ -579,6 +582,39 @@ export type FinanceDashboard = {
     expected_final_revenue: DecimalString | null;
     rows: BatchProfitabilityReport[];
     basis: string;
+  };
+  batch_analysis: {
+    available_batches: Array<{
+      id: number;
+      batch_id: string;
+      bird_type: string;
+      status: string;
+      entry_date: string;
+    }>;
+    selected_batch_ids: number[];
+    portfolio: BatchPortfolioReport;
+    funding_mix: {
+      selected_batch_count: number;
+      total_batch_expenditure: DecimalString;
+      total_paid_for_batches: DecimalString;
+      groups: Array<{
+        key: string;
+        label: string;
+        amount: DecimalString;
+        percent: DecimalString | null;
+      }>;
+      basis: string;
+    };
+    sales_trend: Array<{
+      batch_id: number;
+      batch_code: string;
+      date: string;
+      age_day: number;
+      is_early_sale: boolean;
+      quantity: number;
+      revenue: DecimalString;
+    }>;
+    sales_trend_basis: string;
   };
 };
 

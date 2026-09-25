@@ -63,7 +63,6 @@ export async function FinanceNav() {
   const user = await getOptionalCurrentUser();
   const primaryLinks = [
     ["Overview", "/finance"],
-    ["Customers", "/finance/customers"],
     ["Sales", "/finance/receivables"],
     ["Spending", "/finance/expenditures"],
     ["Batches", "/finance/batches"],

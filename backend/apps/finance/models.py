@@ -2828,6 +2828,11 @@ class PayrollPaymentStatus(models.TextChoices):
     REVERSED = "reversed", "Reversed"
 
 
+class PayrollPaymentKind(models.TextChoices):
+    ADVANCE = "advance", "Salary advance"
+    SALARY = "salary", "Salary payment"
+
+
 class PayrollPayment(TimestampedModel):
     payroll_entry = models.ForeignKey(
         PayrollEntry, on_delete=models.PROTECT, related_name="payments"
@@ -2837,6 +2842,12 @@ class PayrollPayment(TimestampedModel):
     )
     payment_date = models.DateField(db_index=True)
     payment_method = models.CharField(max_length=80)
+    payment_kind = models.CharField(
+        max_length=20,
+        choices=PayrollPaymentKind.choices,
+        default=PayrollPaymentKind.SALARY,
+        db_index=True,
+    )
     external_reference = models.CharField(max_length=120, blank=True, default="")
     idempotency_key = models.CharField(max_length=120, unique=True)
     status = models.CharField(

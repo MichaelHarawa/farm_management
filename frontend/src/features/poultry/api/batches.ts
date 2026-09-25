@@ -14,6 +14,7 @@ import type {
   PoultryFeedUsage,
   PoultryMortality,
   PoultrySale,
+  SellByRecommendation,
   PoultryVaccination,
 } from "../types";
 
@@ -167,6 +168,16 @@ export async function getBatchFeedMetrics(
 ): Promise<PoultryFeedMetrics> {
   return authenticatedBackendFetch<PoultryFeedMetrics>(
     poultryApiPaths.feedMetrics(id),
+    { returnTo, cache: "no-store" }
+  );
+}
+
+export async function getBatchSellByRecommendation(
+  id: number,
+  returnTo: string
+): Promise<SellByRecommendation> {
+  return authenticatedBackendFetch<SellByRecommendation>(
+    poultryApiPaths.sellByRecommendation(id),
     { returnTo, cache: "no-store" }
   );
 }

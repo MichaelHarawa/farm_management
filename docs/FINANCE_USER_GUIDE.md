@@ -72,16 +72,30 @@ Use **Return of Owner Capital** only when principal is genuinely repaid. Use **O
 
 Legacy owner-capital receipts with no reliable contributor appear under **Unknown legacy owner**. Do not rename or guess them from a description. Reconcile them against bank records and source documents before making an explicit controlled assignment.
 
-## Customer contribution
+## Sale costs and batch performance
 
-Open **Finance → Customers** to review customer value without the former dashboard card overload. The page deliberately starts with four measures only: recognized revenue, customer contribution, cash collected, and still receivable. Use the date, product, and customer filters before comparing customers.
+When recording a sale, use **Add selling cost** for transport, packaging, commission, market fees, or another cost required to complete that sale. Add as many rows as needed and use the optional note to explain the charge. Do not repeat feed, chicks, medicine, or another production input here.
 
-Create a stable customer once, then select it while recording new poultry sales. Existing historical sales keep their original buyer text until a user opens **Link historical sale**, verifies the buyer, and links the sale explicitly. Duplicate customer names are allowed because a name alone is not identity evidence. Deactivating a customer preserves all history.
+Open **Finance → Dashboard** and choose one, several, or all batches. The selection applies to every batch-analysis panel:
 
-Open a customer to see the exact four-part cost bridge:
+- mortality and total attributed cost;
+- gross profit after production cost;
+- net profit after selling, administration, finance, and recorded tax cost;
+- the source-of-funds pie chart;
+- sales by flock age from day 28 onward (earlier sales still remain in financial totals);
+- fully loaded break-even price per survived bird; and
+- the price required from remaining birds to recover the current gap.
 
-`Revenue - Direct Delivery - Support - Rework - Acquisition = Customer Contribution`
+The sales table on a poultry batch also shows the total cost attached to each sale and the batch total spent completing sales.
 
-Direct delivery already includes the sold share of canonical batch production cost. Do not add the same batch production source again. Use **Attribute customer cost** for a recognized delivery, support, rework, or acquisition cost, search for its source, enter the amount, and document the attribution basis and reason. A documented estimate is allowed when the real source split is unavailable, but it is clearly marked as estimated and does not create an expenditure.
+## Salary advances and payments
 
-Treat **Incomplete** as a data-quality warning, not proof that a missing category cost is zero. Review the sale and source drill-down before applying an **Ideal**, **Healthy**, **Review**, **Unprofitable**, or **Strategic Exception** management label. Labels require a decision note and do not automatically block or terminate a customer relationship. Use the filtered CSV for offline review; it exports the complete filtered result, not only the visible page.
+Open **Finance → Payroll**. Use **Record advance** when cash is given before final salary payment. Enter the amount and choose the batch-sales, owner-capital, farm-cash, loan, grant, or other source that supplied the cash. The advance immediately reduces the remaining salary and source availability.
+
+Use **Pay remaining salary** for the normal settlement action. It defaults to the unpaid balance and uses the same funding selector. Payment history identifies advances separately from salary settlements. Use the controlled reversal action for mistakes; do not create a negative payment.
+
+## Feed sell-by guidance
+
+Open a poultry batch and stay on **Overview**. The sell-by guidance compares dated feed-per-bird-day consumption with completed batches and uses the quantity-weighted historical bird price. It estimates the sell-by date, birds to sell per day, seven-day extra feed, bags and cost that may be avoided, and the projected net result if feeding continues.
+
+This is a management estimate, not a health or market instruction. Review bird health, live weight, buyer demand, and a current market quotation before acting. If the card asks for missing feed cost, consumption, or selling-price evidence, record that evidence first.

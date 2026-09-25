@@ -19,6 +19,7 @@ from apps.poultry.models import (
     PaymentStatus,
     ProductType,
     Sales,
+    SaleSellingCost,
 )
 
 from ..models import (
@@ -284,6 +285,9 @@ def selling_cost_total(batch: Batch) -> Decimal:
         ),
         consumable_usage__batch__isnull=True,
     )
+    sale_specific_costs = SaleSellingCost.objects.filter(
+        sale__batch=batch,
+    ).exclude(sale__payment_status=PaymentStatus.CANCELLED)
     return (
         money(direct_labour.aggregate(total=Sum("payment_amount"))["total"])
         + money(shared_labour.aggregate(total=Sum("allocated_amount"))["total"])
@@ -291,6 +295,7 @@ def selling_cost_total(batch: Batch) -> Decimal:
         + money(shared_expenses.aggregate(total=Sum("allocated_amount"))["total"])
         + money(direct_consumables.aggregate(total=Sum("recognized_cost"))["total"])
         + money(shared_consumables.aggregate(total=Sum("allocated_amount"))["total"])
+        + money(sale_specific_costs.aggregate(total=Sum("amount"))["total"])
             )
 
 
@@ -773,6 +778,14 @@ def _attach_management_costs(rows: list[dict], batches: list[Batch]) -> list[dic
                     "forecast_estimated_remaining_cost": ZERO,
                     "forecast_expected_birds_sold": 0,
                     "allocation_trace": [],
+                    "break_even_price_per_bird_all_costs": (
+                        money(
+                            row["total_attributed_cost"]
+                            / Decimal(row["survived_birds"])
+                        )
+                        if row.get("survived_birds")
+                        else None
+                    ),
                 }
             )
             continue
@@ -874,6 +887,11 @@ def _attach_management_costs(rows: list[dict], batches: list[Batch]) -> list[dic
                 "total_attributed_cost": total_cost,
                 "management_net_position": net_position,
                 "management_net_margin_percent": percent(net_position, row["revenue"]),
+                "break_even_price_per_bird_all_costs": (
+                    money(total_cost / Decimal(row["survived_birds"]))
+                    if row.get("survived_birds")
+                    else None
+                ),
                 "actual_result_basis": (
                     "final_actual"
                     if row["profitability_status"] == "final"
@@ -1215,6 +1233,13 @@ def _portfolio_profitability_rows(batches: list[Batch]) -> list[dict]:
         "batch_id",
         "allocated_amount",
     )
+    sale_specific_selling = _money_by_group(
+        SaleSellingCost.objects.filter(
+            sale__batch_id__in=batch_ids,
+        ).exclude(sale__payment_status=PaymentStatus.CANCELLED),
+        "sale__batch_id",
+        "amount",
+    )
 
     rows = []
     for batch in batches:
@@ -1243,6 +1268,7 @@ def _portfolio_profitability_rows(batches: list[Batch]) -> list[dict]:
             + direct_selling_expenses.get(batch.pk, ZERO)
             + direct_selling_consumables.get(batch.pk, ZERO)
             + allocated_selling.get(batch.pk, ZERO)
+            + sale_specific_selling.get(batch.pk, ZERO)
         )
         rows.append(
             _apply_final_snapshot(
@@ -1511,6 +1537,11 @@ def batch_portfolio_report(batches: Iterable[Batch]) -> dict:
             "break_even_selling_price_per_remaining_bird": (
                 money(additional_revenue_required / Decimal(remaining_birds))
                 if remaining_birds
+                else None
+            ),
+            "break_even_price_per_bird_all_costs": (
+                money(total_attributed_cost / Decimal(survived_birds))
+                if survived_birds
                 else None
             ),
             "additional_revenue_required_to_break_even": additional_revenue_required,
@@ -2013,6 +2044,102 @@ def batch_expenditure_funding_mix(batch: Batch, *, include_transactions: bool = 
             "multiple beneficiaries, each payment is apportioned across the complete "
             "beneficiary set with a deterministic cent remainder before any batch "
             "filter is applied. Owner capital remains equity funding, not revenue."
+        ),
+    }
+
+
+def portfolio_expenditure_funding_mix(
+    batches: Iterable[Batch], *, total_attributed_cost: Decimal | None = None
+) -> dict:
+    """Aggregate funding used by a selected complete set of cost batches."""
+
+    batch_list = list(batches)
+    batch_ids = [batch.pk for batch in batch_list]
+    allocations = (
+        CostAllocation.objects.filter(
+            batch_id__in=batch_ids,
+            expenditure__status=ExpenditureStatus.POSTED,
+        )
+        .select_related("batch", "expenditure")
+        .prefetch_related(
+            "expenditure__cost_allocations",
+            "expenditure__funding_allocations__funding_source__batch",
+        )
+    )
+    groups = {
+        "own_batch_sales": ZERO,
+        "other_batch_sales": ZERO,
+        "owner_capital": ZERO,
+        "other_sources": ZERO,
+    }
+    total_batch_cost = ZERO
+    total_paid = ZERO
+    for allocation in allocations:
+        expenditure = allocation.expenditure
+        total_batch_cost += money(allocation.allocated_amount)
+        for funding in expenditure.funding_allocations.all():
+            shares = expenditure_payment_beneficiary_shares(
+                expenditure,
+                funding.amount,
+            )
+            amount = money(
+                shares["allocation_shares"].get(allocation.pk, ZERO)
+            )
+            if amount <= ZERO:
+                continue
+            source = funding.funding_source
+            total_paid += amount
+            if source.source_type == FundingSourceType.BATCH_COLLECTION:
+                key = (
+                    "own_batch_sales"
+                    if source.batch_id == allocation.batch_id
+                    else "other_batch_sales"
+                )
+            elif source.source_type == FundingSourceType.OWNER_CAPITAL:
+                key = "owner_capital"
+            else:
+                key = "other_sources"
+            groups[key] += amount
+    allocated_expenditure_cost = money(total_batch_cost)
+    total_batch_cost = (
+        money(max(Decimal(total_attributed_cost), allocated_expenditure_cost))
+        if total_attributed_cost is not None
+        else allocated_expenditure_cost
+    )
+    total_paid = money(total_paid)
+    unpaid = money(max(total_batch_cost - total_paid, ZERO))
+    result_groups = [
+        {
+            "key": key,
+            "label": label,
+            "amount": money(groups[key]),
+            "percent": percent(money(groups[key]), total_batch_cost),
+        }
+        for key, label in [
+            ("own_batch_sales", "Selected batch's own sales"),
+            ("other_batch_sales", "Other batch sales"),
+            ("owner_capital", "Owner equity"),
+            ("other_sources", "Farm cash, loans, grants and other"),
+        ]
+    ]
+    result_groups.append(
+        {
+            "key": "unpaid_or_unassigned",
+            "label": "Unpaid or source not assigned",
+            "amount": unpaid,
+            "percent": percent(unpaid, total_batch_cost),
+        }
+    )
+    return {
+        "selected_batch_count": len(batch_list),
+        "total_batch_expenditure": total_batch_cost,
+        "total_paid_for_batches": total_paid,
+        "groups": result_groups,
+        "basis": (
+            "Shows cash sources assigned to costs borne by the selected batches. "
+            "Sale-specific costs, legacy inputs, allocated management costs, or other "
+            "costs without a posted funding assignment remain in unpaid or source not "
+            "assigned. Funding source is independent of which batch bears the cost."
         ),
     }
 

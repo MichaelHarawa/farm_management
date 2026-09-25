@@ -16,6 +16,7 @@ from apps.poultry.models import (
     PaymentStatus,
     ProductType,
     Sales,
+    SaleSellingCost,
 )
 
 
@@ -191,6 +192,7 @@ def create_sale_with_lifecycle(*, batch_id: int, created_by, **data) -> Sales:
     with transaction.atomic():
         batch = Batch.objects.select_for_update().get(pk=batch_id)
         assert_batch_in_production(batch)
+        selling_cost_rows = data.pop("selling_costs", [])
         sale = Sales(batch=batch, created_by=created_by, **data)
         if not sale.sale_id:
             sale.sale_id = sale.next_sale_id()
@@ -201,6 +203,14 @@ def create_sale_with_lifecycle(*, batch_id: int, created_by, **data) -> Sales:
             sale.receivable_follow_up_name = (sale.sold_by_name or "").strip()
         sale.full_clean()
         sale.save()
+        for cost_data in selling_cost_rows:
+            selling_cost = SaleSellingCost(
+                sale=sale,
+                created_by=created_by,
+                **cost_data,
+            )
+            selling_cost.full_clean()
+            selling_cost.save()
         assert_non_negative_bird_balance(batch)
         recalculate_batch_status(batch)
 
