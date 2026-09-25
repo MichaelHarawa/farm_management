@@ -16,6 +16,8 @@ import {
 } from "@/features/finance/utils/formatters";
 import { clientApiFetch } from "@/lib/client-api";
 import { getApiErrorMessage } from "@/lib/errors";
+import { MobileRecordList } from "@/components/ui/MobileRecordList";
+import { BackLink } from "@/components/ui";
 
 export default function BatchRevenueUsageDetailPage() {
   const params = useParams<{ id: string }>();
@@ -48,11 +50,11 @@ export default function BatchRevenueUsageDetailPage() {
 
   return (
     <main className="mx-auto max-w-[1320px] p-5 sm:p-8">
-      <Link href="/finance/revenue-usage" className="text-sm font-bold underline">← Funding &amp; Expenditure Use</Link>
+      <BackLink href="/finance/revenue-usage">Funding &amp; expenditure use</BackLink>
       <div className="mt-6 flex flex-wrap items-end justify-between gap-5">
         <div>
           <p className="finance-eyebrow">Funding and expenditure / {fundingMix.batch_code}</p>
-          <h1 className="mt-2 text-4xl font-extrabold">Batch funding trail</h1>
+          <h1 className="mt-2 text-3xl font-extrabold sm:text-4xl">Batch funding trail</h1>
           <p className="mt-3 max-w-3xl text-[var(--navy-muted)]">Two views kept separate: the sources that paid this batch&apos;s costs, and the expenditures paid from this batch&apos;s own sales collections.</p>
         </div>
         <div className="flex flex-wrap gap-3">
@@ -74,7 +76,8 @@ export default function BatchRevenueUsageDetailPage() {
         </div>
         <p className="mt-5 rounded-lg bg-[#f6f3eb] p-4 text-sm leading-6 text-[var(--navy-muted)]">{fundingMix.basis}</p>
 
-        <div className="mt-6 overflow-x-auto rounded-lg border">
+        <MobileRecordList className="mt-6" records={fundingMix.sources.map((source) => ({ key: source.funding_source_id, title: source.source_label, subtitle: `${source.source_type_label} · ${formatLabel(source.source_group)}`, badge: <span className="rounded-full bg-[var(--gold-soft)] px-2 py-1 text-xs font-bold">{formatPercent(source.percent)}</span>, fields: [{ label: "Used by batch", value: formatCurrency(source.amount) }] }))} emptyMessage="No payment sources have been assigned to this batch's expenditures." />
+        <div className="mt-6 hidden overflow-x-auto rounded-lg border md:block">
           <table className="w-full min-w-[760px] text-sm">
             <thead className="bg-[#f6f3eb] text-left"><tr><th className="p-3">Funding source</th><th className="p-3">Source type</th><th className="p-3">Group</th><th className="p-3 text-right">Used by batch</th><th className="p-3 text-right">Share</th></tr></thead>
             <tbody>
@@ -85,7 +88,8 @@ export default function BatchRevenueUsageDetailPage() {
         </div>
 
         <h3 className="mt-7 text-xl font-extrabold">Supporting expenditure allocations</h3>
-        <div className="mt-3 overflow-x-auto rounded-lg border">
+        <MobileRecordList className="mt-3" records={fundingMix.transactions.map((transaction) => ({ key: `${transaction.cost_allocation_id}-${transaction.funding_allocation_id}`, title: transaction.expenditure_reference, subtitle: transaction.description, fields: [{ label: "Date", value: formatDate(transaction.expenditure_date) }, { label: "Funding source", value: transaction.source_label }, { label: "Batch cost", value: formatCurrency(transaction.batch_cost_amount) }, { label: "Source payment", value: formatCurrency(transaction.funding_payment_amount) }, { label: "Attributed", value: formatCurrency(transaction.attributed_amount) }], actions: <Link className="w-full rounded-lg border border-[var(--navy)] px-4 py-3 text-center font-bold" href={`/finance/expenditures/${transaction.expenditure_id}`}>View expenditure</Link> }))} emptyMessage="No funded expenditure allocations recorded." />
+        <div className="mt-3 hidden overflow-x-auto rounded-lg border md:block">
           <table className="w-full min-w-[1100px] text-sm">
             <thead className="bg-[#f6f3eb] text-left"><tr><th className="p-3">Expenditure</th><th className="p-3">Date</th><th className="p-3">Description</th><th className="p-3">Funding source</th><th className="p-3 text-right">Batch cost</th><th className="p-3 text-right">Source payment</th><th className="p-3 text-right">Attributed to batch</th></tr></thead>
             <tbody>
@@ -106,7 +110,8 @@ export default function BatchRevenueUsageDetailPage() {
           <Metric label="Spent" value={formatCurrency(cashUse.cash_used)} detail={formatPercent(cashUse.utilization_percent)} />
           <Metric label="Remaining cash" value={formatCurrency(cashUse.available_cash)} />
         </section>
-        <div className="mt-6 overflow-x-auto rounded-lg border"><table className="min-w-[1180px] w-full text-sm"><thead className="bg-[#f6f3eb] text-left"><tr><th className="p-3">Reference</th><th className="p-3">Date</th><th className="p-3">Description</th><th className="p-3">Category</th><th className="p-3">Nature</th><th className="p-3 text-right">Expenditure total</th><th className="p-3 text-right">Funded by batch</th><th className="p-3">Beneficiary / cost bearer</th><th className="p-3">Status</th><th className="p-3 text-right">Cash after</th></tr></thead><tbody>
+        <MobileRecordList className="mt-6" records={cashUse.transactions.map((transaction) => ({ key: transaction.allocation_id, title: transaction.expenditure_reference, subtitle: transaction.description, badge: <span className="rounded-full bg-[var(--gold-soft)] px-2 py-1 text-xs font-bold">{formatLabel(transaction.status)}</span>, fields: [{ label: "Date", value: formatDate(transaction.date) }, { label: "Category", value: transaction.category }, { label: "Nature", value: formatLabel(transaction.accounting_nature) }, { label: "Funded by batch", value: formatCurrency(transaction.amount) }, { label: "Cost bearer", value: transaction.beneficiary }, { label: "Cash after", value: formatCurrency(transaction.remaining_cash_after) }], actions: <Link className="w-full rounded-lg border border-[var(--navy)] px-4 py-3 text-center font-bold" href={`/finance/expenditures/${transaction.expenditure_id}`}>View expenditure</Link> }))} emptyMessage="No posted expenditures have used this batch's cash." />
+        <div className="mt-6 hidden overflow-x-auto rounded-lg border md:block"><table className="min-w-[1180px] w-full text-sm"><thead className="bg-[#f6f3eb] text-left"><tr><th className="p-3">Reference</th><th className="p-3">Date</th><th className="p-3">Description</th><th className="p-3">Category</th><th className="p-3">Nature</th><th className="p-3 text-right">Expenditure total</th><th className="p-3 text-right">Funded by batch</th><th className="p-3">Beneficiary / cost bearer</th><th className="p-3">Status</th><th className="p-3 text-right">Cash after</th></tr></thead><tbody>
           {cashUse.transactions.map((transaction) => <tr key={transaction.allocation_id} className="border-t"><td className="p-3"><Link href={`/finance/expenditures/${transaction.expenditure_id}`} className="font-bold underline">{transaction.expenditure_reference}</Link></td><td className="p-3">{formatDate(transaction.date)}</td><td className="p-3">{transaction.description}</td><td className="p-3">{transaction.category}</td><td className="p-3">{formatLabel(transaction.accounting_nature)}</td><td className="p-3 text-right">{formatCurrency(transaction.total_expenditure)}</td><td className="p-3 text-right font-bold">{formatCurrency(transaction.amount)}</td><td className="p-3">{transaction.beneficiary}</td><td className="p-3">{formatLabel(transaction.status)}</td><td className="p-3 text-right font-bold">{formatCurrency(transaction.remaining_cash_after)}</td></tr>)}
           {!cashUse.transactions.length ? <tr><td colSpan={10} className="p-8 text-center text-[var(--navy-muted)]">No posted expenditures have used this batch&apos;s cash.</td></tr> : null}
         </tbody></table></div>

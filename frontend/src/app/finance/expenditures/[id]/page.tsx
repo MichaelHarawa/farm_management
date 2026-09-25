@@ -18,6 +18,7 @@ import { OwnerCapitalLink } from "@/features/finance/components/OwnerCapitalLink
 import { formatCurrency, formatDate, formatLabel } from "@/features/finance/utils/formatters";
 import { clientApiFetch } from "@/lib/client-api";
 import { getApiErrorMessage } from "@/lib/errors";
+import { BackLink } from "@/components/ui";
 
 type FundingRow = { funding_source: number | ""; source_query: string; amount: string };
 type FundingAllocationRow = NonNullable<Expenditure["funding_allocations"]>[number];
@@ -275,7 +276,7 @@ export default function ExpenditureDetailPage() {
 
   return (
     <main className="mx-auto max-w-5xl p-8">
-      <Link href="/finance/expenditures" className="text-sm font-bold underline">← Expenditures</Link>
+      <BackLink href="/finance/expenditures">Expenditures</BackLink>
       <div className="mt-6 flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="finance-eyebrow">Expenditure details · {formatLabel(expenditure.origin || "finance")}</p>

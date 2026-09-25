@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { MobileRecordList } from "@/components/ui/MobileRecordList";
 import { getFinanceDashboard } from "@/features/finance/api/finance";
 import { BatchAnalysisFilter } from "@/features/finance/components/BatchAnalysisFilter";
 import { FinanceWarningList } from "@/features/finance/components/FinanceWarningList";
@@ -62,7 +63,24 @@ export default async function FinanceDashboardPage({ searchParams }: { searchPar
         </section>
 
         <Panel title="Performance by batch">
-          <div className="overflow-x-auto">
+          <MobileRecordList
+            emptyMessage="No batch performance records are available."
+            records={analysis.portfolio.results.map((row) => ({
+              key: row.batch,
+              title: <Link className="underline" href={`/finance/batches/${row.batch}`}>{row.batch_id}</Link>,
+              subtitle: formatLabel(row.profitability_status),
+              badge: <span className={`rounded-full px-2 py-1 text-xs font-bold ${parseDecimal(row.management_net_position) < 0 ? "bg-red-50 text-[var(--danger)]" : "bg-green-50 text-green-800"}`}>{formatCurrency(row.management_net_position)}</span>,
+              fields: [
+                { label: "Mortality", value: `${row.mortality} · ${row.mortality_rate_percent ?? "N/A"}%` },
+                { label: "Production cost", value: formatCurrency(row.total_production_cost) },
+                { label: "Cost to sell", value: formatCurrency(row.total_selling_cost) },
+                { label: "Gross profit", value: formatCurrency(row.batch_gross_profit) },
+                { label: "Break-even / bird", value: row.break_even_price_per_bird_all_costs === null ? "N/A" : formatCurrency(row.break_even_price_per_bird_all_costs) },
+                { label: "Remaining-bird price", value: row.break_even_selling_price_per_remaining_bird === null ? "N/A" : formatCurrency(row.break_even_selling_price_per_remaining_bird) },
+              ],
+            }))}
+          />
+          <div className="hidden overflow-x-auto md:block">
             <table className="w-full min-w-[1120px] text-left text-sm">
               <thead><tr className="border-b"><th className="p-3">Batch</th><th className="p-3 text-right">Mortality</th><th className="p-3 text-right">Production cost</th><th className="p-3 text-right">Cost to sell</th><th className="p-3 text-right">Gross profit</th><th className="p-3 text-right">Net profit</th><th className="p-3 text-right">Break-even / bird</th><th className="p-3 text-right">Remaining-bird price needed</th></tr></thead>
               <tbody>{analysis.portfolio.results.map((row) => <tr key={row.batch} className="border-b">
@@ -127,7 +145,7 @@ function SalesTrendChart({ rows }: { rows: FinanceDashboard["batch_analysis"]["s
   const x = (day: number) => left + ((day - 28) / Math.max(maxDay - 28, 1)) * (width - left - right);
   const y = (revenue: number) => top + (1 - revenue / maxRevenue) * (height - top - bottom);
   const batches = Array.from(new Map(rows.map((row) => [row.batch_id, row.batch_code])).entries());
-  return <div className="overflow-x-auto"><svg viewBox={`0 0 ${width} ${height}`} className="min-w-[620px]" role="img" aria-label="Sales revenue trend by batch and flock age">
+  return <div><svg viewBox={`0 0 ${width} ${height}`} className="h-auto w-full md:min-w-[620px]" role="img" aria-label="Sales revenue trend by batch and flock age">
     <line x1={left} y1={height - bottom} x2={width - right} y2={height - bottom} stroke="#9ea3ad" />
     <line x1={left} y1={top} x2={left} y2={height - bottom} stroke="#9ea3ad" />
     <text x={left} y={height - 14} fontSize="11" fill="#747b8d">4 weeks · Day 28</text><text x={width - right - 42} y={height - 14} fontSize="11" fill="#747b8d">Day {maxDay}</text>

@@ -1,12 +1,11 @@
 import Link from "next/link";
+import { BackLink } from "@/components/ui";
 
 export default function PoultryGuidesPage() {
   return (
     <main className="min-h-screen bg-[#f6f3eb] text-[#151926]">
       <div className="mx-auto max-w-5xl px-5 py-10 sm:px-8">
-        <Link href="/poultry" className="text-sm font-bold uppercase tracking-wide text-[#747b8d] hover:text-[#151926]">
-          ← Back to Poultry Register
-        </Link>
+        <BackLink href="/poultry">Poultry register</BackLink>
 
         <h1 className="mt-6 text-5xl font-extrabold tracking-[-0.02em]">System Guide</h1>
         <p className="mt-3 max-w-2xl text-lg text-[#747b8d]">

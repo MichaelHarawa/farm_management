@@ -15,6 +15,8 @@ import {
 } from "@/features/finance/utils/formatters";
 import { clientApiFetch } from "@/lib/client-api";
 import { getApiErrorMessage } from "@/lib/errors";
+import { MobileRecordList } from "@/components/ui/MobileRecordList";
+import { BackLink } from "@/components/ui";
 
 type Page<T> = {
   count: number;
@@ -67,9 +69,7 @@ export default function RevenueUsagePage() {
   return (
     <main className="bg-[var(--page-cream)] px-5 py-8 sm:px-8">
       <div className="mx-auto max-w-7xl">
-        <Link href="/finance" className="text-sm font-bold underline">
-          ← Finance overview
-        </Link>
+        <BackLink href="/finance">Finance overview</BackLink>
         <div className="mt-5 flex flex-wrap items-end justify-between gap-5">
           <div>
             <p className="finance-eyebrow">Finance / Funding and expenditure use</p>
@@ -102,7 +102,22 @@ export default function RevenueUsagePage() {
                 This is the view for questions such as: “Did Batch 1 use 60% from other batches&apos; sales and 40% from owner capital or another source?”
               </p>
             </div>
-            <div className="mt-5 overflow-x-auto">
+            <MobileRecordList className="mt-5" records={mixes.results.map((row) => ({
+              key: row.batch_id,
+              title: row.batch_code,
+              subtitle: `${formatPercent(row.funding_coverage_percent)} of expenditure traced to payment sources`,
+              badge: <span className="rounded-full bg-[var(--gold-soft)] px-2 py-1 text-xs font-bold">{formatCurrency(row.total_batch_expenditure)}</span>,
+              fields: [
+                { label: "Paid / traced", value: formatCurrency(row.total_paid_for_batch) },
+                { label: "Own sales", value: `${formatCurrency(row.own_batch_sales)} · ${formatPercent(row.own_batch_sales_percent)}` },
+                { label: "Other batch sales", value: `${formatCurrency(row.other_batch_sales)} · ${formatPercent(row.other_batch_sales_percent)}` },
+                { label: "Owner capital", value: `${formatCurrency(row.owner_capital)} · ${formatPercent(row.owner_capital_percent)}` },
+                { label: "Other funds", value: `${formatCurrency(row.non_owner_sources)} · ${formatPercent(row.non_owner_sources_percent)}` },
+                { label: "Funding mix", value: <FundingMixBar row={row} /> },
+              ],
+              actions: <Link className="w-full rounded-lg bg-[var(--navy)] px-4 py-3 text-center font-bold text-white" href={`/finance/revenue-usage/${row.batch_id}`}>View funding and expenditures</Link>,
+            }))} emptyMessage="No poultry batches are available." />
+            <div className="mt-5 hidden overflow-x-auto md:block">
               <table className="w-full min-w-[1120px] text-sm">
                 <thead>
                   <tr className="border-b text-left">
@@ -147,7 +162,8 @@ export default function RevenueUsagePage() {
             <p className="finance-eyebrow">Cash-source view</p>
             <h2 className="mt-2 text-2xl font-extrabold">How each batch&apos;s sales collections were used</h2>
             <p className="mt-2 text-sm text-[var(--navy-muted)]">This follows cash outward from the batch that generated it, even when another batch bears the cost.</p>
-            <div className="mt-4 overflow-x-auto"><table className="min-w-full text-sm"><thead><tr className="border-b text-left"><th className="p-3">Funding batch</th><th className="p-3 text-right">Collected</th><th className="p-3 text-right">Spent</th><th className="p-3 text-right">Available</th><th className="p-3 text-right">Use</th><th className="p-3">Action</th></tr></thead><tbody>
+            <MobileRecordList className="mt-4" records={summaries.results.map((row) => ({ key: row.batch_id, title: row.batch_code, subtitle: `${formatPercent(row.utilization_percent)} of collections used`, badge: <span className="rounded-full bg-green-50 px-2 py-1 text-xs font-bold text-green-800">{formatCurrency(row.available_cash)} available</span>, fields: [{ label: "Collected", value: formatCurrency(row.cash_collected) }, { label: "Spent", value: formatCurrency(row.cash_used) }], actions: <Link className="w-full rounded-lg bg-[var(--navy)] px-4 py-3 text-center font-bold text-white" href={`/finance/revenue-usage/${row.batch_id}`}>View cash use</Link> }))} emptyMessage="No batch collection records." />
+            <div className="mt-4 hidden overflow-x-auto md:block"><table className="min-w-full text-sm"><thead><tr className="border-b text-left"><th className="p-3">Funding batch</th><th className="p-3 text-right">Collected</th><th className="p-3 text-right">Spent</th><th className="p-3 text-right">Available</th><th className="p-3 text-right">Use</th><th className="p-3">Action</th></tr></thead><tbody>
               {summaries.results.map((row) => <tr key={row.batch_id} className="border-b"><td className="p-3 font-bold">{row.batch_code}</td><td className="p-3 text-right">{formatCurrency(row.cash_collected)}</td><td className="p-3 text-right">{formatCurrency(row.cash_used)}</td><td className="p-3 text-right">{formatCurrency(row.available_cash)}</td><td className="p-3 text-right">{formatPercent(row.utilization_percent)}</td><td className="p-3"><Link className="font-bold underline" href={`/finance/revenue-usage/${row.batch_id}`}>View cash use</Link></td></tr>)}
               {!summaries.results.length ? <tr><td colSpan={6} className="p-6 text-center">No batch collection records.</td></tr> : null}
             </tbody></table></div>
@@ -159,7 +175,8 @@ export default function RevenueUsagePage() {
           <section className="mt-8 rounded-xl border border-[var(--line)] bg-white p-5">
             <h2 className="text-xl font-extrabold">Cross-batch financing</h2>
             <p className="mt-2 text-sm text-[var(--navy-muted)]">Sales cash from one batch paying an expenditure whose cost belongs to another batch.</p>
-            <div className="mt-4 overflow-x-auto"><table className="min-w-full text-sm"><thead><tr className="border-b text-left"><th className="p-3">Funding batch</th><th className="p-3">Expenditure</th><th className="p-3">Cost-bearing batch</th><th className="p-3 text-right">Cash used</th><th className="p-3 text-right">Cost allocated</th><th className="p-3">Date</th></tr></thead><tbody>
+            <MobileRecordList className="mt-4" records={flows.results.map((row, index) => ({ key: `${row.expenditure_id}-${row.allocated_to_batch_id}-${index}`, title: row.funding_batch_code, subtitle: row.expenditure_desc, fields: [{ label: "Cost-bearing batch", value: row.allocated_to_batch_code }, { label: "Cash used", value: formatCurrency(row.amount_funded) }, { label: "Cost allocated", value: formatCurrency(row.allocated_amount) }, { label: "Date", value: row.date }], actions: <Link className="w-full rounded-lg border border-[var(--navy)] px-4 py-3 text-center font-bold" href={`/finance/expenditures/${row.expenditure_id}`}>View expenditure</Link> }))} emptyMessage="No cross-batch flows." />
+            <div className="mt-4 hidden overflow-x-auto md:block"><table className="min-w-full text-sm"><thead><tr className="border-b text-left"><th className="p-3">Funding batch</th><th className="p-3">Expenditure</th><th className="p-3">Cost-bearing batch</th><th className="p-3 text-right">Cash used</th><th className="p-3 text-right">Cost allocated</th><th className="p-3">Date</th></tr></thead><tbody>
               {flows.results.map((row, index) => <tr key={`${row.expenditure_id}-${row.allocated_to_batch_id}-${index}`} className="border-b"><td className="p-3 font-bold">{row.funding_batch_code}</td><td className="p-3"><Link href={`/finance/expenditures/${row.expenditure_id}`} className="underline">{row.expenditure_desc}</Link></td><td className="p-3">{row.allocated_to_batch_code}</td><td className="p-3 text-right">{formatCurrency(row.amount_funded)}</td><td className="p-3 text-right">{formatCurrency(row.allocated_amount)}</td><td className="p-3">{row.date}</td></tr>)}
               {!flows.results.length ? <tr><td colSpan={6} className="p-6 text-center">No cross-batch flows.</td></tr> : null}
             </tbody></table></div>

@@ -4,6 +4,8 @@
 import Link from "next/link";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 
+import { MobileRecordList } from "@/components/ui/MobileRecordList";
+import { BackLink } from "@/components/ui";
 import { clientApiFetch } from "@/lib/client-api";
 import { getApiErrorMessage } from "@/lib/errors";
 import type {
@@ -166,17 +168,15 @@ export default function FinanceReceivablesPage() {
   };
 
   return (
-    <main className="mx-auto max-w-[1320px] px-5 py-8 sm:px-8 lg:px-12">
-      <Link prefetch={false} href={backHref} className="text-sm font-extrabold text-[var(--navy)] underline decoration-[var(--gold)] decoration-2 underline-offset-4">
-        ← {backLabel}
-      </Link>
+    <main className="mx-auto max-w-[1320px] px-4 py-5 sm:px-8 sm:py-8 lg:px-12">
+      <BackLink prefetch={false} href={backHref}>{backLabel}</BackLink>
       <div className="mt-6 flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="finance-eyebrow">Finance / Receivables</p>
           <h1 className="mt-3 text-4xl font-extrabold text-[var(--navy)]">Buyer balances</h1>
           <p className="mt-3 text-[var(--navy-muted)]">Record dated collections without changing the original sale.</p>
         </div>
-        <Link href="/finance/revenue-usage" className="rounded-lg border border-[var(--navy)] bg-white px-5 py-3 font-bold text-[var(--navy)]">
+        <Link href="/finance/revenue-usage" className="w-full rounded-lg border border-[var(--navy)] bg-white px-5 py-3 text-center font-bold text-[var(--navy)] sm:w-auto">
           Track funding &amp; expenditures
         </Link>
       </div>
@@ -214,7 +214,33 @@ export default function FinanceReceivablesPage() {
         <div className="rounded-xl border bg-white p-5"><p className="text-sm text-[var(--navy-muted)]">Average balance</p><strong className="text-2xl">{formatCurrency(averageBalance)}</strong></div>
       </div>
 
-      <section className="mt-6 overflow-x-auto rounded-xl border border-[var(--line)] bg-white">
+      {loading ? <p className="mt-6 rounded-xl border bg-white p-6 text-center text-sm md:hidden">Loading receivables…</p> : (
+        <MobileRecordList
+          className="mt-6"
+          emptyMessage="No sales match these filters."
+          records={(report?.results ?? []).map((sale) => ({
+            key: sale.sale_id,
+            title: sale.sale_id,
+            subtitle: `${sale.buyer_name || "Buyer not recorded"} · ${sale.batch_id}`,
+            badge: <span className={`rounded-full px-2 py-1 text-xs font-bold ${Number(sale.balance) > 0 ? "bg-amber-100 text-amber-900" : "bg-green-100 text-green-800"}`}>{formatLabel(sale.receivable_status)}</span>,
+            fields: [
+              { label: "Remaining", value: formatCurrency(sale.balance) },
+              { label: "Paid", value: formatCurrency(sale.amount_paid) },
+              { label: "Sale total", value: formatCurrency(sale.sale_total) },
+              { label: "Sale date", value: formatDate(sale.sale_date) },
+              { label: "Follow-up person", value: sale.receivable_follow_up_name || "Not assigned" },
+              { label: "Age", value: sale.is_overdue ? `${sale.days_overdue} days overdue` : `${sale.age_days} days old` },
+              ...(expandedSale === sale.sale_id ? [{
+                label: "Payment history",
+                value: sale.payments.length ? <div className="grid gap-2">{sale.payments.map((item) => <div key={item.id} className="rounded-lg bg-[var(--surface-cream)] p-2"><button type="button" onClick={() => openPaymentDetails(sale, item)} className="w-full text-left text-xs font-bold underline">{formatDate(item.payment_date)} · {formatCurrency(item.amount)} · {formatLabel(item.status)}</button>{item.status === "posted" ? <button type="button" onClick={() => void reversePayment(item.id)} className="mt-2 text-xs font-bold text-red-700 underline">Reverse</button> : null}</div>)}</div> : "No payments recorded.",
+              }] : []),
+            ],
+            actions: <><button type="button" onClick={() => openPayment(sale)} disabled={Number(sale.balance) <= 0} className="flex-1 rounded-lg bg-[#151f36] px-3 py-2 text-sm font-bold text-white disabled:opacity-40">Record payment</button><button type="button" onClick={() => setExpandedSale(expandedSale === sale.sale_id ? null : sale.sale_id)} className="rounded-lg border px-3 py-2 text-sm font-bold">{expandedSale === sale.sale_id ? "Hide history" : "Payment history"}</button></>,
+          }))}
+        />
+      )}
+
+      <section className="mt-6 hidden overflow-x-auto rounded-xl border border-[var(--line)] bg-white md:block">
         <table className="min-w-[1320px] w-full text-sm">
           <thead className="bg-[#f6f3eb] text-left"><tr><th className="p-3">Sale</th><th className="p-3">Buyer</th><th className="p-3">Follow-up person</th><th className="p-3">Batch</th><th className="p-3">Sale date</th><th className="p-3">Age</th><th className="p-3">Status</th><th className="p-3 text-right">Sale total</th><th className="p-3 text-right">Paid</th><th className="p-3 text-right">Remaining</th><th className="p-3">Actions</th></tr></thead>
           <tbody>

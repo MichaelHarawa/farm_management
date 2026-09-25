@@ -21,6 +21,7 @@ import {
   formatNumber,
 } from "@/features/finance/utils/formatters";
 import { getPoultryBatches } from "@/features/poultry/api/batches";
+import { MobileRecordList } from "@/components/ui/MobileRecordList";
 
 export default async function FinanceConsumablesPage() {
   const [periods, lots, usages, movements, batches] = await Promise.all([
@@ -63,7 +64,20 @@ export default async function FinanceConsumablesPage() {
 
       <Panel id="consumable-lots" title="Consumable Lots">
         {lots.length ? (
-          <div className="overflow-x-auto">
+          <>
+          <MobileRecordList records={lots.map((lot) => ({
+            key: lot.id,
+            title: lot.item,
+            subtitle: lot.category,
+            badge: <span className="rounded-full bg-[var(--gold-soft)] px-2 py-1 text-xs font-bold">{lot.is_expired ? "Expired" : formatLabel(lot.payment_status)}</span>,
+            fields: [
+              { label: "Purchased", value: formatDate(lot.purchase_date) },
+              { label: "Available", value: `${formatNumber(lot.quantity_available)} ${lot.unit_of_measurement}` },
+              { label: "Unit cost", value: formatCurrency(lot.unit_cost) },
+              { label: "USD reference", value: lot.usd_equivalent ? `$${lot.usd_equivalent}` : "-" },
+            ],
+          }))} emptyMessage="No consumable lots have been recorded." />
+          <div className="hidden overflow-x-auto md:block">
             <table className="min-w-full border-collapse text-sm">
               <thead>
                 <tr className="border-b border-[var(--line)] text-left text-[var(--navy-muted)]">
@@ -98,6 +112,7 @@ export default async function FinanceConsumablesPage() {
               </tbody>
             </table>
           </div>
+          </>
         ) : (
           <EmptyState message="No consumable lots have been recorded." />
         )}
@@ -105,7 +120,18 @@ export default async function FinanceConsumablesPage() {
 
       <Panel id="usage-recognition" title="Usage Recognition">
         {usages.length ? (
-          <div className="overflow-x-auto">
+          <>
+          <MobileRecordList records={usages.map((usage) => ({
+            key: usage.id,
+            title: formatCurrency(usage.recognized_cost),
+            subtitle: `${formatLabel(usage.usage_scope)} · ${formatDate(usage.usage_date)}`,
+            fields: [
+              { label: "Batch", value: usage.batch ? batchLabels.get(usage.batch) ?? `Batch ${usage.batch}` : "Shared" },
+              { label: "Quantity", value: formatNumber(usage.quantity_used) },
+              { label: "Allocation driver", value: formatLabel(usage.allocation_driver) },
+            ],
+          }))} emptyMessage="No consumable usage has been recognized." />
+          <div className="hidden overflow-x-auto md:block">
             <table className="min-w-full border-collapse text-sm">
               <thead>
                 <tr className="border-b border-[var(--line)] text-left text-[var(--navy-muted)]">
@@ -135,13 +161,14 @@ export default async function FinanceConsumablesPage() {
               </tbody>
             </table>
           </div>
+          </>
         ) : (
           <EmptyState message="No consumable usage has been recognized." />
         )}
       </Panel>
 
       <Panel id="stock-movements" title="Immutable Stock Movement Ledger">
-        {movements.length ? <div className="overflow-x-auto"><table className="min-w-full text-sm"><thead><tr className="border-b text-left"><th className="py-3 pr-4">Date</th><th className="py-3 pr-4">Movement</th><th className="py-3 pr-4">Item</th><th className="py-3 pr-4">Batch</th><th className="py-3 pr-4 text-right">Quantity</th><th className="py-3 pr-4 text-right">Cost</th></tr></thead><tbody>{movements.map((movement) => <tr key={movement.id} className="border-b"><td className="py-3 pr-4">{formatDate(movement.movement_date)}</td><td className="py-3 pr-4">{formatLabel(movement.movement_type)}</td><td className="py-3 pr-4 font-bold">{movement.item_name}</td><td className="py-3 pr-4">{movement.batch_code || "Farm stock"}</td><td className="py-3 pr-4 text-right">{formatNumber(movement.quantity)}</td><td className="py-3 pr-4 text-right">{formatCurrency(movement.total_cost)}</td></tr>)}</tbody></table></div> : <EmptyState message="No stock movements have been posted." />}
+        {movements.length ? <><MobileRecordList records={movements.map((movement) => ({ key: movement.id, title: movement.item_name, subtitle: `${formatLabel(movement.movement_type)} · ${formatDate(movement.movement_date)}`, fields: [{ label: "Batch", value: movement.batch_code || "Farm stock" }, { label: "Quantity", value: formatNumber(movement.quantity) }, { label: "Cost", value: formatCurrency(movement.total_cost) }] }))} emptyMessage="No stock movements have been posted." /><div className="hidden overflow-x-auto md:block"><table className="min-w-full text-sm"><thead><tr className="border-b text-left"><th className="py-3 pr-4">Date</th><th className="py-3 pr-4">Movement</th><th className="py-3 pr-4">Item</th><th className="py-3 pr-4">Batch</th><th className="py-3 pr-4 text-right">Quantity</th><th className="py-3 pr-4 text-right">Cost</th></tr></thead><tbody>{movements.map((movement) => <tr key={movement.id} className="border-b"><td className="py-3 pr-4">{formatDate(movement.movement_date)}</td><td className="py-3 pr-4">{formatLabel(movement.movement_type)}</td><td className="py-3 pr-4 font-bold">{movement.item_name}</td><td className="py-3 pr-4">{movement.batch_code || "Farm stock"}</td><td className="py-3 pr-4 text-right">{formatNumber(movement.quantity)}</td><td className="py-3 pr-4 text-right">{formatCurrency(movement.total_cost)}</td></tr>)}</tbody></table></div></> : <EmptyState message="No stock movements have been posted." />}
       </Panel>
     </FinancePageShell>
   );

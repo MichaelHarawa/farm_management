@@ -15,6 +15,7 @@ import {
   fundingSourceDisplayLabel,
 } from "@/features/finance/components/FundingSourcePicker";
 import { Dialog } from "@/components/ui/Dialog";
+import { BackLink } from "@/components/ui";
 
 type FundingRow = { funding_source: number | ""; source_query: string; amount: string; classification: string };
 type CostRow = { batch: number | ""; amount: string };
@@ -279,7 +280,7 @@ export default function NewExpenditurePage() {
 
   return (
     <main className="p-8 max-w-4xl mx-auto">
-      <Link href="/finance/expenditures" className="mb-5 inline-block text-sm font-bold underline">← Expenditures</Link>
+      <BackLink href="/finance/expenditures" className="mb-5">Expenditures</BackLink>
       <h1 className="text-2xl font-bold mb-2">Record New Expenditure</h1>
       <p className="text-sm text-[var(--navy-muted)] mb-6">
         Record the purchase first, then separately identify the cash used and the operation that should carry the cost.

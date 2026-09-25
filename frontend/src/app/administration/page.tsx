@@ -2,10 +2,10 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
-
 import { clientApiFetch } from "@/lib/client-api";
 import { getApiErrorMessage } from "@/lib/errors";
+import { MobileRecordList } from "@/components/ui/MobileRecordList";
+import { BackLink } from "@/components/ui";
 
 type Role = { slug: string; name: string };
 type SystemUser = {
@@ -126,10 +126,11 @@ export default function AdministrationPage() {
 
   return <main className="min-h-screen bg-[var(--page-cream)] px-5 py-10 sm:px-8">
     <div className="mx-auto max-w-7xl">
-      <Link href="/" className="text-sm font-bold underline">← Home</Link>
-      <div className="mt-5 flex flex-wrap items-end justify-between gap-4"><div><p className="text-label text-[var(--navy-muted)]">Administration / System access</p><h1 className="font-display mt-3 text-5xl text-[var(--navy)]">System users.</h1><p className="mt-4 max-w-2xl text-[var(--navy-soft)]">Technical account access, roles, activation, password resets, and audit history. Financial operations remain in Finance.</p></div><button onClick={() => setShowCreate(true)} className="finance-button text-[var(--navy)]">Create system user</button></div>
+      <BackLink href="/">Home</BackLink>
+      <div className="mt-5 flex flex-wrap items-end justify-between gap-4"><div><p className="text-label text-[var(--navy-muted)]">Administration / System access</p><h1 className="font-display mt-3 text-4xl text-[var(--navy)] sm:text-5xl">System users.</h1><p className="mt-4 max-w-2xl text-[var(--navy-soft)]">Technical account access, roles, activation, password resets, and audit history. Financial operations remain in Finance.</p></div><button onClick={() => setShowCreate(true)} className="finance-button w-full text-[var(--navy)] sm:w-auto">Create system user</button></div>
       {error ? <p role="alert" className="mt-5 rounded-lg bg-red-50 p-4 text-red-800">{error}</p> : null}
-      <section className="mt-8 overflow-x-auto rounded-xl border border-[var(--line)] bg-white"><table className="min-w-[1000px] w-full text-sm"><thead className="bg-[#f6f3eb] text-left"><tr><th className="p-3">User</th><th className="p-3">Roles</th><th className="p-3">Employee link</th><th className="p-3">Last login</th><th className="p-3">Status</th><th className="p-3">Actions</th></tr></thead><tbody>
+      <MobileRecordList className="mt-8" records={users.map((user) => ({ key: user.id, title: user.full_name || user.username, subtitle: `${user.username} · ${user.email}`, badge: <span className={`rounded-full px-2 py-1 text-xs font-bold ${user.is_active ? "bg-green-50 text-green-800" : "bg-red-50 text-red-800"}`}>{user.is_active ? "Active" : "Inactive"}</span>, fields: [{ label: "Roles", value: user.roles.map((role) => role.name).join(", ") || "No role" }, { label: "Employee link", value: user.employee_number || "Not linked" }, { label: "Last login", value: user.last_login ? new Date(user.last_login).toLocaleString() : "Never" }], actions: <><button disabled={busy} onClick={() => openRoleEditor(user)} className="rounded border px-3 py-2 font-bold">Edit roles</button><button disabled={busy} onClick={() => void toggleActive(user)} className="rounded border px-3 py-2 font-bold">{user.is_active ? "Deactivate" : "Activate"}</button><button onClick={() => void resetPassword(user)} className="rounded border px-3 py-2 font-bold">Reset password</button><button onClick={() => void showHistory(user)} className="rounded border px-3 py-2 font-bold">Audit history</button></> }))} emptyMessage={loading ? "Loading system users…" : "No system users found."} />
+      <section className="mt-8 hidden overflow-x-auto rounded-xl border border-[var(--line)] bg-white md:block"><table className="min-w-[1000px] w-full text-sm"><thead className="bg-[#f6f3eb] text-left"><tr><th className="p-3">User</th><th className="p-3">Roles</th><th className="p-3">Employee link</th><th className="p-3">Last login</th><th className="p-3">Status</th><th className="p-3">Actions</th></tr></thead><tbody>
         {loading ? <tr><td colSpan={6} className="p-8 text-center">Loading system users…</td></tr> : null}
         {!loading && !users.length ? <tr><td colSpan={6} className="p-8 text-center">No system users found.</td></tr> : null}
         {users.map((user) => <tr key={user.id} className="border-t"><td className="p-3"><strong>{user.full_name}</strong><br/><span className="text-[var(--navy-muted)]">{user.username} · {user.email}</span></td><td className="p-3">{user.roles.map((role) => role.name).join(", ") || "No role"}</td><td className="p-3">{user.employee_number || "Not linked"}</td><td className="p-3">{user.last_login ? new Date(user.last_login).toLocaleString() : "Never"}</td><td className="p-3">{user.is_active ? "Active" : "Inactive"}</td><td className="p-3"><div className="flex flex-wrap gap-2"><button disabled={busy} onClick={() => openRoleEditor(user)} className="rounded border px-3 py-2 font-bold">Edit roles</button><button disabled={busy} onClick={() => void toggleActive(user)} className="rounded border px-3 py-2 font-bold">{user.is_active ? "Deactivate" : "Activate"}</button><button onClick={() => void resetPassword(user)} className="rounded border px-3 py-2 font-bold">Reset password</button><button onClick={() => void showHistory(user)} className="rounded border px-3 py-2 font-bold">Audit history</button></div></td></tr>)}

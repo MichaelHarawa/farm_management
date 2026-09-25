@@ -15,14 +15,14 @@ export function AppHeader({
 }: AppHeaderProps) {
   return (
     <header className="border-b border-[var(--line)] bg-[var(--surface-cream)]">
-      <div className="grid w-full grid-cols-[auto_1fr_auto] items-center gap-4 px-5 py-4 sm:px-8">
+      <div className="grid w-full grid-cols-[auto_1fr_auto] items-center gap-2 px-4 py-3 sm:gap-4 sm:px-8 sm:py-4">
         <Link
           href="/"
           className="flex items-center gap-3 text-[var(--navy)]"
         >
           <span className="grid size-10 place-items-center overflow-hidden rounded-full bg-white ring-1 ring-[var(--line)]">
             <Image
-              src="/assets/images/farmnotes-logo.png"
+              src="/assets/images/hames%20farms%20logo.png"
               alt="Farmnotes logo"
               width={40}
               height={40}
@@ -32,7 +32,7 @@ export function AppHeader({
             />
           </span>
 
-          <span className="text-label tracking-[0.22em]">
+          <span className="hidden text-label tracking-[0.22em] sm:inline">
             FARMNOTES
           </span>
         </Link>

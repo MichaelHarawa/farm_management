@@ -15,6 +15,7 @@ import {
 } from "@/features/finance/utils/formatters";
 import type { BatchProfitabilityReport, BatchRevenueUtilization } from "@/features/finance/types";
 import { BackendApiError } from "@/lib/server/backend-api";
+import { MobileRecordList } from "@/components/ui/MobileRecordList";
 
 type PageProps = {
   params: Promise<{
@@ -188,7 +189,8 @@ export default async function FinanceBatchProfitabilityPage({ params }: PageProp
       </Panel>
       {report.allocation_trace.length ? (
         <Panel title="Allocation Driver Audit Trail">
-          <div className="overflow-x-auto">
+          <MobileRecordList records={report.allocation_trace.map((trace) => ({ key: trace.source_period, title: `${trace.period_start} – ${trace.period_end}`, subtitle: `Source period ${trace.source_period}`, fields: [{ label: "Admin driver", value: formatLabel(trace.administration_driver) }, { label: "Admin basis", value: `${trace.administration_numerator} / ${trace.administration_denominator}` }, { label: "Admin share", value: formatPercent(trace.administration_percentage) }, { label: "Selling / finance / tax", value: formatLabel(trace.selling_finance_tax_driver) }, { label: "Share", value: formatPercent(trace.selling_percentage) }] }))} emptyMessage="No allocation trace is available." />
+          <div className="hidden overflow-x-auto md:block">
             <table className="min-w-[900px] text-left text-sm">
               <thead><tr className="border-b border-[var(--line)] text-[var(--navy-muted)]">
                 <th className="py-3 pr-4">Source period</th><th className="py-3 pr-4">Admin driver</th>

@@ -147,7 +147,7 @@ export function Dialog({
   return createPortal(
     <div
       ref={overlayRef}
-      className="fixed inset-0 z-[100] overflow-y-auto bg-[var(--overlay)] px-4 py-8 backdrop-blur-[7px]"
+      className="fixed inset-0 z-[100] overflow-y-auto bg-[var(--overlay)] px-2 py-2 backdrop-blur-[7px] sm:px-4 sm:py-8"
       role="presentation"
       onMouseDown={onClose}
     >
@@ -157,21 +157,21 @@ export function Dialog({
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className={`relative mx-auto mt-8 w-full ${sizeClass[size]} overflow-hidden rounded-[1.5rem] border border-white/90 bg-[var(--surface-white)] shadow-[var(--shadow-modal)]`}
+        className={`relative mx-auto w-full ${sizeClass[size]} max-h-[calc(100dvh-1rem)] overflow-y-auto rounded-2xl border border-white/90 bg-[var(--surface-white)] shadow-[var(--shadow-modal)] sm:mt-8 sm:max-h-none sm:overflow-hidden sm:rounded-[1.5rem]`}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="pointer-events-none absolute -left-24 -top-24 h-72 w-72 rounded-full bg-[var(--gold-soft)]/70 blur-3xl" />
         <div className="pointer-events-none absolute -bottom-24 -right-24 h-72 w-72 rounded-full bg-[#f3f5fa] blur-3xl" />
 
-        <div className="relative px-6 py-7 sm:px-10 sm:py-9">
-          <div className="flex items-start justify-between gap-6">
+        <div className="relative px-4 py-5 sm:px-10 sm:py-9">
+          <div className="flex items-start justify-between gap-3 sm:gap-6">
             <div className="min-w-0">
               {eyebrow ? (
                 <p className="text-label text-[var(--navy-muted)]">{eyebrow}</p>
               ) : null}
               <h2
                 id={titleId}
-                className="mt-2 text-2xl font-extrabold leading-tight text-[var(--navy)] sm:text-3xl"
+                className="mt-2 text-xl font-extrabold leading-tight text-[var(--navy)] sm:text-3xl"
               >
                 {title}
               </h2>
@@ -188,7 +188,7 @@ export function Dialog({
             </button>
           </div>
 
-          <div className="mt-7 border-t border-[var(--line)] pt-7">{children}</div>
+          <div className="mt-5 border-t border-[var(--line)] pt-5 sm:mt-7 sm:pt-7">{children}</div>
         </div>
       </div>
     </div>,

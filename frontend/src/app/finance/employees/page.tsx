@@ -1,4 +1,5 @@
 import { getEmployees } from "@/features/finance/api/finance";
+import { MobileRecordList } from "@/components/ui/MobileRecordList";
 import { EmployeeCreateDialog } from "@/features/finance/components/FinanceForms";
 import {
   EmptyState,
@@ -28,7 +29,23 @@ export default async function FinanceEmployeesPage() {
 
       <Panel title="Employee Register">
         {employees.length ? (
-          <div className="overflow-x-auto">
+          <>
+          <MobileRecordList
+            emptyMessage="No employees have been created yet."
+            records={employees.map((employee) => ({
+              key: employee.id,
+              title: employee.display_name,
+              subtitle: employee.employee_number,
+              badge: <span className={`rounded-full px-2 py-1 text-xs font-bold ${employee.is_active ? "bg-green-100 text-green-800" : "bg-gray-200"}`}>{employee.is_active ? "Active" : "Inactive"}</span>,
+              fields: [
+                { label: "Employment", value: formatLabel(employee.employment_type) },
+                { label: "Monthly salary", value: formatCurrency(employee.base_monthly_salary) },
+                { label: "Production / admin / selling", value: `${employee.production_percentage}/${employee.administration_percentage}/${employee.selling_percentage}` },
+                { label: "Start date", value: formatDate(employee.employment_start_date) },
+              ],
+            }))}
+          />
+          <div className="hidden overflow-x-auto md:block">
             <table className="min-w-full border-collapse text-sm">
               <thead>
                 <tr className="border-b border-[var(--line)] text-left text-[var(--navy-muted)]">
@@ -64,6 +81,7 @@ export default async function FinanceEmployeesPage() {
               </tbody>
             </table>
           </div>
+          </>
         ) : (
           <EmptyState message="No employees have been created yet." />
         )}

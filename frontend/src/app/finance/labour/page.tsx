@@ -12,6 +12,7 @@ import {
 } from "@/features/finance/components/FinanceUI";
 import { formatCurrency, formatDate, formatLabel } from "@/features/finance/utils/formatters";
 import { LabourWorkflowActions } from "@/features/finance/components/LabourWorkflowActions";
+import { MobileRecordList } from "@/components/ui/MobileRecordList";
 
 export default async function FinanceLabourPage() {
   const [periods, labour, batches] = await Promise.all([
@@ -43,7 +44,24 @@ export default async function FinanceLabourPage() {
 
       <Panel id="labour-ledger" title="Labour Ledger">
         {labour.length ? (
-          <div className="overflow-x-auto">
+          <>
+          <MobileRecordList
+            records={labour.map((item) => ({
+              key: item.id,
+              title: item.worker_name,
+              subtitle: item.task_description,
+              badge: <span className="rounded-full bg-[var(--gold-soft)] px-2 py-1 text-xs font-bold">{formatLabel(item.workflow_status)}</span>,
+              fields: [
+                { label: "Work date", value: formatDate(item.work_date) },
+                { label: "Amount", value: formatCurrency(item.payment_amount) },
+                { label: "Cost scope", value: formatLabel(item.cost_scope) },
+                { label: "Batch", value: item.batch ? batchLabels.get(item.batch) ?? `Batch ${item.batch}` : "Shared" },
+              ],
+              actions: <LabourWorkflowActions labour={item} />,
+            }))}
+            emptyMessage="No ad-hoc labour payments are recorded."
+          />
+          <div className="hidden overflow-x-auto md:block">
             <table className="min-w-full border-collapse text-sm">
               <thead>
                 <tr className="border-b border-[var(--line)] text-left text-[var(--navy-muted)]">
@@ -73,6 +91,7 @@ export default async function FinanceLabourPage() {
               </tbody>
             </table>
           </div>
+          </>
         ) : (
           <EmptyState message="No ad-hoc labour payments are recorded." />
         )}

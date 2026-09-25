@@ -4,6 +4,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 
+import { MobileRecordList } from "@/components/ui/MobileRecordList";
+import { BackLink } from "@/components/ui";
 import { clientApiFetch } from "@/lib/client-api";
 import { formatCurrency, formatDate, formatLabel } from "@/features/finance/utils/formatters";
 
@@ -112,12 +114,12 @@ export default function FinanceExpendituresClient() {
   const resetToFirstPage = () => setPage(1);
 
   return (
-    <div className="p-8 max-w-6xl mx-auto">
-      <Link href="/finance" className="mb-5 inline-block text-sm font-bold underline">← Finance Dashboard</Link>
+    <div className="mx-auto max-w-6xl p-4 sm:p-8">
+      <BackLink href="/finance" className="mb-5">Finance dashboard</BackLink>
       <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
         <h1 className="text-3xl font-extrabold">Expenditures</h1>
-        <div className="flex flex-wrap gap-3">
-          <Link href="/finance/revenue-usage" className="rounded-lg border border-[#151f36] bg-white px-5 py-3 font-bold text-[#151f36]">Track funding &amp; use</Link>
+        <div className="grid w-full gap-2 sm:flex sm:w-auto sm:flex-wrap sm:gap-3">
+          <Link href="/finance/revenue-usage" className="rounded-lg border border-[#151f36] bg-white px-5 py-3 text-center font-bold text-[#151f36]">Track funding &amp; use</Link>
           <Link href="/finance/expenditures/new" className="finance-button">+ New Expenditure</Link>
         </div>
       </div>
@@ -142,7 +144,26 @@ export default function FinanceExpendituresClient() {
       {error ? <div role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-800">{error}</div> : null}
 
       <div className="overflow-hidden rounded-xl border border-[#ddd7c9] bg-white">
-        <div className="overflow-x-auto pr-1">
+        {!loading ? <MobileRecordList
+          className="p-3"
+          emptyMessage="No expenditures match these filters."
+          records={expenditures.map((exp) => ({
+            key: exp.id,
+            title: exp.description,
+            subtitle: `${exp.expenditure_reference || `#${exp.id}`} · ${formatDate(exp.expenditure_date)}`,
+            badge: <span className={`rounded-full px-2 py-1 text-xs font-bold ${exp.status === "posted" ? "bg-green-100 text-green-800" : exp.status === "void" ? "bg-gray-200" : "bg-amber-100 text-amber-900"}`}>{formatLabel(exp.status)}</span>,
+            fields: [
+              { label: "Amount", value: formatCurrency(exp.amount) },
+              { label: "Payment", value: formatLabel(exp.payment_status || "unpaid") },
+              { label: "Balance due", value: formatCurrency(exp.balance_due || 0) },
+              { label: "Cost beneficiary", value: exp.beneficiary_batches?.length ? exp.beneficiary_batches.map((batch) => batch.batch_id).join(", ") : exp.beneficiary_detail || "Non-batch" },
+              { label: "Payment source", value: exp.funding_allocations?.length ? exp.funding_allocations.map((row) => row.funding_source_display || `Source #${row.funding_source}`).join(", ") : "Not paid / unassigned" },
+              { label: "Origin", value: formatLabel(exp.origin || "finance") },
+            ],
+            actions: <><Link href={`/finance/expenditures/${exp.id}`} className="flex-1 rounded-lg border border-[#151f36] px-3 py-2 text-center text-sm font-bold">{exp.status === "posted" && exp.payment_status !== "paid" ? "Record payment" : "Review"}</Link>{exp.status === "posted" ? <button type="button" onClick={() => voidExpenditure(exp.id)} className="rounded-lg bg-red-600 px-3 py-2 text-sm font-bold text-white">Reverse</button> : null}</>,
+          }))}
+        /> : <p className="p-6 text-center text-sm text-[#747b8d] md:hidden">Loading expenditures…</p>}
+        <div className="hidden overflow-x-auto pr-1 md:block">
         <table className="w-full min-w-[1100px] text-sm">
           <thead className="bg-[#f6f3eb]">
             <tr>

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { MobileRecordList } from "@/components/ui/MobileRecordList";
 import { clientApiFetch } from "@/lib/client-api";
 import type { PoultryBatch } from "@/features/poultry/types";
 import type { PayrollEntry, PayrollPayment } from "../types";
@@ -131,7 +132,23 @@ export function PayrollLedgerManager({ entries, batches }: { entries: PayrollEnt
   }
 
   return <>
-    <div className="overflow-x-auto"><table className="min-w-full border-collapse text-sm">
+    <MobileRecordList
+      emptyMessage="No payroll entries have been generated."
+      records={entries.map((entry) => ({
+        key: entry.id,
+        title: entry.employee_name,
+        subtitle: `Payroll entry #${entry.id}`,
+        badge: <span className={`rounded-full px-2 py-1 text-xs font-bold ${Number(entry.outstanding_salary) > 0 ? "bg-amber-100 text-amber-900" : "bg-green-100 text-green-800"}`}>{entry.payment_status.replaceAll("_", " ")}</span>,
+        fields: [
+          { label: "Gross salary", value: formatCurrency(entry.gross_salary) },
+          { label: "Net payable", value: formatCurrency(entry.net_salary_payable) },
+          { label: "Paid", value: formatCurrency(entry.amount_paid) },
+          { label: "Outstanding", value: formatCurrency(entry.outstanding_salary) },
+        ],
+        actions: <><button disabled={Number(entry.outstanding_salary) <= 0} className="rounded-lg border border-[var(--navy)] px-3 py-2 text-sm font-bold disabled:opacity-40" onClick={() => openPayment(entry, "advance")}>Record advance</button><button disabled={Number(entry.outstanding_salary) <= 0} className="flex-1 rounded-lg bg-[var(--gold)] px-3 py-2 text-sm font-extrabold text-[var(--navy)] disabled:opacity-40" onClick={() => openPayment(entry, "salary")}>Pay salary</button><button className="rounded-lg bg-[var(--navy)] px-3 py-2 text-sm font-bold text-white" onClick={() => openAllocation(entry)}>Allocate</button></>,
+      }))}
+    />
+    <div className="hidden overflow-x-auto md:block"><table className="min-w-full border-collapse text-sm">
       <thead><tr className="border-b border-[var(--line)] text-left text-[var(--navy-muted)]"><th className="py-3 pr-4">Employee / period</th><th className="py-3 pr-4">Gross</th><th className="py-3 pr-4">Deductions / net</th><th className="py-3 pr-4">Paid / outstanding</th><th className="py-3 pr-4">Status</th><th className="py-3">Action</th></tr></thead>
       <tbody>{entries.map((entry) => <tr key={entry.id} className="border-b border-[var(--line)]">
         <td className="py-4 pr-4 font-bold">{entry.employee_name}</td><td className="py-4 pr-4">{formatCurrency(entry.gross_salary)}</td><td className="py-4 pr-4">{formatCurrency(entry.deductions)} / {formatCurrency(entry.net_salary_payable)}</td><td className="py-4 pr-4">{formatCurrency(entry.amount_paid)} / {formatCurrency(entry.outstanding_salary)}</td><td className="py-4 pr-4 capitalize">{entry.payment_status.replaceAll("_", " ")}</td>
@@ -139,7 +156,7 @@ export function PayrollLedgerManager({ entries, batches }: { entries: PayrollEnt
       </tr>)}</tbody>
     </table></div>
 
-    {active ? <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4" role="dialog" aria-modal="true"><div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-3xl border border-[var(--line)] bg-[var(--surface-white)] p-6 shadow-2xl">
+    {active ? <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-2 sm:p-4" role="dialog" aria-modal="true"><div className="max-h-[96vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-[var(--line)] bg-[var(--surface-white)] p-4 shadow-2xl sm:max-h-[90vh] sm:rounded-3xl sm:p-6">
       <div className="flex justify-between"><div><p className="text-xs font-bold uppercase tracking-widest">{mode === "allocation" ? "Payroll cost allocation" : paymentKind === "advance" ? "Salary advance" : "Salary payment"}</p><h2 className="mt-2 text-2xl font-extrabold">{active.employee_name}</h2></div><button onClick={() => setActive(null)} aria-label="Close">×</button></div>
       <p className="mt-2 text-sm">Net payable {formatCurrency(active.net_salary_payable)} · Outstanding {formatCurrency(active.outstanding_salary)}</p>
       {error ? <p className="mt-4 rounded-lg bg-red-50 p-3 text-red-700">{error}</p> : null}

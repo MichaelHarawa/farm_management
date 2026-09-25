@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { MobileRecordList } from "@/components/ui/MobileRecordList";
 import { getBatchPortfolioReport } from "@/features/finance/api/finance";
 import { BatchSelectionFilter } from "@/features/finance/components/BatchSelectionFilter";
 import { FinanceWarningList } from "@/features/finance/components/FinanceWarningList";
@@ -242,7 +243,25 @@ export default async function FinanceBatchAnalysisPage({ searchParams }: PagePro
           </div>
 
           <Panel title="Selected Batch Comparison">
-            <div className="max-h-[36rem] overflow-auto">
+            <MobileRecordList
+              emptyMessage="No selected batches are available."
+              records={report.results.map((batch) => ({
+                key: batch.batch,
+                title: batch.batch_id,
+                subtitle: `${formatLabel(batch.profitability_status)}${batch.included_in_portfolio_summary ? "" : " · excluded"}`,
+                badge: <span className={`rounded-full px-2 py-1 text-xs font-bold ${parseDecimal(batch.management_net_position) < 0 ? "bg-red-50 text-[var(--danger)]" : "bg-green-50 text-green-800"}`}>{formatCurrency(batch.management_net_position)}</span>,
+                fields: [
+                  { label: "Birds", value: formatNumber(batch.birds_placed) },
+                  { label: "Mortality", value: formatPercent(batch.mortality_rate_percent) },
+                  { label: "Revenue", value: formatCurrency(batch.revenue) },
+                  { label: "Production cost", value: formatCurrency(batch.total_production_cost) },
+                  { label: "Full cost", value: formatCurrency(batch.total_attributed_cost) },
+                  { label: "Receivables", value: formatCurrency(batch.accounts_receivable) },
+                ],
+                actions: <Link href={`/finance/batches/${batch.batch}`} className="w-full rounded-lg bg-[var(--navy)] px-4 py-3 text-center font-bold text-white">Open batch finance</Link>,
+              }))}
+            />
+            <div className="hidden max-h-[36rem] overflow-auto md:block">
               <table className="min-w-[1050px] border-collapse text-sm">
                 <thead className="sticky top-0 bg-[var(--surface-cream)] text-left text-[var(--navy-muted)]">
                   <tr className="border-b border-[var(--line)]">

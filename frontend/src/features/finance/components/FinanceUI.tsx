@@ -40,7 +40,7 @@ export function FinancePageShell({
         <div className="mx-auto flex max-w-7xl flex-col items-center px-5 py-6 text-center sm:px-8 sm:py-7">
           <div className="max-w-4xl">
             <p className="text-label text-[var(--navy-muted)]">{eyebrow}</p>
-            <h1 className="font-display mt-3 text-4xl leading-tight text-[var(--navy)] sm:text-5xl">
+            <h1 className="font-display mt-3 text-3xl leading-tight text-[var(--navy)] sm:text-5xl">
               {title}
             </h1>
             <p className="mx-auto mt-3 max-w-3xl text-sm leading-6 text-[var(--navy-soft)]">
@@ -48,7 +48,7 @@ export function FinancePageShell({
             </p>
           </div>
           {actions ? (
-            <div className="mt-5 flex w-full justify-center">{actions}</div>
+            <div className="mt-5 min-w-0 w-full">{actions}</div>
           ) : null}
         </div>
       </section>
@@ -80,10 +80,10 @@ export async function FinanceNav() {
 
 
   return (
-    <nav className="grid justify-items-center gap-2">
-      <div className="flex flex-wrap justify-center gap-2">
+    <nav className="grid min-w-0 w-full justify-items-center gap-2">
+      <div className="flex w-full snap-x gap-2 overflow-x-auto pb-2 sm:flex-wrap sm:justify-center sm:overflow-visible sm:pb-0">
         {primaryLinks.map(([label, href]) => (
-          <Link key={href} href={href} className="rounded-full border border-[var(--line)] bg-white/60 px-4 py-2 text-xs font-bold uppercase tracking-[0.14em] text-[var(--navy-muted)] transition hover:bg-[var(--gold-soft)] hover:text-[var(--navy)]">{label}</Link>
+          <Link key={href} href={href} className="shrink-0 snap-start rounded-full border border-[var(--line)] bg-white/60 px-4 py-2 text-xs font-bold uppercase tracking-[0.14em] text-[var(--navy-muted)] transition hover:bg-[var(--gold-soft)] hover:text-[var(--navy)]">{label}</Link>
         ))}
       </div>
       <details className="relative text-center">
@@ -138,7 +138,7 @@ export function Panel({
   children: ReactNode;
 }) {
   return (
-    <section id={id} className="rounded-lg border border-[var(--line)] bg-[var(--surface-cream)] p-5 shadow-[var(--shadow-card)]">
+    <section id={id} className="rounded-lg border border-[var(--line)] bg-[var(--surface-cream)] p-4 shadow-[var(--shadow-card)] sm:p-5">
       <h2 className="text-lg font-extrabold text-[var(--navy)]">{title}</h2>
       <div className="mt-5">{children}</div>
     </section>

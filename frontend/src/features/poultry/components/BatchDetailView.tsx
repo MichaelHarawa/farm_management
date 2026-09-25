@@ -4,6 +4,7 @@ import Link from "next/link";
 import { createPortal } from "react-dom";
 import { useMemo, useState, type ReactNode } from "react";
 import { X } from "lucide-react";
+import { BackLink } from "@/components/ui";
 
 import type {
   BatchProfitabilityReport,
@@ -736,7 +737,7 @@ export function BatchDetailView({
         onTabChange={setActiveTab}
       />
 
-      <section className="min-w-0 px-5 py-8 sm:px-8 lg:px-12">
+      <section className="min-w-0 px-4 py-5 sm:px-8 sm:py-8 lg:px-12">
         <div className="mx-auto max-w-[1320px]">
           <PageHeader
             title={pageHeader.title}
@@ -1064,7 +1065,7 @@ type DetailSidebarProps = {
 
 function DetailSidebar({ activeTab, batch, onTabChange }: DetailSidebarProps) {
   return (
-    <aside className="bg-[#151f36] px-6 py-8 text-white lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col">
+    <aside className="hidden bg-[#151f36] px-6 py-8 text-white lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col">
       <Link href="/" className="flex items-center gap-3">
         <span className="grid h-10 w-10 place-items-center rounded-full bg-[#e1aa3f] text-base font-bold text-[#151f36]">
           F
@@ -1133,12 +1134,7 @@ function PageHeader({
     <header>
       <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <Link
-            href="/poultry"
-            className="text-sm font-bold uppercase tracking-wide text-[#747b8d] transition hover:text-[#151f36]"
-          >
-            &larr; Batch register
-          </Link>
+          <BackLink href="/poultry">Batch register</BackLink>
 
           <h1 className="mt-4 text-4xl font-extrabold tracking-[-0.02em] text-[#151926]">
             {title}
@@ -1146,13 +1142,13 @@ function PageHeader({
           <p className="mt-2 text-base leading-7 text-[#747b8d]">{description}</p>
         </div>
 
-        <div className="flex flex-wrap gap-3">
-          {secondaryAction ? <Link href={secondaryAction.href} className="flex h-14 items-center rounded-xl bg-[#151f36] px-8 text-base font-bold !text-white transition hover:bg-[#22345f] hover:!text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e1aa3f] focus-visible:ring-offset-2">{secondaryAction.label}</Link> : null}
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:gap-3">
+          {secondaryAction ? <Link href={secondaryAction.href} className="flex min-h-12 items-center justify-center rounded-xl bg-[#151f36] px-5 text-sm font-bold !text-white transition hover:bg-[#22345f] hover:!text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e1aa3f] focus-visible:ring-offset-2 sm:h-14 sm:px-8 sm:text-base">{secondaryAction.label}</Link> : null}
           {actionLabel ? (
             <button
               type="button"
               onClick={onAction}
-              className="h-14 rounded-xl bg-[#151f36] px-8 text-base font-bold text-white transition hover:bg-[#22345f]"
+              className="min-h-12 rounded-xl bg-[#151f36] px-5 text-sm font-bold text-white transition hover:bg-[#22345f] sm:h-14 sm:px-8 sm:text-base"
             >
               {actionLabel}
             </button>
@@ -1160,7 +1156,7 @@ function PageHeader({
         </div>
       </div>
 
-      <nav className="mt-7 flex flex-wrap gap-5">
+      <nav className="-mx-4 mt-6 flex snap-x gap-2 overflow-x-auto px-4 pb-2 sm:mx-0 sm:flex-wrap sm:gap-3 sm:px-0">
         {tabs.map((tab) => {
           const isActive = activeTab === tab.id;
 
@@ -1169,7 +1165,7 @@ function PageHeader({
               key={tab.id}
               type="button"
               onClick={() => onTabChange(tab.id)}
-              className={`rounded-lg px-6 py-3 text-base font-bold transition ${
+              className={`shrink-0 snap-start rounded-lg px-4 py-3 text-sm font-bold transition sm:px-6 sm:text-base ${
                 isActive
                   ? "bg-[#151f36] text-white"
                   : "text-[#747b8d] hover:bg-white"
@@ -2500,7 +2496,36 @@ function SimpleTable({
         </button>
       </div>
 
-      <div className="overflow-x-auto">
+      <div className="grid gap-3 p-4 md:hidden">
+        {filteredRows.length === 0 ? (
+          <p className="rounded-lg border border-dashed border-[#ddd7c9] p-4 text-sm text-[#747b8d]">
+            {rows.length === 0 ? emptyMessage : "No records match the current filter."}
+          </p>
+        ) : paginatedRows.map(({ row, detail }, rowIndex) => (
+          <article
+            key={`mobile-${tableCellText(row[0])}-${startIndex + rowIndex}`}
+            onClick={() => detail && setSelectedDetail(detail)}
+            className={`rounded-xl border border-[#ddd7c9] bg-white p-4 shadow-sm ${detail ? "cursor-pointer active:bg-[#fff4c6]" : ""}`}
+          >
+            <div className="text-base font-extrabold text-[#151926]">
+              {typeof row[0] === "string" ? row[0] : <Link href={row[0].href} onClick={(event) => event.stopPropagation()} className="underline">{row[0].text}</Link>}
+            </div>
+            <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3">
+              {row.slice(1).map((cell, cellIndex) => (
+                <div key={`${columns[cellIndex + 1]}-${cellIndex}`} className="min-w-0 border-t border-[#ddd7c9] pt-2">
+                  <dt className="text-[0.65rem] font-extrabold uppercase tracking-[0.12em] text-[#747b8d]">{columns[cellIndex + 1]}</dt>
+                  <dd className="mt-1 break-words text-sm font-semibold text-[#151926]">
+                    {typeof cell === "string" ? cell : <Link href={cell.href} onClick={(event) => event.stopPropagation()} className="underline">{cell.text}</Link>}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+            {detail ? <p className="mt-3 text-xs font-bold text-[#747b8d]">Tap for full details</p> : null}
+          </article>
+        ))}
+      </div>
+
+      <div className="hidden overflow-x-auto md:block">
         <table className="min-w-full border-collapse">
           <thead>
             <tr className="bg-[#ece9dd]">
@@ -2921,7 +2946,7 @@ function DetailModal({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[100] overflow-y-auto bg-[#e9ecf3]/80 px-4 py-8 backdrop-blur-[7px]"
+      className="fixed inset-0 z-[100] overflow-y-auto bg-[#e9ecf3]/80 px-2 py-3 backdrop-blur-[7px] sm:px-4 sm:py-8"
       role="presentation"
       onMouseDown={onClose}
     >
@@ -2929,13 +2954,13 @@ function DetailModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="batch-detail-modal-title"
-        className="relative mx-auto mt-12 w-full max-w-5xl overflow-hidden rounded-[1.75rem] border border-white/90 bg-white shadow-[0_30px_90px_rgba(21,31,54,0.24)]"
+        className="relative mx-auto w-full max-w-5xl overflow-hidden rounded-2xl border border-white/90 bg-white shadow-[0_30px_90px_rgba(21,31,54,0.24)] sm:mt-12 sm:rounded-[1.75rem]"
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="pointer-events-none absolute -left-24 -top-24 h-72 w-72 rounded-full bg-[var(--gold-soft)]/70 blur-3xl" />
         <div className="pointer-events-none absolute -bottom-24 -right-24 h-72 w-72 rounded-full bg-[#f3f5fa] blur-3xl" />
 
-        <div className="relative px-8 py-8 sm:px-12 sm:py-10">
+        <div className="relative px-4 py-5 sm:px-12 sm:py-10">
           <div className="flex items-start justify-between gap-6">
             <div>
               <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-[var(--navy-muted)]">
@@ -2943,7 +2968,7 @@ function DetailModal({
               </p>
               <h2
                 id="batch-detail-modal-title"
-                className="mt-4 max-w-2xl text-3xl font-extrabold leading-tight text-[var(--navy)] sm:text-4xl"
+                className="mt-3 max-w-2xl text-2xl font-extrabold leading-tight text-[var(--navy)] sm:mt-4 sm:text-4xl"
               >
                 {title}
               </h2>
@@ -2960,7 +2985,7 @@ function DetailModal({
             </button>
           </div>
 
-          <div className="mt-9 border-t border-[var(--line)] pt-8">
+          <div className="mt-5 border-t border-[var(--line)] pt-5 sm:mt-9 sm:pt-8">
             {children}
           </div>
         </div>

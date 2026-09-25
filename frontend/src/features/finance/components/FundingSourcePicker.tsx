@@ -145,7 +145,7 @@ export function FundingSourcePicker({
       </div>
 
       {open ? (
-        <div className="absolute z-40 mt-2 w-full min-w-[22rem] overflow-hidden rounded-xl border border-[var(--line)] bg-white shadow-2xl">
+        <div className="absolute z-40 mt-2 w-full min-w-0 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-[var(--line)] bg-white shadow-2xl sm:min-w-[22rem]">
           <div className="flex flex-wrap gap-2 border-b bg-[#f8f4e8] p-3">
             {sourceFilters.map((filter) => (
               <button

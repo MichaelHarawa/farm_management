@@ -14,6 +14,7 @@ import {
 } from "react";
 import { useForm, type SubmitHandler } from "react-hook-form";
 
+import { MobileRecordList } from "@/components/ui/MobileRecordList";
 import { getApiErrorMessage } from "@/lib/errors";
 import {
   confirmPoultryBatchDelivery,
@@ -264,7 +265,31 @@ export function BatchList({ batches, addBatchAction }: BatchListProps) {
         </div>
       </div>
 
-      <div className="overflow-x-auto">
+      <MobileRecordList
+        className="p-3"
+        emptyMessage="No batches match the selected time window."
+        records={visibleBatches.map((batch) => {
+          const daysToMaturity = getDaysToMaturity(batch.expected_maturity_date);
+          const isMature = daysToMaturity <= 0;
+          const isBooked = batch.status === "booked";
+          const isDelivered = batch.status === "delivered";
+          return {
+            key: batch.id,
+            title: batch.batch_id,
+            subtitle: `${formatBirdType(batch.bird_type)} cycle`,
+            badge: <span className={`rounded-full px-2 py-1 text-[0.65rem] font-bold uppercase ${getStatusPillClass(batch, isMature)}`}>{getStatusLabel(batch, isMature)}</span>,
+            fields: [
+              { label: "Flock", value: batch.quantity.toLocaleString() },
+              { label: isBooked ? "Expected delivery" : "Placement", value: formatDate(isBooked ? batch.estimated_chick_arrival_date : batch.entry_date) },
+              { label: "Maturity", value: formatDate(batch.expected_maturity_date) },
+              { label: "Timing", value: isBooked ? "Projected after arrival" : isDelivered ? "Add batch details" : isMature ? "Maturity reached" : `${daysToMaturity} days remaining` },
+            ],
+            actions: isBooked ? <MarkDeliveredDialog batch={batch} /> : isDelivered ? <ConfirmDeliveryDialog batch={batch} /> : <Link href={`/poultry/batches/${batch.id}`} className="w-full rounded-lg bg-[var(--gold)] px-4 py-3 text-center font-bold">Open batch</Link>,
+          };
+        })}
+      />
+
+      <div className="hidden overflow-x-auto md:block">
         <table className="min-w-full border-collapse">
           <thead>
             <tr className="border-b border-[var(--line)] bg-[var(--surface-cream-soft)]">

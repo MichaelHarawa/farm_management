@@ -20,6 +20,7 @@ import {
   formatLabel,
 } from "@/features/finance/utils/formatters";
 import Link from "next/link";
+import { MobileRecordList } from "@/components/ui/MobileRecordList";
 
 export default async function FinanceAssetsPage() {
   const [periods, categories, assets] = await Promise.all([
@@ -61,7 +62,24 @@ export default async function FinanceAssetsPage() {
 
       <Panel id="asset-register" title="Asset Register">
         {assets.length ? (
-          <div className="overflow-x-auto">
+          <>
+          <MobileRecordList
+            emptyMessage="No fixed assets have been recorded."
+            records={assets.map((asset) => ({
+              key: asset.id,
+              title: asset.asset_code || asset.name,
+              subtitle: asset.name,
+              badge: <span className="rounded-full bg-[var(--gold-soft)] px-2 py-1 text-xs font-bold">{formatLabel(asset.status)}</span>,
+              fields: [
+                { label: "Available", value: asset.available_for_use_date ? formatDate(asset.available_for_use_date) : "-" },
+                { label: "Capitalized cost", value: formatCurrency(asset.total_capitalized_cost) },
+                { label: "USD reference", value: asset.usd_equivalent ? `$${asset.usd_equivalent}` : "-" },
+                { label: "Method", value: formatLabel(asset.depreciation_method) },
+              ],
+              actions: <Link href={`/finance/assets/${asset.id}`} className="w-full rounded-lg bg-[var(--navy)] px-4 py-3 text-center font-bold text-white">Open asset</Link>,
+            }))}
+          />
+          <div className="hidden overflow-x-auto md:block">
             <table className="min-w-full border-collapse text-sm">
               <thead>
                 <tr className="border-b border-[var(--line)] text-left text-[var(--navy-muted)]">
@@ -100,6 +118,7 @@ export default async function FinanceAssetsPage() {
               </tbody>
             </table>
           </div>
+          </>
         ) : (
           <EmptyState message="No fixed assets have been recorded." />
         )}
