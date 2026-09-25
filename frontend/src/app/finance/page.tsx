@@ -4,6 +4,7 @@ import { MobileRecordList } from "@/components/ui/MobileRecordList";
 import { getFinanceDashboard } from "@/features/finance/api/finance";
 import { BatchAnalysisFilter } from "@/features/finance/components/BatchAnalysisFilter";
 import { FinanceWarningList } from "@/features/finance/components/FinanceWarningList";
+import { SalesTrendByAgeChart } from "@/features/finance/components/SalesTrendByAgeChart";
 import { EmptyState, FinanceNav, FinancePageShell, MetricCard, Panel } from "@/features/finance/components/FinanceUI";
 import type { FinanceDashboard } from "@/features/finance/types";
 import { formatCurrency, formatLabel, parseDecimal } from "@/features/finance/utils/formatters";
@@ -57,7 +58,7 @@ export default async function FinanceDashboardPage({ searchParams }: { searchPar
             <FundingPie mix={analysis.funding_mix} />
           </Panel>
           <Panel title="Sales trend by flock age">
-            <SalesTrendChart rows={analysis.sales_trend} />
+            <SalesTrendByAgeChart rows={analysis.sales_trend} />
             <p className="mt-3 text-xs leading-5 text-[var(--navy-muted)]">{analysis.sales_trend_basis}</p>
           </Panel>
         </section>
@@ -117,6 +118,13 @@ export default async function FinanceDashboardPage({ searchParams }: { searchPar
 
 const chartColors = ["#151f36", "#d9a52e", "#4e8b61", "#b24a43", "#6f5da8", "#3f7c91"];
 
+function formatCompactCurrency(value: number) {
+  return `MWK ${new Intl.NumberFormat("en", {
+    notation: "compact",
+    maximumFractionDigits: 2,
+  }).format(value)}`;
+}
+
 function FundingPie({ mix }: { mix: FinanceDashboard["batch_analysis"]["funding_mix"] }) {
   const total = parseDecimal(mix.total_batch_expenditure);
   const visible = mix.groups
@@ -131,31 +139,19 @@ function FundingPie({ mix }: { mix: FinanceDashboard["batch_analysis"]["funding_
     return `${chartColors[colorIndex % chartColors.length]} ${start}deg ${end}deg`;
   }).join(", ");
   return <div className="grid gap-6 sm:grid-cols-[220px_1fr] sm:items-center">
-    <div className="mx-auto grid aspect-square w-52 place-items-center rounded-full" style={{ background: gradient ? `conic-gradient(${gradient})` : "#e7e4d9" }}><div className="grid aspect-square w-28 place-items-center rounded-full bg-white text-center"><span className="text-xs font-bold text-[var(--navy-muted)]">Batch costs<strong className="mt-1 block text-sm text-[var(--navy)]">{formatCurrency(total)}</strong></span></div></div>
+    <div className="mx-auto grid aspect-square w-52 place-items-center rounded-full" style={{ background: gradient ? `conic-gradient(${gradient})` : "#e7e4d9" }}>
+      <div className="grid aspect-square w-28 place-items-center rounded-full bg-white px-2 text-center" title={`Total batch costs: ${formatCurrency(total)}`}>
+        <span className="text-[0.65rem] font-bold uppercase tracking-wide text-[var(--navy-muted)]">
+          Total costs
+          <strong className="mt-1 block whitespace-nowrap text-base leading-none tracking-tight text-[var(--navy)]">
+            {formatCompactCurrency(total)}
+          </strong>
+        </span>
+      </div>
+    </div>
     <div className="grid gap-3">{mix.groups.map((row, index) => <div key={row.key} className="flex items-start justify-between gap-3"><span className="flex items-start gap-2"><i className="mt-1 h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: chartColors[index % chartColors.length] }} /><span><strong className="block">{row.label}</strong><span className="text-xs text-[var(--navy-muted)]">{row.percent ?? "0.00"}%</span></span></span><strong>{formatCurrency(row.amount)}</strong></div>)}</div>
     <p className="text-xs leading-5 text-[var(--navy-muted)] sm:col-span-2">{mix.basis}</p>
   </div>;
-}
-
-function SalesTrendChart({ rows }: { rows: FinanceDashboard["batch_analysis"]["sales_trend"] }) {
-  if (!rows.length) return <EmptyState message="No bird sales have been recorded from four weeks onward for the selected batches." />;
-  const width = 760, height = 280, left = 58, right = 18, top = 18, bottom = 45;
-  const maxDay = Math.max(28, ...rows.map((row) => row.age_day));
-  const maxRevenue = Math.max(1, ...rows.map((row) => parseDecimal(row.revenue)));
-  const x = (day: number) => left + ((day - 28) / Math.max(maxDay - 28, 1)) * (width - left - right);
-  const y = (revenue: number) => top + (1 - revenue / maxRevenue) * (height - top - bottom);
-  const batches = Array.from(new Map(rows.map((row) => [row.batch_id, row.batch_code])).entries());
-  return <div><svg viewBox={`0 0 ${width} ${height}`} className="h-auto w-full md:min-w-[620px]" role="img" aria-label="Sales revenue trend by batch and flock age">
-    <line x1={left} y1={height - bottom} x2={width - right} y2={height - bottom} stroke="#9ea3ad" />
-    <line x1={left} y1={top} x2={left} y2={height - bottom} stroke="#9ea3ad" />
-    <text x={left} y={height - 14} fontSize="11" fill="#747b8d">4 weeks · Day 28</text><text x={width - right - 42} y={height - 14} fontSize="11" fill="#747b8d">Day {maxDay}</text>
-    <text x={6} y={top + 8} fontSize="11" fill="#747b8d">{formatCurrency(maxRevenue)}</text><text x={18} y={height - bottom} fontSize="11" fill="#747b8d">MWK 0</text>
-    {batches.map(([batchId], index) => {
-      const points = rows.filter((row) => row.batch_id === batchId).sort((a, b) => a.age_day - b.age_day);
-      const color = chartColors[index % chartColors.length];
-      return <g key={batchId}><polyline fill="none" stroke={color} strokeWidth="3" points={points.map((point) => `${x(point.age_day)},${y(parseDecimal(point.revenue))}`).join(" ")} />{points.map((point) => <circle key={`${point.date}-${point.age_day}`} cx={x(point.age_day)} cy={y(parseDecimal(point.revenue))} r="4" fill={color} stroke={color} strokeWidth="2"><title>{point.batch_code}, day {point.age_day}: {formatCurrency(point.revenue)} from {point.quantity} bird(s)</title></circle>)}</g>;
-    })}
-  </svg><div className="mt-2 flex flex-wrap gap-4">{batches.map(([id, code], index) => <span key={id} className="flex items-center gap-2 text-xs font-bold"><i className="h-2.5 w-5 rounded" style={{ backgroundColor: chartColors[index % chartColors.length] }} />{code}</span>)}</div></div>;
 }
 
 function CompactFigure({ label, value }: { label: string; value: string }) {

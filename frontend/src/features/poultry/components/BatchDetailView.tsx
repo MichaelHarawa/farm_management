@@ -1156,7 +1156,19 @@ function PageHeader({
         </div>
       </div>
 
-      <nav className="-mx-4 mt-6 flex snap-x gap-2 overflow-x-auto px-4 pb-2 sm:mx-0 sm:flex-wrap sm:gap-3 sm:px-0">
+      <label className="mt-6 block rounded-xl border border-[#ddd7c9] bg-white p-3 shadow-sm sm:hidden">
+        <span className="mb-2 block text-[0.65rem] font-extrabold uppercase tracking-[0.16em] text-[#747b8d]">Batch section</span>
+        <select
+          value={activeTab}
+          onChange={(event) => onTabChange(event.target.value as BatchDetailTab)}
+          className="form-input w-full bg-[#fbf6e8] font-bold text-[#151f36]"
+          aria-label="Choose batch section"
+        >
+          {tabs.map((tab) => <option key={tab.id} value={tab.id}>{tab.label}</option>)}
+        </select>
+      </label>
+
+      <nav className="mt-6 hidden flex-wrap gap-3 sm:flex" aria-label="Batch sections">
         {tabs.map((tab) => {
           const isActive = activeTab === tab.id;
 
@@ -1165,7 +1177,7 @@ function PageHeader({
               key={tab.id}
               type="button"
               onClick={() => onTabChange(tab.id)}
-              className={`shrink-0 snap-start rounded-lg px-4 py-3 text-sm font-bold transition sm:px-6 sm:text-base ${
+              className={`rounded-lg px-6 py-3 text-base font-bold transition ${
                 isActive
                   ? "bg-[#151f36] text-white"
                   : "text-[#747b8d] hover:bg-white"

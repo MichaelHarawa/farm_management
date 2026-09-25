@@ -217,6 +217,7 @@ export default function FinanceReceivablesPage() {
       {loading ? <p className="mt-6 rounded-xl border bg-white p-6 text-center text-sm md:hidden">Loading receivables…</p> : (
         <MobileRecordList
           className="mt-6"
+          desktopBreakpoint="lg"
           emptyMessage="No sales match these filters."
           records={(report?.results ?? []).map((sale) => ({
             key: sale.sale_id,
@@ -240,21 +241,22 @@ export default function FinanceReceivablesPage() {
         />
       )}
 
-      <section className="mt-6 hidden overflow-x-auto rounded-xl border border-[var(--line)] bg-white md:block">
-        <table className="min-w-[1320px] w-full text-sm">
-          <thead className="bg-[#f6f3eb] text-left"><tr><th className="p-3">Sale</th><th className="p-3">Buyer</th><th className="p-3">Follow-up person</th><th className="p-3">Batch</th><th className="p-3">Sale date</th><th className="p-3">Age</th><th className="p-3">Status</th><th className="p-3 text-right">Sale total</th><th className="p-3 text-right">Paid</th><th className="p-3 text-right">Remaining</th><th className="p-3">Actions</th></tr></thead>
+      <section className="mt-6 hidden overflow-hidden rounded-xl border border-[var(--line)] bg-white lg:block">
+        <table className="w-full table-fixed text-xs xl:text-sm">
+          <colgroup><col className="w-[9%]" /><col className="w-[9%]" /><col className="w-[8%]" /><col className="w-[10%]" /><col className="w-[7%]" /><col className="w-[7%]" /><col className="w-[7%]" /><col className="w-[10%]" /><col className="w-[9%]" /><col className="w-[10%]" /><col className="w-[14%]" /></colgroup>
+          <thead className="bg-[#f6f3eb] text-left"><tr><th className="px-2 py-3">Sale</th><th className="px-2 py-3">Buyer</th><th className="px-2 py-3">Follow-up person</th><th className="px-2 py-3">Batch</th><th className="px-2 py-3">Sale date</th><th className="px-2 py-3">Age</th><th className="px-2 py-3">Status</th><th className="px-2 py-3 text-right">Sale total</th><th className="px-2 py-3 text-right">Paid</th><th className="px-2 py-3 text-right">Remaining</th><th className="px-2 py-3">Actions</th></tr></thead>
           <tbody>
             {loading ? <tr><td colSpan={11} className="p-8 text-center">Loading receivables…</td></tr> : null}
             {!loading && !report?.results.length ? <tr><td colSpan={11} className="p-8 text-center text-[var(--navy-muted)]">No sales match these filters.</td></tr> : null}
             {report?.results.map((sale) => (
               <Fragment key={sale.sale_id}>
                 <tr id={`sale-${sale.sale_id}`} className={`border-t ${focusedSale === sale.sale_id ? "bg-[var(--gold-soft)]" : ""}`}>
-                  <td className="p-3 font-bold">{sale.sale_id}</td><td className="p-3">{sale.buyer_name || "Not recorded"}</td><td className="p-3 font-medium">{sale.receivable_follow_up_name || "Not assigned"}</td>
-                  <td className="p-3"><Link href={`/poultry/batches/${sale.batch}?tab=sales`} className="font-bold underline">{sale.batch_id}</Link></td>
-                  <td className="p-3">{formatDate(sale.sale_date)}</td><td className="p-3">{sale.is_overdue ? `${sale.days_overdue} days overdue` : `${sale.age_days} days old`}</td>
-                  <td className="p-3">{formatLabel(sale.receivable_status)}</td>
-                  <td className="p-3 text-right">{formatCurrency(sale.sale_total)}</td><td className="p-3 text-right">{formatCurrency(sale.amount_paid)}</td><td className="p-3 text-right font-bold">{formatCurrency(sale.balance)}</td>
-                  <td className="p-3"><div className="flex gap-2"><button type="button" onClick={() => openPayment(sale)} disabled={Number(sale.balance) <= 0} className="rounded bg-[#151f36] px-3 py-2 text-xs font-bold text-white disabled:opacity-40">Record payment</button><button type="button" onClick={() => setExpandedSale(expandedSale === sale.sale_id ? null : sale.sale_id)} className="text-xs font-bold underline">{expandedSale === sale.sale_id ? "Hide history" : "Payment history"}</button></div></td>
+                  <td className="break-words px-2 py-3 font-bold xl:px-3">{sale.sale_id}</td><td className="break-words px-2 py-3 xl:px-3">{sale.buyer_name || "Not recorded"}</td><td className="break-words px-2 py-3 font-medium xl:px-3">{sale.receivable_follow_up_name || "Not assigned"}</td>
+                  <td className="break-words px-2 py-3 xl:px-3"><Link href={`/poultry/batches/${sale.batch}?tab=sales`} className="font-bold underline">{sale.batch_id}</Link></td>
+                  <td className="px-2 py-3 xl:px-3">{formatDate(sale.sale_date)}</td><td className="px-2 py-3 xl:px-3">{sale.is_overdue ? `${sale.days_overdue} days overdue` : `${sale.age_days} days old`}</td>
+                  <td className="break-words px-2 py-3 xl:px-3">{formatLabel(sale.receivable_status)}</td>
+                  <td className="px-2 py-3 text-right xl:px-3">{formatCurrency(sale.sale_total)}</td><td className="px-2 py-3 text-right xl:px-3">{formatCurrency(sale.amount_paid)}</td><td className="px-2 py-3 text-right font-bold xl:px-3">{formatCurrency(sale.balance)}</td>
+                  <td className="px-2 py-3 xl:px-3"><div className="grid gap-2"><button type="button" onClick={() => openPayment(sale)} disabled={Number(sale.balance) <= 0} className="rounded bg-[#151f36] px-2 py-2 text-xs font-bold !text-white disabled:opacity-40">Record payment</button><button type="button" onClick={() => setExpandedSale(expandedSale === sale.sale_id ? null : sale.sale_id)} className="text-xs font-bold underline">{expandedSale === sale.sale_id ? "Hide history" : "Payment history"}</button></div></td>
                 </tr>
                 {expandedSale === sale.sale_id ? <tr key={`${sale.sale_id}-payments`} className="bg-[#faf8f2]"><td colSpan={11} className="p-4"><div className="grid gap-2">{sale.payments.length ? sale.payments.map((item) => <div key={item.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-white p-2"><button type="button" onClick={() => openPaymentDetails(sale, item)} className="min-w-0 flex-1 rounded-md p-2 text-left transition hover:bg-[var(--gold-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--gold)]"><span className="block"><strong>{item.payment_reference}</strong> · {formatDate(item.payment_date)} · {formatLabel(item.payment_method)} · {formatCurrency(item.amount)} · {formatLabel(item.status)}</span><span className="mt-1 block text-xs font-bold text-[var(--navy-muted)]">View payment details</span></button>{item.status === "posted" ? <button type="button" onClick={(event) => { event.stopPropagation(); void reversePayment(item.id); }} className="px-2 text-xs font-bold text-red-700 underline">Reverse payment</button> : <span className="px-2 text-xs text-red-700">{item.reversal_reason}</span>}</div>) : <p>No payments recorded.</p>}</div></td></tr> : null}
               </Fragment>

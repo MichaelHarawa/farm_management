@@ -13,17 +13,21 @@ export function MobileRecordList({
   records,
   emptyMessage,
   className = "",
+  desktopBreakpoint = "md",
 }: {
   records: MobileRecord[];
   emptyMessage: string;
   className?: string;
+  desktopBreakpoint?: "md" | "lg";
 }) {
+  const desktopHiddenClass = desktopBreakpoint === "lg" ? "lg:hidden" : "md:hidden";
+
   if (!records.length) {
-    return <p className={`rounded-xl border border-dashed border-[var(--line)] bg-white/60 p-5 text-sm text-[var(--navy-muted)] md:hidden ${className}`}>{emptyMessage}</p>;
+    return <p className={`rounded-xl border border-dashed border-[var(--line)] bg-white/60 p-5 text-sm text-[var(--navy-muted)] ${desktopHiddenClass} ${className}`}>{emptyMessage}</p>;
   }
 
   return (
-    <div className={`grid gap-3 md:hidden ${className}`}>
+    <div className={`grid gap-3 ${desktopHiddenClass} ${className}`}>
       {records.map((record) => (
         <article key={record.key} className="min-w-0 rounded-xl border border-[var(--line)] bg-white p-4 shadow-sm">
           <div className="flex min-w-0 items-start justify-between gap-3">

@@ -1,6 +1,6 @@
 "use client";
 
-import { Activity, Banknote, Bird, RefreshCw, Scale, Skull, Wheat } from "lucide-react";
+import { Activity, Banknote, Bird, RefreshCw, Wheat } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
@@ -59,6 +59,19 @@ export default function PoultryDashboardClient({ dashboard }: Props) {
     (parseDecimal(dashboard.sales_growth.change_percent) >= 0 ? "+" : "") +
       formatPercent(dashboard.sales_growth.change_percent) +
       " vs preceding period";
+  const recognizedCosts = dashboard.series.costs_and_profit.reduce(
+    (sum, row) => sum + parseDecimal(row.recorded_costs),
+    0,
+  );
+  const periodResult = dashboard.series.costs_and_profit.reduce(
+    (sum, row) => sum + parseDecimal(row.actual_period_result),
+    0,
+  );
+  const salesValue = parseDecimal(overview.sales);
+  const cashCollections = parseDecimal(overview.cash_collections);
+  const collectionRate = salesValue > 0 ? (cashCollections / salesValue) * 100 : 0;
+  const resultMargin = salesValue > 0 ? (periodResult / salesValue) * 100 : 0;
+  const performanceRows = consolidateFinancialSeries(dashboard.series.costs_and_profit);
 
   return (
     <div className="grid gap-6">
@@ -99,63 +112,39 @@ export default function PoultryDashboardClient({ dashboard }: Props) {
         </div>
       </form>
 
-      <section aria-label="Poultry overview" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        <Kpi icon={Bird} label="Birds currently on farm" value={formatNumber(overview.current_birds)} detail={"Balance as of " + formatDate(dashboard.filters.date_to)} />
-        <Kpi icon={Activity} label="Birds sold" value={formatNumber(overview.birds_sold)} detail="Bird units sold during the selected period" />
-        <Kpi icon={Banknote} label="Sales" value={formatCurrency(overview.sales)} detail={growthText + "; includes cash and credit sales"} />
-        <Kpi icon={Wheat} label="Feed issued" value={formatNumber(overview.feed_issued_kg) + " kg"} detail={overview.feed_per_bird_day_g ? formatNumber(overview.feed_per_bird_day_g) + " g per bird-day" : "No compatible feed and bird-day measure"} />
-        <Kpi icon={Skull} label="Deaths" value={formatNumber(overview.deaths)} detail={formatPercent(overview.mortality_rate_percent) + " of " + formatNumber(overview.mortality_denominator) + " birds exposed during the period"} />
-        <Kpi icon={Scale} label="Latest average weight" value={overview.latest_average_weight_g === null ? "Unavailable" : formatNumber(overview.latest_average_weight_g) + " g"} detail={overview.latest_weight_date ? formatDate(overview.latest_weight_date) + " · sample of " + formatNumber(overview.latest_weight_sample_size) : "No weight observation in this period"} />
+      <section aria-label="Live business snapshot" className="grid gap-4 lg:grid-cols-2 xl:grid-cols-12">
+        <ExecutiveMetric className="xl:col-span-4" icon={Activity} label="Period result" value={formatCurrency(periodResult)} detail={`${formatPercent(resultMargin)} margin · ${formatCurrency(recognizedCosts)} recognized costs`} tone={periodResult < 0 ? "negative" : "hero"} />
+        <ExecutiveMetric className="xl:col-span-3" icon={Banknote} label="Sales and collection" value={formatCurrency(overview.sales)} detail={`${formatCurrency(overview.cash_collections)} collected · ${formatPercent(collectionRate)} collection rate · ${growthText}`} />
+        <ExecutiveMetric className="xl:col-span-3" icon={Bird} label="Flock position" value={`${formatNumber(overview.current_birds)} live`} detail={`${formatNumber(overview.birds_sold)} sold · ${formatNumber(overview.deaths)} deaths · ${formatPercent(overview.mortality_rate_percent)} mortality`} />
+        <ExecutiveMetric className="xl:col-span-2" icon={Wheat} label="Feed efficiency" value={`${formatNumber(overview.feed_issued_kg)} kg`} detail={`${overview.feed_per_bird_day_g ? `${formatNumber(overview.feed_per_bird_day_g)} g per bird-day` : "Rate unavailable"}${overview.latest_average_weight_g === null ? " · no recent weight" : ` · latest weight ${formatNumber(overview.latest_average_weight_g)} g`}`} />
       </section>
 
-      <section className="grid gap-6 xl:grid-cols-2">
+      <section>
         <LineChart
-          title="Sales trend"
-          detail={formatLabel(dashboard.series.bucket) + " buckets · sales recorded separately from cash collections"}
-          rows={dashboard.series.sales as NumericRow[]}
+          title="Sales versus recognized cost"
+          detail={`${performanceRows.length < dashboard.series.costs_and_profit.length ? "Weekly summary" : `${formatLabel(dashboard.series.bucket)} summary`} · use this to see whether revenue is keeping ahead of cost`}
+          rows={performanceRows}
           series={[
             { key: "sales", label: "Sales", color: COLORS.green },
-            { key: "cash_collections", label: "Cash collections", color: COLORS.gold },
-          ]}
-          valueLabel={formatCompactCurrency}
-          exactLabel={formatCurrency}
-          emptyMessage="No sales or collection activity was recorded in this period."
-        />
-        <LineChart
-          title="Costs and profit over time"
-          detail="Recognized batch costs and sales use aligned buckets; negative results remain below zero."
-          rows={dashboard.series.costs_and_profit as NumericRow[]}
-          series={[
-            { key: "sales", label: "Sales", color: COLORS.green },
-            { key: "recorded_costs", label: "Recorded costs", color: COLORS.gold },
-            { key: "actual_period_result", label: "Actual period result", color: COLORS.navy },
+            { key: "recorded_costs", label: "Recognized costs", color: COLORS.gold },
           ]}
           valueLabel={formatCompactCurrency}
           exactLabel={formatCurrency}
           emptyMessage="No sales or recognized batch costs were recorded in this period."
+          xLabel={(value) => value}
         />
-        <LineChart
-          title="Feed usage"
-          detail="Kilograms issued by record date; this is not measured consumption."
-          rows={dashboard.series.feed.map((row) => ({ date: row.date, feed_issued_kg: row.feed_issued_kg }))}
-          series={[{ key: "feed_issued_kg", label: "Feed issued (kg)", color: COLORS.navy }]}
-          valueLabel={(value) => formatCompact(value) + " kg"}
-          exactLabel={(value) => formatNumber(value) + " kg"}
-          emptyMessage="No feed issue observations were recorded in this period."
-        />
-        <GrowthChart rows={dashboard.series.growth} />
       </section>
 
-      <section className="grid gap-6 lg:grid-cols-[0.8fr_1.2fr]">
+      <section className="grid gap-6 lg:grid-cols-[1.4fr_0.6fr]">
         <CostBreakdown values={dashboard.cost_breakdown} />
-        <section className="rounded-xl border border-[var(--line)] bg-white/70 p-5 shadow-[var(--shadow-card)]">
-          <h2 className="text-xl font-extrabold">Measurement notes</h2>
+        <details className="rounded-xl border border-[var(--line)] bg-white/70 p-5 shadow-[var(--shadow-card)]">
+          <summary className="cursor-pointer text-lg font-extrabold">How these indicators are calculated</summary>
           <dl className="mt-4 grid gap-4 text-sm">
             <Note term="Current versus period">{dashboard.calculation_basis}</Note>
             <Note term="Feed conversion ratio">{overview.feed_conversion_note}</Note>
             <Note term="Sales growth">Compares {formatDate(dashboard.filters.date_from)}–{formatDate(dashboard.filters.date_to)} with {formatDate(dashboard.sales_growth.previous_period_start)}–{formatDate(dashboard.sales_growth.previous_period_end)}.</Note>
           </dl>
-        </section>
+        </details>
       </section>
 
       <BatchComparison rows={dashboard.batches} />
@@ -188,11 +177,21 @@ function SelectFilter({ label, value, onChange, children }: { label: string; val
   return <label className="text-sm font-bold">{label}<select className="form-input mt-2 w-full bg-white" value={value} onChange={(event) => onChange(event.target.value)}>{children}</select></label>;
 }
 
-function Kpi({ icon: Icon, label, value, detail }: { icon: typeof Activity; label: string; value: string; detail: string }) {
-  return <article className="rounded-xl border border-[var(--line)] bg-[var(--surface-cream)] p-5 shadow-[var(--shadow-card)]">
-    <div className="flex items-center gap-3"><span className="grid size-9 place-items-center rounded-full bg-[var(--gold-soft)]"><Icon className="size-4" aria-hidden="true" /></span><p className="text-label text-[var(--navy-muted)]">{label}</p></div>
-    <p className="font-display mt-4 whitespace-nowrap text-3xl font-bold leading-none">{value}</p>
-    <p className="mt-3 text-sm leading-5 text-[var(--navy-muted)]">{detail}</p>
+function ExecutiveMetric({ icon: Icon, label, value, detail, tone = "default", className = "" }: { icon: typeof Activity; label: string; value: string; detail: string; tone?: "default" | "hero" | "negative"; className?: string }) {
+  const emphasized = tone !== "default";
+  const toneClass = tone === "negative"
+    ? "border-[#9b473d] bg-[#7e352f] !text-white"
+    : tone === "hero"
+      ? "border-[var(--navy)] bg-[var(--navy)] !text-white"
+      : "border-[var(--line)] bg-[var(--surface-cream)] text-[var(--navy)]";
+  return <article className={`relative overflow-hidden rounded-2xl border p-5 shadow-[var(--shadow-card)] ${toneClass} ${className}`}>
+    <span className={`absolute inset-x-0 top-0 h-1 ${emphasized ? "bg-[var(--gold)]" : "bg-[var(--gold-soft)]"}`} />
+    <div className="flex items-center gap-3">
+      <span className={`grid size-10 shrink-0 place-items-center rounded-full ${emphasized ? "bg-white/12" : "bg-[var(--gold-soft)]"}`}><Icon className="size-5" aria-hidden="true" /></span>
+      <p className={`text-label ${emphasized ? "!text-white/75" : "text-[var(--navy-muted)]"}`}>{label}</p>
+    </div>
+    <p className="font-display mt-5 break-words text-[clamp(1.5rem,2.2vw,2.35rem)] font-bold leading-none">{value}</p>
+    <p className={`mt-4 text-sm leading-6 ${emphasized ? "!text-white/75" : "text-[var(--navy-muted)]"}`}>{detail}</p>
   </article>;
 }
 
@@ -235,29 +234,14 @@ function LineChart({ title, detail, rows, series, valueLabel, exactLabel, emptyM
   </article>;
 }
 
-function GrowthChart({ rows }: { rows: PoultryDashboardResponse["series"]["growth"] }) {
-  const batches = [...new Set(rows.map((row) => row.batch_id))];
-  const ages = [...new Set(rows.map((row) => row.age_in_days))].sort((a, b) => a - b);
-  const data = ages.map((age) => {
-    const result: NumericRow = { date: "Day " + age };
-    batches.forEach((batchId) => {
-      const point = rows.find((row) => row.batch_id === batchId && row.age_in_days === age);
-      if (point) result[batchId] = point.average_weight_g;
-    });
-    return result;
-  });
-  if (!rows.length) return <article className="rounded-xl border border-[var(--line)] bg-white/70 p-5 shadow-[var(--shadow-card)]"><h2 className="text-xl font-extrabold">Bird growth</h2><p className="mt-2 text-sm text-[var(--navy-muted)]">Recorded average weight compared by bird age.</p><Empty message="No weight observations were recorded in this period." /></article>;
-  return <LineChart title="Bird growth" detail="Average weight in grams compared by bird age; each line is a batch." rows={data} series={batches.map((batchId, index) => ({ key: batchId, label: batchId, color: [COLORS.green, COLORS.gold, COLORS.navy, COLORS.red, COLORS.muted][index % 5] }))} valueLabel={(value) => formatCompact(value) + " g"} exactLabel={(value) => formatNumber(value) + " g"} emptyMessage="No weight observations were recorded in this period." xLabel={(value) => value} />;
-}
-
 function CostBreakdown({ values }: { values: Record<string, string> }) {
-  const rows = Object.entries(values).map(([label, value]) => [label, parseDecimal(value)] as const).filter(([, value]) => value !== 0).sort((a, b) => b[1] - a[1]);
+  const rows = Object.entries(values).map(([label, value]) => [label, parseDecimal(value)] as const).filter(([, value]) => value !== 0).sort((a, b) => b[1] - a[1]).slice(0, 5);
   const max = Math.max(0, ...rows.map(([, value]) => value));
-  return <section className="rounded-xl border border-[var(--line)] bg-white/70 p-5 shadow-[var(--shadow-card)]"><h2 className="text-xl font-extrabold">Cost breakdown</h2><p className="mt-2 text-sm text-[var(--navy-muted)]">Recognized costs benefiting the selected batches and period.</p><div className="mt-5 grid gap-4">{rows.map(([label, value]) => <div key={label}><div className="flex justify-between gap-3 text-sm"><span>{formatLabel(label)}</span><strong className="whitespace-nowrap" title={formatCurrency(value)}>{formatCompactCurrency(value)}</strong></div><div className="mt-2 h-3 overflow-hidden rounded bg-[var(--surface-cream-soft)]"><div className="h-full rounded bg-[var(--gold)]" style={{ width: (max ? Math.max(value / max * 100, 2) : 0) + "%" }} /></div></div>)}{!rows.length ? <Empty message="No recognized batch costs were recorded in this period." /> : null}</div></section>;
+  return <section className="rounded-xl border border-[var(--line)] bg-white/70 p-5 shadow-[var(--shadow-card)]"><h2 className="text-xl font-extrabold">Top cost drivers</h2><p className="mt-2 text-sm text-[var(--navy-muted)]">The five largest recognized costs for the selected batches and period.</p><div className="mt-5 grid gap-4">{rows.map(([label, value]) => <div key={label}><div className="flex justify-between gap-3 text-sm"><span>{formatLabel(label)}</span><strong className="whitespace-nowrap" title={formatCurrency(value)}>{formatCompactCurrency(value)}</strong></div><div className="mt-2 h-3 overflow-hidden rounded bg-[var(--surface-cream-soft)]"><div className="h-full rounded bg-[var(--gold)]" style={{ width: (max ? Math.max(value / max * 100, 2) : 0) + "%" }} /></div></div>)}{!rows.length ? <Empty message="No recognized batch costs were recorded in this period." /> : null}</div></section>;
 }
 
 function BatchComparison({ rows }: { rows: PoultryDashboardBatch[] }) {
-  return <section className="overflow-hidden rounded-xl border border-[var(--line)] bg-white/70 shadow-[var(--shadow-card)]"><div className="p-4 sm:p-5"><h2 className="text-xl font-extrabold">Batch comparison</h2><p className="mt-2 text-sm text-[var(--navy-muted)]">Current flock balance alongside selected-period activity. Result is actual sales less recognized period costs, not a completion forecast.</p></div><MobileRecordList className="p-3 pt-0" emptyMessage="No batches match these filters." records={rows.map((row) => ({ key: row.id, title: row.batch_id, subtitle: `${formatLabel(row.status)} · day ${row.age_days}`, badge: <span className={`rounded-full px-2 py-1 text-xs font-bold ${parseDecimal(row.actual_period_result) < 0 ? "bg-red-50 text-[var(--danger)]" : "bg-green-50 text-green-800"}`}>{formatCurrency(row.actual_period_result)}</span>, fields: [{ label: "Current birds", value: formatNumber(row.current_live_birds) }, { label: "Birds sold", value: formatNumber(row.birds_sold_period) }, { label: "Sales", value: formatCurrency(row.sales_period) }, { label: "Recorded costs", value: formatCurrency(row.recorded_costs_period) }, { label: "Feed issued", value: `${formatNumber(row.feed_issued_period_kg)} kg` }, { label: "Mortality", value: formatNumber(row.mortality_period) }], actions: <Link href={"/poultry/batches/" + row.id} className="w-full rounded-lg bg-[var(--navy)] px-4 py-3 text-center font-bold text-white">Open batch</Link> }))} /><div className="hidden overflow-x-auto md:block"><table className="min-w-[1100px] w-full text-sm"><thead className="bg-[var(--surface-cream-soft)] text-left"><tr>{["Batch / stage", "Current birds", "Birds sold", "Sales", "Recorded costs", "Feed issued", "Mortality", "Actual period result", "Analysis"].map((label) => <th key={label} className="p-3">{label}</th>)}</tr></thead><tbody>{rows.map((row) => <tr key={row.id} className="border-t border-[var(--line)]"><td className="p-3"><strong>{row.batch_id}</strong><p className="text-xs text-[var(--navy-muted)]">{formatLabel(row.status)} · day {row.age_days}</p></td><td className="p-3">{formatNumber(row.current_live_birds)}</td><td className="p-3">{formatNumber(row.birds_sold_period)}</td><td className="p-3 whitespace-nowrap">{formatCurrency(row.sales_period)}</td><td className="p-3 whitespace-nowrap">{formatCurrency(row.recorded_costs_period)}</td><td className="p-3">{formatNumber(row.feed_issued_period_kg)} kg</td><td className="p-3">{formatNumber(row.mortality_period)}</td><td className={"p-3 whitespace-nowrap font-bold " + (parseDecimal(row.actual_period_result) < 0 ? "text-[var(--danger)]" : "text-[#315f3e]")}>{formatCurrency(row.actual_period_result)}</td><td className="p-3"><Link href={"/poultry/batches/" + row.id} className="font-bold underline">Open batch</Link></td></tr>)}{!rows.length ? <tr><td colSpan={9} className="p-8 text-center text-[var(--navy-muted)]">No batches match these filters.</td></tr> : null}</tbody></table></div></section>;
+  return <section className="overflow-hidden rounded-xl border border-[var(--line)] bg-white/70 shadow-[var(--shadow-card)]"><div className="p-4 sm:p-5"><h2 className="text-xl font-extrabold">Batch comparison</h2><p className="mt-2 text-sm text-[var(--navy-muted)]">Current flock balance alongside selected-period activity. Result is actual sales less recognized period costs, not a completion forecast.</p></div><MobileRecordList className="p-3 pt-0" emptyMessage="No batches match these filters." records={rows.map((row) => ({ key: row.id, title: row.batch_id, subtitle: `${formatLabel(row.status)} · day ${row.age_days}`, badge: <span className={`rounded-full px-2 py-1 text-xs font-bold ${parseDecimal(row.actual_period_result) < 0 ? "bg-red-50 text-[var(--danger)]" : "bg-green-50 text-green-800"}`}>{formatCurrency(row.actual_period_result)}</span>, fields: [{ label: "Current birds", value: formatNumber(row.current_live_birds) }, { label: "Birds sold", value: formatNumber(row.birds_sold_period) }, { label: "Sales", value: formatCurrency(row.sales_period) }, { label: "Recorded costs", value: formatCurrency(row.recorded_costs_period) }, { label: "Feed issued", value: `${formatNumber(row.feed_issued_period_kg)} kg` }, { label: "Mortality", value: formatNumber(row.mortality_period) }], actions: <Link href={"/poultry/batches/" + row.id} className="w-full rounded-lg bg-[var(--navy)] px-4 py-3 text-center font-bold !text-white">Open batch</Link> }))} /><div className="hidden overflow-x-auto md:block"><table className="min-w-[1100px] w-full text-sm"><thead className="bg-[var(--surface-cream-soft)] text-left"><tr>{["Batch / stage", "Current birds", "Birds sold", "Sales", "Recorded costs", "Feed issued", "Mortality", "Actual period result", "Analysis"].map((label) => <th key={label} className="p-3">{label}</th>)}</tr></thead><tbody>{rows.map((row) => <tr key={row.id} className="border-t border-[var(--line)]"><td className="p-3"><strong>{row.batch_id}</strong><p className="text-xs text-[var(--navy-muted)]">{formatLabel(row.status)} · day {row.age_days}</p></td><td className="p-3">{formatNumber(row.current_live_birds)}</td><td className="p-3">{formatNumber(row.birds_sold_period)}</td><td className="p-3 whitespace-nowrap">{formatCurrency(row.sales_period)}</td><td className="p-3 whitespace-nowrap">{formatCurrency(row.recorded_costs_period)}</td><td className="p-3">{formatNumber(row.feed_issued_period_kg)} kg</td><td className="p-3">{formatNumber(row.mortality_period)}</td><td className={"p-3 whitespace-nowrap font-bold " + (parseDecimal(row.actual_period_result) < 0 ? "text-[var(--danger)]" : "text-[#315f3e]")}>{formatCurrency(row.actual_period_result)}</td><td className="p-3"><Link href={"/poultry/batches/" + row.id} className="font-bold underline">Open batch</Link></td></tr>)}{!rows.length ? <tr><td colSpan={9} className="p-8 text-center text-[var(--navy-muted)]">No batches match these filters.</td></tr> : null}</tbody></table></div></section>;
 }
 
 function Note({ term, children }: { term: string; children: React.ReactNode }) {
@@ -274,4 +258,27 @@ function formatCompact(value: number) {
 
 function formatCompactCurrency(value: number) {
   return "MWK " + formatCompact(value);
+}
+
+function consolidateFinancialSeries(rows: PoultryDashboardResponse["series"]["costs_and_profit"]): NumericRow[] {
+  if (rows.length <= 14) {
+    return rows.map((row) => ({
+      date: formatDate(row.date),
+      sales: row.sales,
+      recorded_costs: row.recorded_costs,
+    }));
+  }
+
+  const groups: NumericRow[] = [];
+  for (let index = 0; index < rows.length; index += 7) {
+    const period = rows.slice(index, index + 7);
+    const first = period[0];
+    const last = period[period.length - 1];
+    groups.push({
+      date: first.date === last.date ? formatDate(first.date) : `${formatDate(first.date)}–${formatDate(last.date)}`,
+      sales: period.reduce((sum, row) => sum + parseDecimal(row.sales), 0),
+      recorded_costs: period.reduce((sum, row) => sum + parseDecimal(row.recorded_costs), 0),
+    });
+  }
+  return groups;
 }
