@@ -27,11 +27,16 @@
 
 html {
   scroll-behavior: smooth;
+  max-width: 100%;
+  overflow-x: clip;
 }
 
 body {
+  width: 100%;
+  max-width: 100%;
   min-height: 100vh;
   margin: 0;
+  overflow-x: clip;
   background: var(--page-cream);
   color: var(--navy);
   font-family: Arial, Helvetica, sans-serif;
@@ -41,7 +46,25 @@ button,
 input,
 select,
 textarea {
+  min-width: 0;
   font: inherit;
+}
+
+main,
+section,
+article,
+form,
+fieldset,
+nav,
+div {
+  min-width: 0;
+}
+
+img,
+svg,
+canvas,
+video {
+  max-width: 100%;
 }
 
 a {
@@ -117,6 +140,11 @@ a {
   }
 
   .form-input {
+    min-height: 3rem;
     font-size: 1rem;
+  }
+
+  .text-label {
+    letter-spacing: 0.16em;
   }
 }

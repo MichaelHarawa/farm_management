@@ -2,6 +2,7 @@
 
 import { formatNumber } from "../utils/formatters";
 import type { PoultryBatch, WeightSamplesResponse } from "../types";
+import { MobileRecordList } from "@/components/ui/MobileRecordList";
 import { PaginatedTableBody } from "@/components/ui/PaginatedTableBody";
 
 type GrowthTabProps = {
@@ -24,8 +25,8 @@ export function GrowthTab({
 
   return (
     <div className="mt-6 grid gap-6">
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="grid gap-4 sm:flex sm:items-center sm:justify-between">
+        <div className="min-w-0">
           <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-[#747b8d]">
             Growth tracking • {formatLabelStrain(strain)}
           </p>
@@ -34,7 +35,7 @@ export function GrowthTab({
         <button
           type="button"
           onClick={onWeighIn}
-          className="rounded-full bg-[#151f36] px-4 py-2 text-xs font-extrabold uppercase tracking-[0.12em] text-white transition hover:bg-[#22345f]"
+          className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-[#151f36] px-4 py-2 text-xs font-extrabold uppercase tracking-[0.12em] text-white transition hover:bg-[#22345f] sm:w-auto sm:rounded-full"
         >
           Record weigh-in
         </button>
@@ -48,7 +49,22 @@ export function GrowthTab({
       ) : (
         <div className="grid gap-6 lg:grid-cols-5">
           <div className="lg:col-span-3">
-            <div className="overflow-auto rounded-xl border border-[#ddd7c9] bg-white p-4">
+            <MobileRecordList
+              pageSize={8}
+              itemLabel="weight samples"
+              emptyMessage="No weight samples have been recorded."
+              records={series.map((point, index) => ({
+                key: `${point.age_in_days}-${index}`,
+                title: `Day ${formatNumber(point.age_in_days)}`,
+                badge: <span className={`inline-flex rounded-full px-2.5 py-1 text-[0.65rem] font-extrabold uppercase tracking-[0.08em] ${severityBadgeClass(point.severity)}`}>{point.severity}</span>,
+                fields: [
+                  { label: "Actual", value: `${formatNumber(point.actual_g)} g` },
+                  { label: "Target", value: point.target_g ? `${formatNumber(point.target_g)} g` : "—" },
+                  { label: "Deviation", value: point.deviation_pct != null ? `${point.deviation_pct.toFixed(1)}%` : "—" },
+                ],
+              }))}
+            />
+            <div className="hidden overflow-auto rounded-xl border border-[#ddd7c9] bg-white p-4 md:block">
               <table className="min-w-[620px] w-full text-sm">
                 <thead>
                   <tr className="border-b text-left text-[#747b8d]">
@@ -69,12 +85,7 @@ export function GrowthTab({
                         {p.deviation_pct != null ? `${p.deviation_pct.toFixed(1)}%` : "—"}
                       </td>
                       <td className="py-2">
-                        <span className={`inline-block rounded px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-[0.1em] ${
-                          p.severity === "urgent" ? "bg-red-100 text-red-700" :
-                          p.severity === "action" ? "bg-amber-100 text-amber-800" :
-                          p.severity === "watch" ? "bg-yellow-100 text-yellow-800" :
-                          "bg-emerald-100 text-emerald-700"
-                        }`}>
+                        <span className={`inline-block rounded px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-[0.1em] ${severityBadgeClass(p.severity)}`}>
                           {p.severity}
                         </span>
                       </td>
@@ -137,4 +148,11 @@ function formatLabelStrain(s: string) {
   if (s === "ross308") return "Ross 308";
   if (s === "cobb500") return "Cobb 500";
   return s;
+}
+
+function severityBadgeClass(severity: string) {
+  if (severity === "urgent") return "bg-red-100 text-red-700";
+  if (severity === "action") return "bg-amber-100 text-amber-800";
+  if (severity === "watch") return "bg-yellow-100 text-yellow-800";
+  return "bg-emerald-100 text-emerald-700";
 }

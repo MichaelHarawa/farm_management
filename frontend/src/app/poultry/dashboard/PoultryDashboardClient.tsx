@@ -75,8 +75,8 @@ export default function PoultryDashboardClient({ dashboard }: Props) {
   const performanceRows = consolidateFinancialSeries(dashboard.series.costs_and_profit);
 
   return (
-    <div className="grid gap-6">
-      <form onSubmit={applyFilters} className="rounded-xl border border-[var(--line)] bg-white/70 p-4 shadow-[var(--shadow-card)]">
+    <div className="grid min-w-0 gap-5 sm:gap-6">
+      <form onSubmit={applyFilters} className="min-w-0 rounded-xl border border-[var(--line)] bg-white/70 p-3.5 shadow-[var(--shadow-card)] sm:p-4">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
           <InputFilter label="From" type="date" value={dateFrom} onChange={setDateFrom} />
           <InputFilter label="To" type="date" value={dateTo} onChange={setDateTo} />
@@ -100,15 +100,15 @@ export default function PoultryDashboardClient({ dashboard }: Props) {
             {dashboard.available_feed_stages.map((value) => <option key={value} value={value}>{formatLabel(value)}</option>)}
           </SelectFilter>
         </div>
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[var(--line)] pt-4">
+        <div className="mt-4 grid gap-3 border-t border-[var(--line)] pt-4 sm:flex sm:flex-wrap sm:items-center sm:justify-between">
           <p className="text-sm text-[var(--navy-muted)]">
             {dashboard.batches.length} batch{dashboard.batches.length === 1 ? "" : "es"} · {formatDate(dashboard.filters.date_from)}–{formatDate(dashboard.filters.date_to)}
           </p>
-          <div className="flex gap-2">
-            <button type="button" onClick={() => router.refresh()} className="inline-flex items-center gap-2 rounded-lg border border-[var(--line)] px-4 py-2 font-bold">
+          <div className="grid grid-cols-2 gap-2 sm:flex">
+            <button type="button" onClick={() => router.refresh()} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-[var(--line)] px-3 py-2 font-bold sm:px-4">
               <RefreshCw className="size-4" aria-hidden="true" /> Refresh
             </button>
-            <button className="finance-button px-5 py-2">Apply filters</button>
+            <button className="finance-button px-3 py-2 sm:px-5">Apply filters</button>
           </div>
         </div>
       </form>
@@ -171,11 +171,11 @@ export default function PoultryDashboardClient({ dashboard }: Props) {
 }
 
 function InputFilter({ label, type, value, onChange }: { label: string; type: string; value: string; onChange: (value: string) => void }) {
-  return <label className="text-sm font-bold">{label}<input className="form-input mt-2 w-full bg-white" type={type} value={value} onChange={(event) => onChange(event.target.value)} /></label>;
+  return <label className="min-w-0 text-sm font-bold">{label}<input className="form-input mt-2 w-full bg-white" type={type} value={value} onChange={(event) => onChange(event.target.value)} /></label>;
 }
 
 function SelectFilter({ label, value, onChange, children }: { label: string; value: string; onChange: (value: string) => void; children: React.ReactNode }) {
-  return <label className="text-sm font-bold">{label}<select className="form-input mt-2 w-full bg-white" value={value} onChange={(event) => onChange(event.target.value)}>{children}</select></label>;
+  return <label className="min-w-0 text-sm font-bold">{label}<select className="form-input mt-2 w-full bg-white" value={value} onChange={(event) => onChange(event.target.value)}>{children}</select></label>;
 }
 
 function ExecutiveMetric({ icon: Icon, label, value, detail, tone = "default", className = "" }: { icon: typeof Activity; label: string; value: string; detail: string; tone?: "default" | "hero" | "negative"; className?: string }) {
@@ -185,7 +185,7 @@ function ExecutiveMetric({ icon: Icon, label, value, detail, tone = "default", c
     : tone === "hero"
       ? "border-[var(--navy)] bg-[var(--navy)] !text-white"
       : "border-[var(--line)] bg-[var(--surface-cream)] text-[var(--navy)]";
-  return <article className={`relative overflow-hidden rounded-2xl border p-5 shadow-[var(--shadow-card)] ${toneClass} ${className}`}>
+  return <article className={`relative min-w-0 overflow-hidden rounded-2xl border p-4 shadow-[var(--shadow-card)] sm:p-5 ${toneClass} ${className}`}>
     <span className={`absolute inset-x-0 top-0 h-1 ${emphasized ? "bg-[var(--gold)]" : "bg-[var(--gold-soft)]"}`} />
     <div className="flex items-center gap-3">
       <span className={`grid size-10 shrink-0 place-items-center rounded-full ${emphasized ? "bg-white/12" : "bg-[var(--gold-soft)]"}`}><Icon className="size-5" aria-hidden="true" /></span>
@@ -216,11 +216,11 @@ function LineChart({ title, detail, rows, series, valueLabel, exactLabel, emptyM
   const y = (value: number) => top + (max - value) * (height - top - bottom) / (max - min);
   const ticks = Array.from({ length: 5 }, (_, index) => max - index * (max - min) / 4);
 
-  return <article className="rounded-xl border border-[var(--line)] bg-white/70 p-5 shadow-[var(--shadow-card)]">
+  return <article className="min-w-0 rounded-xl border border-[var(--line)] bg-white/70 p-4 shadow-[var(--shadow-card)] sm:p-5">
     <h2 className="text-xl font-extrabold">{title}</h2><p className="mt-2 text-sm text-[var(--navy-muted)]">{detail}</p>
     {!hasObservations ? <Empty message={emptyMessage} /> : <>
       <div className="mt-4 flex flex-wrap gap-4 text-xs font-bold">{series.map((item) => <span key={item.key} className="flex items-center gap-2"><span className="size-2.5 rounded-full" style={{ background: item.color }} />{item.label}</span>)}</div>
-      <div className="mt-2">
+      <div className="mt-2 min-w-0">
         <svg viewBox={"0 0 " + width + " " + height} className="h-auto w-full md:min-w-[620px]" role="img" aria-label={title}>
           {ticks.map((tick) => <g key={tick}><line x1={left} x2={width - right} y1={y(tick)} y2={y(tick)} stroke="#ded8ca" /><text x={left - 8} y={y(tick) + 4} textAnchor="end" fontSize="11" fill="#6b7280">{valueLabel(tick)}</text></g>)}
           {min < 0 && max > 0 ? <line x1={left} x2={width-right} y1={y(0)} y2={y(0)} stroke={COLORS.red} strokeWidth="1.5" /> : null}
@@ -238,7 +238,7 @@ function LineChart({ title, detail, rows, series, valueLabel, exactLabel, emptyM
 function CostBreakdown({ values }: { values: Record<string, string> }) {
   const rows = Object.entries(values).map(([label, value]) => [label, parseDecimal(value)] as const).filter(([, value]) => value !== 0).sort((a, b) => b[1] - a[1]).slice(0, 5);
   const max = Math.max(0, ...rows.map(([, value]) => value));
-  return <section className="rounded-xl border border-[var(--line)] bg-white/70 p-5 shadow-[var(--shadow-card)]"><h2 className="text-xl font-extrabold">Top cost drivers</h2><p className="mt-2 text-sm text-[var(--navy-muted)]">The five largest recognized costs for the selected batches and period.</p><div className="mt-5 grid gap-4">{rows.map(([label, value]) => <div key={label}><div className="flex justify-between gap-3 text-sm"><span>{formatLabel(label)}</span><strong className="whitespace-nowrap" title={formatCurrency(value)}>{formatCompactCurrency(value)}</strong></div><div className="mt-2 h-3 overflow-hidden rounded bg-[var(--surface-cream-soft)]"><div className="h-full rounded bg-[var(--gold)]" style={{ width: (max ? Math.max(value / max * 100, 2) : 0) + "%" }} /></div></div>)}{!rows.length ? <Empty message="No recognized batch costs were recorded in this period." /> : null}</div></section>;
+  return <section className="min-w-0 rounded-xl border border-[var(--line)] bg-white/70 p-4 shadow-[var(--shadow-card)] sm:p-5"><h2 className="text-xl font-extrabold">Top cost drivers</h2><p className="mt-2 text-sm text-[var(--navy-muted)]">The five largest recognized costs for the selected batches and period.</p><div className="mt-5 grid gap-4">{rows.map(([label, value]) => <div key={label}><div className="grid gap-1 text-sm min-[420px]:grid-cols-[minmax(0,1fr)_auto] min-[420px]:items-end min-[420px]:gap-3"><span className="min-w-0 break-words">{formatLabel(label)}</span><strong className="break-words min-[420px]:whitespace-nowrap min-[420px]:text-right" title={formatCurrency(value)}>{formatCompactCurrency(value)}</strong></div><div className="mt-2 h-3 overflow-hidden rounded bg-[var(--surface-cream-soft)]"><div className="h-full rounded bg-[var(--gold)]" style={{ width: (max ? Math.max(value / max * 100, 2) : 0) + "%" }} /></div></div>)}{!rows.length ? <Empty message="No recognized batch costs were recorded in this period." /> : null}</div></section>;
 }
 
 function BatchComparison({ rows }: { rows: PoultryDashboardBatch[] }) {

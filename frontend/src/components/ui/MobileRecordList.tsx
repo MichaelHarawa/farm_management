@@ -41,17 +41,17 @@ export function MobileRecordList({
   }
 
   return (
-    <div className={`grid gap-3 ${desktopHiddenClass} ${className}`}>
+    <div className={`min-w-0 grid gap-3 ${desktopHiddenClass} ${className}`}>
       {pageRecords.map((record) => (
-        <article key={record.key} className="min-w-0 rounded-xl border border-[var(--line)] bg-white p-4 shadow-sm">
-          <div className="flex min-w-0 items-start justify-between gap-3">
+        <article key={record.key} className="min-w-0 rounded-xl border border-[var(--line)] bg-white p-3.5 shadow-sm sm:p-4">
+          <div className="flex min-w-0 flex-col items-start gap-2 min-[400px]:flex-row min-[400px]:justify-between min-[400px]:gap-3">
             <div className="min-w-0">
               <div className="break-words font-extrabold text-[var(--navy)]">{record.title}</div>
               {record.subtitle ? <div className="mt-1 break-words text-xs leading-5 text-[var(--navy-muted)]">{record.subtitle}</div> : null}
             </div>
-            {record.badge ? <div className="shrink-0">{record.badge}</div> : null}
+            {record.badge ? <div className="max-w-full shrink-0 break-words">{record.badge}</div> : null}
           </div>
-          <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3">
+          <dl className="mt-4 grid grid-cols-1 gap-x-4 gap-y-3 min-[340px]:grid-cols-2">
             {record.fields.map((field, index) => (
               <div key={`${field.label}-${index}`} className="min-w-0 border-t border-[var(--line)] pt-2">
                 <dt className="text-[0.65rem] font-extrabold uppercase tracking-[0.12em] text-[var(--navy-muted)]">{field.label}</dt>
@@ -59,7 +59,7 @@ export function MobileRecordList({
               </div>
             ))}
           </dl>
-          {record.actions ? <div className="mt-4 flex flex-wrap gap-2 border-t border-[var(--line)] pt-3">{record.actions}</div> : null}
+          {record.actions ? <div className="mt-4 grid min-w-0 gap-2 border-t border-[var(--line)] pt-3 min-[400px]:flex min-[400px]:flex-wrap">{record.actions}</div> : null}
         </article>
       ))}
       <PaginationControls

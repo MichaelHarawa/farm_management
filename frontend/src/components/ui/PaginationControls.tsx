@@ -34,10 +34,10 @@ export function PaginationControls({
       <p className="text-xs font-semibold text-[var(--navy-muted)]" aria-live="polite">
         Showing {first}-{last} of {totalItems} {itemLabel}
       </p>
-      <div className="flex items-center gap-2">
+      <div className="grid w-full grid-cols-[1fr_auto_1fr] items-center gap-2 sm:w-auto">
         <button
           type="button"
-          className="btn-ghost btn-sm"
+          className="btn-ghost btn-sm w-full"
           disabled={currentPage <= 1}
           onClick={() => onPageChange(Math.max(1, currentPage - 1))}
         >
@@ -48,7 +48,7 @@ export function PaginationControls({
         </span>
         <button
           type="button"
-          className="btn-ghost btn-sm"
+          className="btn-ghost btn-sm w-full"
           disabled={currentPage >= totalPages}
           onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))}
         >

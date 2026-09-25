@@ -116,7 +116,7 @@ export function MetricCard({
     danger: "border-[var(--danger)]/45 bg-red-50",
   }[tone];
   return (
-    <div className={`min-w-0 rounded-lg border p-5 shadow-[var(--shadow-card)] ${toneClass}`}>
+    <div className={`min-w-0 rounded-lg border p-4 shadow-[var(--shadow-card)] sm:p-5 ${toneClass}`}>
       <p className="text-label text-[var(--navy-muted)]">{label}</p>
       <p className="font-display mt-3 max-w-full overflow-hidden break-words text-2xl font-bold leading-tight text-[var(--navy)] sm:text-3xl">
         {value}
@@ -191,12 +191,12 @@ export function FinanceBarChart({
 
           return (
             <li key={point.label}>
-              <div className="flex items-end justify-between gap-4 text-sm">
-                <span className="font-semibold text-[var(--navy-soft)]">
+              <div className="grid min-w-0 gap-1 text-sm min-[420px]:grid-cols-[minmax(0,1fr)_auto] min-[420px]:items-end min-[420px]:gap-4">
+                <span className="min-w-0 break-words font-semibold text-[var(--navy-soft)]">
                   {point.label}
                 </span>
                 <span
-                  className={`text-right font-extrabold ${
+                  className={`break-words font-extrabold min-[420px]:text-right ${
                     point.value < 0
                       ? "text-[var(--danger)]"
                       : "text-[var(--navy)]"
