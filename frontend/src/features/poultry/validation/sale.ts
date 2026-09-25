@@ -23,6 +23,8 @@ export const saleSchema = z
       .min(2, "Buyer name must contain at least 2 characters.")
       .max(200, "Buyer name cannot exceed 200 characters."),
 
+    customer: z.string(),
+
     buyer_type: z.enum([
       "market_vendor",
       "retail",

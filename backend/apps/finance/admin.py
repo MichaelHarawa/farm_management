@@ -14,6 +14,8 @@ from .models import (
     BirdDaySnapshot,
     ConsumableUsage,
     CostAllocation,
+    Customer,
+    CustomerCostAttribution,
     EmployeeBatchWorkLog,
     EmployeeProfile,
     ExpenseRecognitionSchedule,
@@ -22,6 +24,31 @@ from .models import (
     SharedExpense,
     SharedConsumableLot,
 )
+
+
+@admin.register(Customer)
+class CustomerAdmin(admin.ModelAdmin):
+    list_display = ("display_name", "customer_type", "is_active", "contribution_label", "reviewed_at")
+    list_filter = ("is_active", "customer_type", "contribution_label")
+    search_fields = ("display_name", "contact_name", "phone", "email")
+    autocomplete_fields = ("created_by", "reviewed_by")
+
+
+@admin.register(CustomerCostAttribution)
+class CustomerCostAttributionAdmin(admin.ModelAdmin):
+    list_display = (
+        "customer", "attribution_date", "category", "amount", "source_type",
+        "evidence_status", "status",
+    )
+    list_filter = ("category", "source_type", "evidence_status", "status")
+    search_fields = ("customer__display_name", "source_label", "reason")
+    readonly_fields = (
+        "customer", "sale", "batch", "attribution_date", "accounting_period",
+        "category", "amount", "source_type", "source_id", "economic_source_key",
+        "source_label", "evidence_status", "attribution_basis", "reason", "status",
+        "idempotency_key", "request_fingerprint", "created_by", "created_at",
+        "updated_at", "reversed_at", "reversed_by", "reversal_reason",
+    )
 
 
 @admin.register(EmployeeProfile)

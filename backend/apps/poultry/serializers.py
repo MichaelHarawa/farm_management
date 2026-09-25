@@ -334,6 +334,9 @@ class BatchForecastAssumptionSerializer(serializers.ModelSerializer):
 
 class SalesSerializer(serializers.ModelSerializer):
     created_by_name = serializers.SerializerMethodField()
+    customer_name = serializers.CharField(
+        source="customer.display_name", read_only=True, allow_null=True
+    )
     sale_total = serializers.DecimalField(
         max_digits=14,
         decimal_places=2,
@@ -355,6 +358,8 @@ class SalesSerializer(serializers.ModelSerializer):
             "usd_equivalent",
             "sale_total",
             "buyer_name",
+            "customer",
+            "customer_name",
             "buyer_type",
             "buyer_type_other",
             "payment_status",
@@ -407,6 +412,7 @@ class SalesSerializer(serializers.ModelSerializer):
             "buyer_type",
             getattr(self.instance, "buyer_type", None),
         )
+        customer = attrs.get("customer", getattr(self.instance, "customer", None))
         buyer_type_other = (
             attrs.get(
                 "buyer_type_other",
@@ -426,6 +432,8 @@ class SalesSerializer(serializers.ModelSerializer):
         ).strip()
 
         errors = {}
+        if customer is not None and not customer.is_active:
+            errors["customer"] = "Select an active customer."
         due_date = attrs.get("due_date", getattr(self.instance, "due_date", None))
         sale_date = attrs.get("sale_date", getattr(self.instance, "sale_date", None))
         if due_date and sale_date and due_date < sale_date.date():

@@ -153,6 +153,8 @@ export type PoultrySale = {
   usd_exchange_rate: number | null;
   usd_equivalent: number | null;
   buyer_name: string;
+  customer: number | null;
+  customer_name: string | null;
   buyer_type: BuyerType;
   buyer_type_other: string;
   payment_status: PaymentStatus;
@@ -376,6 +378,7 @@ export type CreateSalePayload = {
   quantity_sold: number;
   unit_price: number;
   buyer_name: string;
+  customer: number | null;
   buyer_type: BuyerType;
   buyer_type_other: string;
   payment_status: PaymentStatus;

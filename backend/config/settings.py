@@ -15,6 +15,7 @@ from pathlib import Path
 from decouple import config 
 import os
 from datetime import timedelta
+from urllib.parse import parse_qs, unquote, urlsplit
 
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -57,13 +58,34 @@ def env_list(name: str, default: str = "") -> list[str]:
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = config("SECRET_KEY", default="django-insecure-dev-only-key")
+SECRET_KEY = config(
+    "SECRET_KEY",
+    default=config("DJANGO_SECRET_KEY", default="django-insecure-dev-only-key"),
+)
+if os.environ.get("VERCEL") and SECRET_KEY == "django-insecure-dev-only-key":
+    raise ValueError("Set SECRET_KEY or DJANGO_SECRET_KEY for the Vercel deployment.")
 
-DEBUG = config("DJANGO_DEBUG", default=True, cast=bool)
+DEBUG = config(
+    "DJANGO_DEBUG",
+    default=not bool(os.environ.get("VERCEL")),
+    cast=bool,
+)
 
+default_allowed_hosts = (
+    os.environ.get("VERCEL_PROJECT_PRODUCTION_URL")
+    or os.environ.get("VERCEL_URL")
+    if os.environ.get("VERCEL")
+    else "localhost,127.0.0.1,0.0.0.0"
+)
+if os.environ.get("VERCEL"):
+    # Vercel service-to-service requests use this project-specific host.
+    default_allowed_hosts = (
+        f"{default_allowed_hosts},"
+        "backend.36626d4373526e71623551564b534b62507a4141484c5743326f5769.services.vercel-infra.com"
+    )
 ALLOWED_HOSTS = config(
     "DJANGO_ALLOWED_HOSTS",
-    default="localhost,127.0.0.1,0.0.0.0",
+    default=default_allowed_hosts,
     cast=lambda value: [host.strip() for host in value.split(",") if host.strip()],
 )
 
@@ -114,26 +136,50 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'config.wsgi.application'
+if os.environ.get("VERCEL"):
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
 
 
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": env("POSTGRES_DB"),
-        "USER": env("POSTGRES_USER"),
-        "PASSWORD": env("POSTGRES_PASSWORD"),
-        "HOST": env("POSTGRES_HOST"),
-        "PORT": env("POSTGRES_PORT"),
-        "CONN_MAX_AGE": int(env("POSTGRES_CONN_MAX_AGE", "60")),
-        "OPTIONS": {
-            "sslmode": env("POSTGRES_SSLMODE", "disable"),
-            "connect_timeout": int(env("POSTGRES_CONNECT_TIMEOUT", "5")),
-        },
+database_url = env("DATABASE_URL") or env("POSTGRES_URL")
+if database_url:
+    parsed_database_url = urlsplit(database_url)
+    database_query = parse_qs(parsed_database_url.query)
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": unquote(parsed_database_url.path.lstrip("/")),
+            "USER": unquote(parsed_database_url.username or ""),
+            "PASSWORD": unquote(parsed_database_url.password or ""),
+            "HOST": parsed_database_url.hostname or "",
+            "PORT": parsed_database_url.port or 5432,
+            "CONN_MAX_AGE": int(env("POSTGRES_CONN_MAX_AGE", "0")),
+            "OPTIONS": {
+                "sslmode": database_query.get("sslmode", ["require"])[0],
+                "connect_timeout": int(env("POSTGRES_CONNECT_TIMEOUT", "5")),
+            },
+        }
     }
-}
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": env("POSTGRES_DB"),
+            "USER": env("POSTGRES_USER"),
+            "PASSWORD": env("POSTGRES_PASSWORD"),
+            "HOST": env("POSTGRES_HOST"),
+            "PORT": env("POSTGRES_PORT"),
+            "CONN_MAX_AGE": int(env("POSTGRES_CONN_MAX_AGE", "60")),
+            "OPTIONS": {
+                "sslmode": env("POSTGRES_SSLMODE", "disable"),
+                "connect_timeout": int(env("POSTGRES_CONNECT_TIMEOUT", "5")),
+            },
+        }
+    }
 
 AUTH_USER_MODEL = "accounts.User"
 # Password validation

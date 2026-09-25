@@ -7,6 +7,7 @@ import { X } from "lucide-react";
 
 import type {
   BatchProfitabilityReport,
+  Customer,
 } from "@/features/finance/types";
 import type {
   InputCost,
@@ -41,6 +42,7 @@ type BatchDetailViewProps = {
   feedMetrics: PoultryFeedMetrics;
   vaccinations: PoultryVaccination[];
   weightSamplesResponse?: import("../types").WeightSamplesResponse | null;
+  customers?: Customer[];
   initialTab?: BatchDetailTab;
 };
 
@@ -468,6 +470,7 @@ export function BatchDetailView({
   feedMetrics,
   vaccinations,
   weightSamplesResponse,
+  customers = [],
   initialTab = "overview",
 }: BatchDetailViewProps) {
   const [activeTab, setActiveTab] = useState<BatchDetailTab>(initialTab);
@@ -873,7 +876,7 @@ export function BatchDetailView({
         title="Record sale"
         onClose={() => setOpenModal(null)}
       >
-        <AddSaleForm batchId={batch.id} />
+        <AddSaleForm batchId={batch.id} customers={customers} />
       </DetailModal>
 
       <DetailModal

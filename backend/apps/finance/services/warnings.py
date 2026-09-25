@@ -35,6 +35,14 @@ WARNING_GUIDANCE: dict[str, dict[str, str]] = {
         "action_label": "Review receivables",
         "action_href": "/finance/receivables",
     },
+    "sales_without_customer_identity": {
+        "solution": (
+            "Link each historical sale to a verified customer record. Do not merge "
+            "customers by name alone; confirm the buyer identity before linking."
+        ),
+        "action_label": "Link sales to customers",
+        "action_href": "/finance/customers",
+    },
     "unallocated_shared_expenses": {
         "solution": (
             "Review the expense scope and allocation driver. Existing source fields "

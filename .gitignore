@@ -13,3 +13,7 @@ frontend/.next/
 frontend/out/
 frontend/.env.local
 frontend/dev.log
+.vercel-deploy-upload/
+
+.vercel
+.env*

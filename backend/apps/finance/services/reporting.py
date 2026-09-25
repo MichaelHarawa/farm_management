@@ -1254,6 +1254,22 @@ def dashboard_warnings(period: AccountingPeriod | None = None) -> list[dict[str,
             }
         )
 
+    unlinked_customer_sales = _period_sales(period) if period else Sales.objects.exclude(
+        payment_status=PaymentStatus.CANCELLED
+    )
+    unlinked_customer_sales = unlinked_customer_sales.filter(customer__isnull=True)
+    if unlinked_customer_sales.exists():
+        warnings.append(
+            {
+                "code": "sales_without_customer_identity",
+                "severity": "warning",
+                "message": (
+                    f"{unlinked_customer_sales.count()} valid sale(s) are not linked "
+                    "to a customer."
+                ),
+            }
+        )
+
     expired_lots = SharedConsumableLot.objects.filter(
         expiry_date__lt=today,
         quantity_available__gt=0,

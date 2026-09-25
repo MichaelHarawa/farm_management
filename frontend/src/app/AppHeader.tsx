@@ -22,11 +22,12 @@ export function AppHeader({
         >
           <span className="grid size-10 place-items-center overflow-hidden rounded-full bg-white ring-1 ring-[var(--line)]">
             <Image
-              src="/assets/images/hames%20farms%20logo.png"
+              src="/assets/images/farmnotes-logo.png"
               alt="Farmnotes logo"
               width={40}
               height={40}
               className="size-full object-contain"
+              unoptimized
               priority
             />
           </span>

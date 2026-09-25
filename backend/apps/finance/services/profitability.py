@@ -1267,6 +1267,26 @@ def _portfolio_profitability_rows(batches: list[Batch]) -> list[dict]:
     return rows
 
 
+def batch_survivor_cost_basis(batches: list[Batch]) -> dict[int, dict]:
+    """Return the canonical production-cost basis used by customer analysis.
+
+    This intentionally reuses the batch profitability calculation, including final
+    snapshots, instead of introducing a second unit-cost formula.
+    """
+
+    return {
+        row["batch"]: {
+            "batch_code": row["batch_id"],
+            "total_production_cost": money(row["total_production_cost"]),
+            "survived_birds": row["survived_birds"],
+            "cost_per_survived_bird": row["cost_per_survived_bird"],
+            "basis": row.get("calculation_basis", row["profitability_status"]),
+            "is_final": row["profitability_status"] == "final",
+        }
+        for row in _portfolio_profitability_rows(batches)
+    }
+
+
 def batch_portfolio_report(batches: Iterable[Batch]) -> dict:
     """Aggregate lifecycle management profitability for selected poultry batches.
 

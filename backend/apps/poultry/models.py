@@ -390,6 +390,14 @@ class Sales(models.Model):
         validators=[MONEY_VALIDATOR],
     )
     buyer_name = models.CharField(max_length=200)
+    customer = models.ForeignKey(
+        "finance.Customer",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="sales",
+        help_text="Stable customer identity. Buyer name remains the sale-time display record.",
+    )
     buyer_type = models.CharField(
         max_length=20,
         choices = BuyerType.choices,

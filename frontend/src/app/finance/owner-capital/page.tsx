@@ -119,11 +119,17 @@ export default async function OwnerCapitalPage({ searchParams }: PageProps) {
         <MetricCard label="Actually spent" value={formatCurrency(report.summary.cash_used_to_date)} detail={`${formatCurrency(report.summary.cash_used_in_period)} in selected period`} />
         <MetricCard label="Owner cash remaining" value={formatCurrency(report.summary.closing_cash_balance)} tone="positive" detail="Receipts less posted expenditure and payroll funding" />
         <MetricCard label="Net contributed capital" value={formatCurrency(report.summary.net_contributed_capital)} detail={`${formatCurrency(report.summary.capital_returns_to_date)} explicitly returned`} />
-        <MetricCard label="Designated to batches" value={formatCurrency(report.summary.designated_to_batches_as_of)} detail={`${formatCurrency(report.summary.unassigned_contributions_as_of)} not yet designated`} />
-        <MetricCard label="Farm-wide use" value={formatCurrency(report.summary.farm_wide_use_to_date)} detail="Owner-funded cost without a batch beneficiary" />
-        <MetricCard label="Owner drawings" value={formatCurrency(report.summary.owner_drawings_to_date)} />
-        <MetricCard label="Profit distributions" value={formatCurrency(report.summary.profit_distributions_to_date)} />
       </div>
+
+      <details className="rounded-lg border border-[var(--line)] bg-white/55 p-4 text-sm">
+        <summary className="cursor-pointer font-bold">More owner-capital detail</summary>
+        <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <MetricCard label="Designated to batches" value={formatCurrency(report.summary.designated_to_batches_as_of)} detail={`${formatCurrency(report.summary.unassigned_contributions_as_of)} not yet designated`} />
+          <MetricCard label="Farm-wide use" value={formatCurrency(report.summary.farm_wide_use_to_date)} detail="Owner-funded cost without a batch beneficiary" />
+          <MetricCard label="Owner drawings" value={formatCurrency(report.summary.owner_drawings_to_date)} />
+          <MetricCard label="Profit distributions" value={formatCurrency(report.summary.profit_distributions_to_date)} />
+        </div>
+      </details>
 
       {report.summary.unknown_owner_receipt_count ? (
         <div className="rounded-lg border border-[var(--gold)] bg-[var(--gold-soft)] p-4 text-sm">

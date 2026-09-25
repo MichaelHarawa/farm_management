@@ -713,6 +713,12 @@ from .models import (
     OwnerReceiptDesignation,
     SalePayment,
     AccountingNature,
+    Customer,
+    CustomerContributionLabel,
+    CustomerCostAttribution,
+    CustomerCostCategory,
+    CustomerCostEvidenceStatus,
+    CustomerCostSourceType,
 )
 from .permissions import has_owner_capital_access
 
@@ -731,6 +737,101 @@ class OwnerContributorSerializer(serializers.ModelSerializer):
         read_only_fields = [
             "public_id", "created_by", "created_by_name", "created_at", "updated_at",
         ]
+
+
+class CustomerSerializer(serializers.ModelSerializer):
+    created_by_name = serializers.CharField(
+        source="created_by.get_username", read_only=True, allow_null=True
+    )
+    reviewed_by_name = serializers.CharField(
+        source="reviewed_by.get_username", read_only=True, allow_null=True
+    )
+
+    class Meta:
+        model = Customer
+        fields = [
+            "id", "public_id", "display_name", "customer_type", "contact_name",
+            "phone", "email", "notes", "is_active", "contribution_label",
+            "review_notes", "reviewed_at", "reviewed_by", "reviewed_by_name",
+            "created_by", "created_by_name", "created_at", "updated_at",
+        ]
+        read_only_fields = [
+            "public_id", "contribution_label", "review_notes", "reviewed_at",
+            "reviewed_by", "reviewed_by_name", "created_by", "created_by_name",
+            "created_at", "updated_at",
+        ]
+
+    def validate_display_name(self, value):
+        value = value.strip()
+        if len(value) < 2:
+            raise serializers.ValidationError("Enter at least 2 characters.")
+        return value
+
+
+class CustomerCostAttributionSerializer(serializers.ModelSerializer):
+    customer_name = serializers.CharField(source="customer.display_name", read_only=True)
+    sale_reference = serializers.CharField(source="sale.sale_id", read_only=True, allow_null=True)
+    batch_code = serializers.CharField(source="batch.batch_id", read_only=True, allow_null=True)
+    created_by_name = serializers.CharField(
+        source="created_by.get_username", read_only=True, allow_null=True
+    )
+    reversed_by_name = serializers.CharField(
+        source="reversed_by.get_username", read_only=True, allow_null=True
+    )
+
+    class Meta:
+        model = CustomerCostAttribution
+        fields = [
+            "id", "customer", "customer_name", "sale", "sale_reference", "batch",
+            "batch_code", "attribution_date", "accounting_period", "category", "amount",
+            "source_type", "source_id", "economic_source_key", "source_label",
+            "evidence_status", "attribution_basis", "reason", "status", "created_by",
+            "created_by_name", "created_at", "reversed_at", "reversed_by",
+            "reversed_by_name", "reversal_reason",
+        ]
+        read_only_fields = fields
+
+
+class CustomerCostAttributionCommandSerializer(serializers.Serializer):
+    customer = serializers.PrimaryKeyRelatedField(queryset=Customer.objects.filter(is_active=True))
+    sale_id = serializers.IntegerField(required=False, allow_null=True, min_value=1)
+    batch_id = serializers.IntegerField(required=False, allow_null=True, min_value=1)
+    attribution_date = serializers.DateField()
+    category = serializers.ChoiceField(choices=CustomerCostCategory.choices)
+    amount = serializers.DecimalField(max_digits=14, decimal_places=2, min_value=Decimal("0.01"))
+    source_type = serializers.ChoiceField(choices=CustomerCostSourceType.choices)
+    source_id = serializers.IntegerField(required=False, allow_null=True, min_value=1)
+    evidence_status = serializers.ChoiceField(choices=CustomerCostEvidenceStatus.choices)
+    attribution_basis = serializers.CharField(max_length=160)
+    reason = serializers.CharField()
+    idempotency_key = serializers.CharField(max_length=120)
+
+    def validate_reason(self, value):
+        value = value.strip()
+        if len(value) < 3:
+            raise serializers.ValidationError("Document why this customer bears the cost.")
+        return value
+
+
+class CustomerReviewSerializer(serializers.Serializer):
+    contribution_label = serializers.ChoiceField(choices=CustomerContributionLabel.choices)
+    review_notes = serializers.CharField()
+
+    def validate(self, attrs):
+        notes = attrs["review_notes"].strip()
+        if len(notes) < 3:
+            raise serializers.ValidationError({"review_notes": "Record the review decision or next action."})
+        attrs["review_notes"] = notes
+        return attrs
+
+
+class CustomerSaleLinkSerializer(serializers.Serializer):
+    customer_id = serializers.IntegerField(required=False, allow_null=True, min_value=1)
+    reason = serializers.CharField(required=False, allow_blank=True, default="")
+
+
+class CustomerCostAttributionReverseSerializer(serializers.Serializer):
+    reason = serializers.CharField()
 
 
 class OwnerReceiptDesignationSerializer(serializers.ModelSerializer):

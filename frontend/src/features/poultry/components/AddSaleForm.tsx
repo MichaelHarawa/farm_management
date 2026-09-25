@@ -6,6 +6,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useForm, useWatch, type SubmitHandler } from "react-hook-form";
 
 import { getApiErrorMessage } from "@/lib/errors";
+import type { Customer } from "@/features/finance/types";
 import { createBatchSale } from "../api/sales";
 import type { CreateSalePayload } from "../types";
 import { formatCurrency } from "../utils/formatters";
@@ -43,6 +44,7 @@ const paymentMethodOptions = [
 
 type AddSaleFormProps = {
   batchId: number;
+  customers: Customer[];
 };
 
 function getDefaultSaleDate(): string {
@@ -52,7 +54,7 @@ function getDefaultSaleDate(): string {
   return date.toISOString().slice(0, 16);
 }
 
-export function AddSaleForm({ batchId }: AddSaleFormProps) {
+export function AddSaleForm({ batchId, customers }: AddSaleFormProps) {
   const router = useRouter();
   const [serverError, setServerError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -73,6 +75,7 @@ export function AddSaleForm({ batchId }: AddSaleFormProps) {
       quantity_sold: 1,
       unit_price: 0,
       buyer_name: "",
+      customer: "",
       buyer_type: "market_vendor",
       buyer_type_other: "",
       payment_status: "partial",
@@ -134,6 +137,7 @@ export function AddSaleForm({ batchId }: AddSaleFormProps) {
         : values.amount_paid;
     const payload: CreateSalePayload = {
       ...values,
+      customer: values.customer ? Number(values.customer) : null,
       due_date: values.due_date || null,
       buyer_type_other:
         values.buyer_type === "other" ? values.buyer_type_other.trim() : "",
@@ -156,6 +160,7 @@ export function AddSaleForm({ batchId }: AddSaleFormProps) {
         quantity_sold: 1,
         unit_price: 0,
         buyer_name: "",
+        customer: "",
         buyer_type: "market_vendor",
         buyer_type_other: "",
         payment_status: "partial",
@@ -232,6 +237,37 @@ export function AddSaleForm({ batchId }: AddSaleFormProps) {
             className="form-input"
           />
         </FormField>
+
+        {customers.length ? (
+          <FormField label="Existing customer" error={errors.customer?.message}>
+            <select
+              id="sale-customer"
+              {...register("customer", {
+                onChange: (event) => {
+                  const customer = customers.find(
+                    (item) => item.id === Number(event.target.value)
+                  );
+                  if (customer) {
+                    setValue("buyer_name", customer.display_name, { shouldValidate: true });
+                    if (buyerTypeOptions.some((option) => option.value === customer.customer_type)) {
+                      setValue(
+                        "buyer_type",
+                        customer.customer_type as SaleFormValues["buyer_type"],
+                        { shouldValidate: true }
+                      );
+                    }
+                  }
+                },
+              })}
+              className="form-input"
+            >
+              <option value="">New or unlinked buyer</option>
+              {customers.filter((customer) => customer.is_active).map((customer) => (
+                <option key={customer.id} value={customer.id}>{customer.display_name}</option>
+              ))}
+            </select>
+          </FormField>
+        ) : null}
 
         <FormField label="Buyer name" error={errors.buyer_name?.message}>
           <input

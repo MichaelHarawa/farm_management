@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 
 import {
+  getCustomers,
   getBatchProfitability,
 } from "@/features/finance/api/finance";
 import {
@@ -150,6 +151,7 @@ export default async function BatchDetailPage({
       throw error;
     }
   );
+  const customers = await getCustomers(returnTo).catch(() => []);
 
   return (
     <BatchDetailView
@@ -165,6 +167,7 @@ export default async function BatchDetailPage({
       feedMetrics={feedMetrics}
       vaccinations={vaccinations}
       weightSamplesResponse={weightSamplesResponse}
+      customers={customers}
     />
   );
 }

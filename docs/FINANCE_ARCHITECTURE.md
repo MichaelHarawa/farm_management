@@ -100,3 +100,17 @@ Owner identities, contribution workflows, reports, assignment of owner cash to a
 | Record/reverse contribution or designation | Yes | Yes | No |
 | View append-only owner finance actions | Yes | Yes | No |
 | Assign owner-capital cash as an expenditure source | Yes | Yes | No; record a payable for authorized funding |
+
+## Phase 3: customer contribution
+
+`Customer` is the stable buyer identity used for analysis. `Sales.customer` is optional so historical rows remain valid, while `Sales.buyer_name` preserves the name written on the original sale. The system never merges or links customers merely because names match; historical linking is an explicit, audited user action. Deactivating a customer prevents new selection without deleting sales or contribution history.
+
+Customer contribution uses recognized, non-cancelled sales revenue, not cash received:
+
+`customer contribution = revenue - direct delivery cost - support cost - rework cost - acquisition cost`
+
+Cash collected and receivables are shown beside contribution but do not replace revenue in the formula. The four cost categories are mutually exclusive. Direct delivery automatically includes the sold share of the existing canonical production cost per survived bird. That share is calculated over every valid bird sale in the source batch before report filters are applied, leaving the unsold share with the batch and preventing filtered reports from changing the denominator.
+
+`CustomerCostAttribution` links other customer-specific costs to their recognized expenditure, payroll, labour, or allocation source. Each row stores customer, optional sale and batch, economic date/period, one category, actual-or-estimated status, basis, reason, actor, and canonical economic-source key. Source and canonical-source caps prevent the same recognized cost from being assigned twice. A source already included in the automatic batch production basis cannot be attributed again as a customer cost. Documented estimates are analytical rows only and do not manufacture expenditure or journal entries.
+
+Attributions are append-only and corrected by reversal. As-of reports include a row until its reversal date, so a later correction cannot rewrite an earlier report. Reports expose source drill-down, coverage by cost category, product mix, customer concentration, system recommendations, and documented management labels. Missing categories are reported as incomplete rather than assumed to be zero.

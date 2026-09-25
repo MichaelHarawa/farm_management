@@ -61,33 +61,40 @@ export function FinancePageShell({
 
 export async function FinanceNav() {
   const user = await getOptionalCurrentUser();
-  const links = [
+  const primaryLinks = [
     ["Overview", "/finance"],
-    ["Sales & Receivables", "/finance/receivables"],
-    ["Purchases & Payables", "/finance/expenditures"],
+    ["Customers", "/finance/customers"],
+    ["Sales", "/finance/receivables"],
+    ["Spending", "/finance/expenditures"],
+    ["Batches", "/finance/batches"],
+    ["Reports", "/finance/monthly"],
+  ];
+  const secondaryLinks = [
     ["Funding & Use", "/finance/revenue-usage"],
     ...(canAccessOwnerCapital(user)
       ? [["Owner Capital", "/finance/owner-capital"]]
       : []),
-    ["People & Payroll", "/finance/payroll"],
+    ["Payroll", "/finance/payroll"],
     ["Inventory", "/finance/consumables"],
     ["Assets", "/finance/assets"],
-    ["Batch Performance", "/finance/batches"],
-    ["Period Reports", "/finance/monthly"],
   ];
 
 
   return (
-    <nav className="flex flex-wrap justify-center gap-2">
-      {links.map(([label, href]) => (
-        <Link
-          key={href}
-          href={href}
-          className="rounded-full border border-[var(--line)] bg-white/60 px-4 py-2 text-xs font-bold uppercase tracking-[0.14em] text-[var(--navy-muted)] transition hover:bg-[var(--gold-soft)] hover:text-[var(--navy)]"
-        >
-          {label}
-        </Link>
-      ))}
+    <nav className="grid justify-items-center gap-2">
+      <div className="flex flex-wrap justify-center gap-2">
+        {primaryLinks.map(([label, href]) => (
+          <Link key={href} href={href} className="rounded-full border border-[var(--line)] bg-white/60 px-4 py-2 text-xs font-bold uppercase tracking-[0.14em] text-[var(--navy-muted)] transition hover:bg-[var(--gold-soft)] hover:text-[var(--navy)]">{label}</Link>
+        ))}
+      </div>
+      <details className="relative text-center">
+        <summary className="cursor-pointer list-none text-xs font-bold text-[var(--navy-muted)] underline">More finance tools</summary>
+        <div className="mt-2 flex flex-wrap justify-center gap-2">
+          {secondaryLinks.map(([label, href]) => (
+            <Link key={href} href={href} className="rounded-full border border-[var(--line)] bg-white/70 px-4 py-2 text-xs font-bold text-[var(--navy-muted)] hover:bg-[var(--gold-soft)]">{label}</Link>
+          ))}
+        </div>
+      </details>
     </nav>
   );
 }

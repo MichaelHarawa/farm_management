@@ -2163,6 +2163,234 @@ class FundingClassification(models.TextChoices):
     OTHER = "other", "Other"
 
 
+class CustomerContributionLabel(models.TextChoices):
+    IDEAL = "ideal", "Ideal"
+    HEALTHY = "healthy", "Healthy"
+    REVIEW = "review", "Review"
+    UNPROFITABLE = "unprofitable", "Unprofitable"
+    STRATEGIC_EXCEPTION = "strategic_exception", "Strategic Exception"
+
+
+class CustomerCostCategory(models.TextChoices):
+    DIRECT_DELIVERY = "direct_delivery", "Direct Delivery Cost"
+    SUPPORT = "support", "Support Cost"
+    REWORK = "rework", "Rework Cost"
+    ACQUISITION = "acquisition", "Acquisition Cost"
+
+
+class CustomerCostSourceType(models.TextChoices):
+    EXPENDITURE = "expenditure", "Expenditure"
+    PAYROLL = "payroll", "Payroll Entry"
+    LABOUR = "labour", "Ad-hoc Labour"
+    COST_ALLOCATION = "cost_allocation", "Batch Cost Allocation"
+    MANUAL_ESTIMATE = "manual_estimate", "Documented Estimate"
+
+
+class CustomerCostEvidenceStatus(models.TextChoices):
+    ACTUAL = "actual", "Actual / Source Linked"
+    ESTIMATED = "estimated", "Estimated"
+
+
+class CustomerCostAttributionStatus(models.TextChoices):
+    POSTED = "posted", "Posted"
+    REVERSED = "reversed", "Reversed"
+
+
+class Customer(TimestampedModel):
+    """Stable customer identity; free-text sale buyer names remain historical facts."""
+
+    public_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    display_name = models.CharField(max_length=200, db_index=True)
+    customer_type = models.CharField(max_length=40, blank=True, default="")
+    contact_name = models.CharField(max_length=160, blank=True, default="")
+    phone = models.CharField(max_length=80, blank=True, default="")
+    email = models.EmailField(blank=True, default="")
+    notes = models.TextField(blank=True, default="")
+    is_active = models.BooleanField(default=True, db_index=True)
+    contribution_label = models.CharField(
+        max_length=30,
+        choices=CustomerContributionLabel.choices,
+        blank=True,
+        default="",
+    )
+    review_notes = models.TextField(blank=True, default="")
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reviewed_finance_customers",
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_finance_customers",
+    )
+
+    class Meta:
+        ordering = ["display_name", "pk"]
+        indexes = [models.Index(fields=["is_active", "display_name"])]
+
+    def __str__(self) -> str:
+        return self.display_name
+
+    def clean(self):
+        super().clean()
+        self.display_name = (self.display_name or "").strip()
+        if len(self.display_name) < 2:
+            raise ValidationError({"display_name": "Enter at least 2 characters."})
+        if (
+            self.contribution_label == CustomerContributionLabel.STRATEGIC_EXCEPTION
+            and not (self.review_notes or "").strip()
+        ):
+            raise ValidationError(
+                {"review_notes": "Explain why this customer is a strategic exception."}
+            )
+
+
+class CustomerCostAttribution(TimestampedModel):
+    """Analytical customer cost share; never creates an expense or cash payment."""
+
+    customer = models.ForeignKey(
+        Customer,
+        on_delete=models.PROTECT,
+        related_name="cost_attributions",
+    )
+    sale = models.ForeignKey(
+        "poultry.Sales",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="customer_cost_attributions",
+    )
+    batch = models.ForeignKey(
+        Batch,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="customer_cost_attributions",
+    )
+    attribution_date = models.DateField(db_index=True)
+    accounting_period = models.ForeignKey(
+        AccountingPeriod,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="customer_cost_attributions",
+    )
+    category = models.CharField(
+        max_length=30,
+        choices=CustomerCostCategory.choices,
+        db_index=True,
+    )
+    amount = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal("0.01"))],
+    )
+    source_type = models.CharField(
+        max_length=30,
+        choices=CustomerCostSourceType.choices,
+        db_index=True,
+    )
+    source_id = models.PositiveBigIntegerField(null=True, blank=True)
+    economic_source_key = models.CharField(max_length=100, db_index=True)
+    source_label = models.CharField(max_length=255)
+    evidence_status = models.CharField(
+        max_length=20,
+        choices=CustomerCostEvidenceStatus.choices,
+        default=CustomerCostEvidenceStatus.ACTUAL,
+        db_index=True,
+    )
+    attribution_basis = models.CharField(max_length=160)
+    reason = models.TextField()
+    status = models.CharField(
+        max_length=20,
+        choices=CustomerCostAttributionStatus.choices,
+        default=CustomerCostAttributionStatus.POSTED,
+        db_index=True,
+    )
+    idempotency_key = models.CharField(max_length=120, null=True, blank=True, unique=True)
+    request_fingerprint = models.CharField(max_length=64, blank=True, default="")
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_customer_cost_attributions",
+    )
+    reversed_at = models.DateTimeField(null=True, blank=True)
+    reversed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reversed_customer_cost_attributions",
+    )
+    reversal_reason = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["-attribution_date", "-created_at", "-pk"]
+        indexes = [
+            models.Index(fields=["customer", "attribution_date"]),
+            models.Index(fields=["economic_source_key", "status"]),
+            models.Index(fields=["source_type", "source_id"]),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        source_type=CustomerCostSourceType.MANUAL_ESTIMATE,
+                        source_id__isnull=True,
+                        evidence_status=CustomerCostEvidenceStatus.ESTIMATED,
+                    )
+                    | ~models.Q(source_type=CustomerCostSourceType.MANUAL_ESTIMATE)
+                ),
+                name="finance_manual_customer_cost_is_estimate",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        source_type=CustomerCostSourceType.MANUAL_ESTIMATE,
+                        source_id__isnull=True,
+                    )
+                    | models.Q(source_id__isnull=False)
+                ),
+                name="finance_customer_cost_source_identity",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.customer}: {self.get_category_display()} {self.amount}"
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            original = type(self).objects.get(pk=self.pk)
+            immutable_fields = (
+                "customer_id",
+                "sale_id",
+                "batch_id",
+                "attribution_date",
+                "category",
+                "amount",
+                "source_type",
+                "source_id",
+                "economic_source_key",
+                "evidence_status",
+                "attribution_basis",
+                "reason",
+            )
+            if any(getattr(original, field) != getattr(self, field) for field in immutable_fields):
+                raise ValidationError("Posted customer cost attributions are immutable; reverse and replace.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Customer cost attributions cannot be deleted; reverse them.")
+
+
 class OwnerContributor(TimestampedModel):
     """A stable non-login identity for a person or entity contributing capital."""
 

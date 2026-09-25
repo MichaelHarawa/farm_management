@@ -57,3 +57,20 @@ After deployment run:
 5. verify that introduced cash minus actual owner-funded use equals the displayed remaining balance.
 
 Rollback must be forward-only. Reverse incorrect new receipts/designations through the application; do not unapply migration 0025 after Phase 2 records exist. The pre-migration database backup remains the disaster-recovery boundary.
+
+## Phase 3 migrations 0026 and poultry 0033
+
+`finance.0026_customer_customercostattribution_and_more` creates stable customers and append-only customer-cost attributions. `poultry.0033_sales_customer` adds the nullable customer link to sales. Both migrations are additive: they do not remove, merge, rename, or recalculate any historical sale, receipt, expenditure, allocation, batch, or buyer-name value.
+
+Existing sales intentionally begin with `customer_id = NULL`. Do not backfill by buyer name: equal names may represent different people or organizations, and spelling changes may represent the same customer. Use the customer workspace to create or verify the identity and explicitly link each historical sale. The preserved `buyer_name` remains the sale-time description after linking.
+
+After deployment run:
+
+1. `python backend/manage.py migrate`;
+2. `python backend/manage.py check`;
+3. `python backend/manage.py finance_preflight`;
+4. open **Finance → Customers** and review the unlinked-sale warning;
+5. link only identities supported by source documents;
+6. verify the four customer-cost categories and source caps before relying on contribution labels.
+
+Rollback remains forward-only. Reverse incorrect attribution rows and relink a sale through the controlled workflow; never delete the customer or overwrite the historical buyer text. Do not unapply these migrations after customer links or attributions exist.

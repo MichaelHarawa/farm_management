@@ -14,6 +14,10 @@ import type {
   BatchPortfolioReport,
   BatchProfitabilityReport,
   ConsumableUsage,
+  Customer,
+  CustomerContributionReport,
+  CustomerCostSource,
+  CustomerUnlinkedSale,
   EmployeeProfile,
   FinanceDashboard,
   MonthlyReport,
@@ -185,6 +189,53 @@ export async function getOwnerContributionReport(
 ): Promise<OwnerContributionReport> {
   return authenticatedBackendFetch<OwnerContributionReport>(
     `${financeApiPaths.ownerContributionReport}${query}`,
+    { returnTo, cache: "no-store" }
+  );
+}
+
+export async function getCustomers(returnTo: string): Promise<Customer[]> {
+  const data = await authenticatedBackendFetch<Customer[] | PaginatedResponse<Customer>>(
+    `${financeApiPaths.customers}?page_size=100`,
+    { returnTo, cache: "no-store" }
+  );
+  return normalizeList(data);
+}
+
+export async function getCustomer(id: number, returnTo: string): Promise<Customer> {
+  return authenticatedBackendFetch<Customer>(financeApiPaths.customer(id), {
+    returnTo,
+    cache: "no-store",
+  });
+}
+
+export async function getCustomerContributionReport(
+  returnTo: string,
+  query = ""
+): Promise<CustomerContributionReport> {
+  return authenticatedBackendFetch<CustomerContributionReport>(
+    `${financeApiPaths.customerContributionReport}${query}`,
+    { returnTo, cache: "no-store" }
+  );
+}
+
+export async function getCustomerCostSources(
+  returnTo: string,
+  search = ""
+): Promise<CustomerCostSource[]> {
+  const query = search ? `?search=${encodeURIComponent(search)}` : "";
+  return authenticatedBackendFetch<CustomerCostSource[]>(
+    `${financeApiPaths.customerCostSources}${query}`,
+    { returnTo, cache: "no-store" }
+  );
+}
+
+export async function getCustomerUnlinkedSales(
+  returnTo: string,
+  search = ""
+): Promise<CustomerUnlinkedSale[]> {
+  const query = search ? `?search=${encodeURIComponent(search)}` : "";
+  return authenticatedBackendFetch<CustomerUnlinkedSale[]>(
+    `${financeApiPaths.customerUnlinkedSales}${query}`,
     { returnTo, cache: "no-store" }
   );
 }

@@ -71,3 +71,17 @@ The workspace keeps three ideas separate:
 Use **Return of Owner Capital** only when principal is genuinely repaid. Use **Owner Drawing**, **Owner Compensation**, or **Owner Profit Distribution** for their distinct purposes. These options are available when recording an expenditure. Reverse an incorrect designation or unused receipt with a reason; a receipt that has already funded posted spending cannot be reversed until the spending is corrected through its controlled reversal workflow.
 
 Legacy owner-capital receipts with no reliable contributor appear under **Unknown legacy owner**. Do not rename or guess them from a description. Reconcile them against bank records and source documents before making an explicit controlled assignment.
+
+## Customer contribution
+
+Open **Finance → Customers** to review customer value without the former dashboard card overload. The page deliberately starts with four measures only: recognized revenue, customer contribution, cash collected, and still receivable. Use the date, product, and customer filters before comparing customers.
+
+Create a stable customer once, then select it while recording new poultry sales. Existing historical sales keep their original buyer text until a user opens **Link historical sale**, verifies the buyer, and links the sale explicitly. Duplicate customer names are allowed because a name alone is not identity evidence. Deactivating a customer preserves all history.
+
+Open a customer to see the exact four-part cost bridge:
+
+`Revenue - Direct Delivery - Support - Rework - Acquisition = Customer Contribution`
+
+Direct delivery already includes the sold share of canonical batch production cost. Do not add the same batch production source again. Use **Attribute customer cost** for a recognized delivery, support, rework, or acquisition cost, search for its source, enter the amount, and document the attribution basis and reason. A documented estimate is allowed when the real source split is unavailable, but it is clearly marked as estimated and does not create an expenditure.
+
+Treat **Incomplete** as a data-quality warning, not proof that a missing category cost is zero. Review the sale and source drill-down before applying an **Ideal**, **Healthy**, **Review**, **Unprofitable**, or **Strategic Exception** management label. Labels require a decision note and do not automatically block or terminate a customer relationship. Use the filtered CSV for offline review; it exports the complete filtered result, not only the visible page.

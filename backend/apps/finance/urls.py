@@ -13,6 +13,12 @@ from .views import (
     BirdDaySnapshotViewSet,
     ConsumableUsageViewSet,
     CostAllocationViewSet,
+    CustomerContributionReportView,
+    CustomerCostAttributionViewSet,
+    CustomerCostSourceView,
+    CustomerSaleLinkView,
+    CustomerUnlinkedSalesView,
+    CustomerViewSet,
     DashboardView,
     EmployeeBatchWorkLogViewSet,
     EmployeeProfileViewSet,
@@ -89,6 +95,12 @@ router.register(
 router.register("work-logs", EmployeeBatchWorkLogViewSet, basename="finance-work-log")
 router.register("bird-day-snapshots", BirdDaySnapshotViewSet, basename="finance-bird-days")
 router.register("allocations", CostAllocationViewSet, basename="finance-allocation")
+router.register("customers", CustomerViewSet, basename="finance-customer")
+router.register(
+    "customer-cost-attributions",
+    CustomerCostAttributionViewSet,
+    basename="finance-customer-cost-attribution",
+)
 router.register("expenditures", ExpenditureViewSet, basename="finance-expenditure")
 router.register("funding-sources", FundingSourceViewSet, basename="finance-funding-source")
 router.register("funding-receipts", FundingReceiptViewSet, basename="finance-funding-receipt")
@@ -107,6 +119,26 @@ app_name = "finance"
 
 urlpatterns = [
     path("", include(router.urls)),
+    path(
+        "reports/customer-contributions",
+        CustomerContributionReportView.as_view(),
+        name="customer-contribution-report",
+    ),
+    path(
+        "customer-cost-sources",
+        CustomerCostSourceView.as_view(),
+        name="customer-cost-sources",
+    ),
+    path(
+        "customer-unlinked-sales",
+        CustomerUnlinkedSalesView.as_view(),
+        name="customer-unlinked-sales",
+    ),
+    path(
+        "customer-sale-links/<int:sale_id>",
+        CustomerSaleLinkView.as_view(),
+        name="customer-sale-link",
+    ),
     path(
         "owner-contributions",
         OwnerContributionView.as_view(),

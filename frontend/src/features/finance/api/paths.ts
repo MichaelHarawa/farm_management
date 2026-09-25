@@ -54,4 +54,15 @@ export const financeApiPaths = {
   ownerContributionReport: `${FINANCE_ROOT}/reports/owner-contributions`,
   ownerDesignations: `${FINANCE_ROOT}/owner-designations`,
   actionEvents: `${FINANCE_ROOT}/action-events`,
+  customers: `${FINANCE_ROOT}/customers`,
+  customer: (id: number) => `${FINANCE_ROOT}/customers/${id}`,
+  customerReview: (id: number) => `${FINANCE_ROOT}/customers/${id}/review`,
+  customerCostAttributions: `${FINANCE_ROOT}/customer-cost-attributions`,
+  customerCostAttributionReverse: (id: number) =>
+    `${FINANCE_ROOT}/customer-cost-attributions/${id}/reverse`,
+  customerCostSources: `${FINANCE_ROOT}/customer-cost-sources`,
+  customerUnlinkedSales: `${FINANCE_ROOT}/customer-unlinked-sales`,
+  customerSaleLink: (saleId: number) =>
+    `${FINANCE_ROOT}/customer-sale-links/${saleId}`,
+  customerContributionReport: `${FINANCE_ROOT}/reports/customer-contributions`,
 } as const;

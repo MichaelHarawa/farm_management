@@ -1,7 +1,10 @@
 import "server-only";
 
 const BACKEND_API_BASE_URL =
-  process.env.BACKEND_API_BASE_URL;
+  process.env.BACKEND_API_BASE_URL ??
+  (process.env.BACKEND_SERVICE_URL
+    ? `${process.env.BACKEND_SERVICE_URL.replace(/\/$/, "")}/api/v1`
+    : undefined);
 
 export class BackendApiError extends Error {
   status: number;

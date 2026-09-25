@@ -14,7 +14,7 @@ from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.poultry.models import Batch, BatchStatus
+from apps.poultry.models import Batch, BatchStatus, ProductType, Sales
 
 from .models import (
     AccountingPeriod,
@@ -32,6 +32,8 @@ from .models import (
     ConsumableUsage,
     ConsumableItem,
     CostAllocation,
+    Customer,
+    CustomerCostAttribution,
     EmployeeBatchWorkLog,
     EmployeeProfile,
     ExpenseRecognitionSchedule,
@@ -77,6 +79,12 @@ from .serializers import (
     ConsumableUsageSerializer,
     ConsumableItemSerializer,
     CostAllocationSerializer,
+    CustomerCostAttributionCommandSerializer,
+    CustomerCostAttributionReverseSerializer,
+    CustomerCostAttributionSerializer,
+    CustomerReviewSerializer,
+    CustomerSaleLinkSerializer,
+    CustomerSerializer,
     EmployeeBatchWorkLogSerializer,
     EmployeeProfileSerializer,
     ExpenseRecognitionScheduleSerializer,
@@ -140,6 +148,13 @@ from .services.owner_capital import (
     record_owner_contribution,
     reverse_funding_receipt,
     reverse_owner_designation,
+)
+from .services.customer_contribution import (
+    customer_contribution_report,
+    customer_cost_source_candidates,
+    link_sale_customer,
+    record_customer_cost_attribution,
+    reverse_customer_cost_attribution,
 )
 
 
@@ -1027,6 +1042,288 @@ class FinanceRegisterPagination(PageNumberPagination):
     page_size = 20
     page_size_query_param = "page_size"
     max_page_size = 100
+
+
+class CustomerViewSet(
+    mixins.CreateModelMixin,
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.UpdateModelMixin,
+    viewsets.GenericViewSet,
+):
+    serializer_class = CustomerSerializer
+    permission_classes = (FinancePermission,)
+    pagination_class = FinanceRegisterPagination
+
+    def get_queryset(self):
+        queryset = Customer.objects.select_related("created_by", "reviewed_by").all()
+        search = self.request.query_params.get("search", "").strip()
+        if search:
+            queryset = queryset.filter(
+                Q(display_name__icontains=search)
+                | Q(contact_name__icontains=search)
+                | Q(phone__icontains=search)
+                | Q(email__icontains=search)
+            )
+        active = self.request.query_params.get("is_active")
+        if active in {"true", "false"}:
+            queryset = queryset.filter(is_active=active == "true")
+        return queryset
+
+    def perform_create(self, serializer):
+        customer = serializer.save(created_by=self.request.user)
+        record_finance_action(
+            actor=self.request.user,
+            action="customer_created",
+            entity_type="finance.Customer",
+            entity_id=customer.pk,
+            after_data={
+                "public_id": customer.public_id,
+                "display_name": customer.display_name,
+                "customer_type": customer.customer_type,
+                "is_active": customer.is_active,
+            },
+        )
+
+    def perform_update(self, serializer):
+        current = self.get_object()
+        before = {
+            "display_name": current.display_name,
+            "customer_type": current.customer_type,
+            "contact_name": current.contact_name,
+            "phone": current.phone,
+            "email": current.email,
+            "notes": current.notes,
+            "is_active": current.is_active,
+        }
+        customer = serializer.save()
+        record_finance_action(
+            actor=self.request.user,
+            action="customer_updated",
+            entity_type="finance.Customer",
+            entity_id=customer.pk,
+            before_data=before,
+            after_data={key: getattr(customer, key) for key in before},
+        )
+
+    @action(detail=True, methods=["post"])
+    def review(self, request, pk=None):
+        customer = self.get_object()
+        serializer = CustomerReviewSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        before = {
+            "contribution_label": customer.contribution_label,
+            "review_notes": customer.review_notes,
+        }
+        customer.contribution_label = serializer.validated_data["contribution_label"]
+        customer.review_notes = serializer.validated_data["review_notes"]
+        customer.reviewed_at = timezone.now()
+        customer.reviewed_by = request.user
+        customer.full_clean()
+        customer.save(
+            update_fields=[
+                "contribution_label", "review_notes", "reviewed_at",
+                "reviewed_by", "updated_at",
+            ]
+        )
+        record_finance_action(
+            actor=request.user,
+            action="customer_contribution_reviewed",
+            entity_type="finance.Customer",
+            entity_id=customer.pk,
+            before_data=before,
+            after_data={
+                "contribution_label": customer.contribution_label,
+                "review_notes": customer.review_notes,
+            },
+            reason=customer.review_notes,
+        )
+        return Response(self.get_serializer(customer).data)
+
+
+class CustomerCostAttributionViewSet(
+    mixins.CreateModelMixin,
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    viewsets.GenericViewSet,
+):
+    permission_classes = (FinancePermission,)
+    pagination_class = FinanceRegisterPagination
+    queryset = CustomerCostAttribution.objects.select_related(
+        "customer", "sale", "batch", "accounting_period", "created_by", "reversed_by"
+    ).all()
+
+    def get_serializer_class(self):
+        return (
+            CustomerCostAttributionCommandSerializer
+            if self.action == "create"
+            else CustomerCostAttributionSerializer
+        )
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        for key in ("customer", "sale", "batch", "category", "status", "evidence_status"):
+            value = self.request.query_params.get(key)
+            if value:
+                queryset = queryset.filter(**{key: value})
+        return queryset
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        row, created = record_customer_cost_attribution(
+            customer_id=data["customer"].pk,
+            sale_id=data.get("sale_id"),
+            batch_id=data.get("batch_id"),
+            attribution_date=data["attribution_date"],
+            category=data["category"],
+            amount=data["amount"],
+            source_type=data["source_type"],
+            source_id=data.get("source_id"),
+            evidence_status=data["evidence_status"],
+            attribution_basis=data["attribution_basis"],
+            reason=data["reason"],
+            idempotency_key=data["idempotency_key"],
+            user=request.user,
+        )
+        row = self.get_queryset().get(pk=row.pk)
+        return Response(
+            CustomerCostAttributionSerializer(row).data,
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
+
+    @action(detail=True, methods=["post"])
+    def reverse(self, request, pk=None):
+        serializer = CustomerCostAttributionReverseSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            row = reverse_customer_cost_attribution(
+                attribution_id=int(pk),
+                reason=serializer.validated_data["reason"],
+                user=request.user,
+            )
+        except CustomerCostAttribution.DoesNotExist:
+            raise ValidationError({"id": "Customer cost attribution not found."})
+        row = self.get_queryset().get(pk=row.pk)
+        return Response(CustomerCostAttributionSerializer(row).data)
+
+
+class CustomerSaleLinkView(APIView):
+    permission_classes = (FinancePermission,)
+
+    def post(self, request, sale_id: int):
+        serializer = CustomerSaleLinkSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            sale = link_sale_customer(
+                sale_id=sale_id,
+                customer_id=serializer.validated_data.get("customer_id"),
+                reason=serializer.validated_data.get("reason", ""),
+                user=request.user,
+            )
+        except Sales.DoesNotExist:
+            raise ValidationError({"sale": "Sale not found."})
+        return Response(
+            {
+                "sale_id": sale.pk,
+                "sale_reference": sale.sale_id,
+                "customer_id": sale.customer_id,
+                "buyer_name": sale.buyer_name,
+            }
+        )
+
+
+class CustomerCostSourceView(APIView):
+    permission_classes = (FinancePermission,)
+
+    def get(self, request):
+        search = request.query_params.get("search", "").strip()
+        return Response(json_safe(customer_cost_source_candidates(search=search)))
+
+
+class CustomerUnlinkedSalesView(APIView):
+    permission_classes = (FinancePermission,)
+
+    def get(self, request):
+        queryset = (
+            Sales.objects.select_related("batch")
+            .filter(customer__isnull=True)
+            .exclude(payment_status="cancelled")
+            .order_by("-sale_date", "-pk")
+        )
+        search = request.query_params.get("search", "").strip()
+        if search:
+            queryset = queryset.filter(
+                Q(sale_id__icontains=search)
+                | Q(buyer_name__icontains=search)
+                | Q(batch__batch_id__icontains=search)
+            )
+        return Response(
+            [
+                {
+                    "id": sale.pk,
+                    "sale_id": sale.sale_id,
+                    "sale_date": sale.sale_date,
+                    "buyer_name": sale.buyer_name,
+                    "buyer_type": sale.buyer_type,
+                    "batch_id": sale.batch_id,
+                    "batch_code": sale.batch.batch_id,
+                    "product_type": sale.product_type,
+                    "revenue": sale.sale_total,
+                }
+                for sale in queryset[:100]
+            ]
+        )
+
+
+class CustomerContributionReportView(APIView):
+    permission_classes = (FinancePermission,)
+
+    def get(self, request):
+        customer_values = [
+            value.strip()
+            for raw in request.query_params.getlist("customer")
+            for value in raw.split(",")
+            if value.strip()
+        ]
+        try:
+            customer_ids = {int(value) for value in customer_values}
+        except ValueError:
+            raise ValidationError({"customer": "Select valid customers."})
+        if len(customer_ids) > 100:
+            raise ValidationError({"customer": "Select no more than 100 customers."})
+        product_type = request.query_params.get("product_type", "").strip()
+        if product_type and product_type not in ProductType.values:
+            raise ValidationError({"product_type": "Select a valid poultry product."})
+        filters = {
+            "date_from": _parse_report_date(request.query_params.get("date_from"), "date_from"),
+            "date_to": _parse_report_date(request.query_params.get("date_to"), "date_to"),
+            "customer_ids": customer_ids,
+            "product_type": product_type,
+            "search": request.query_params.get("search", "").strip(),
+        }
+        if filters["date_from"] and filters["date_to"] and filters["date_from"] > filters["date_to"]:
+            raise ValidationError({"date_to": "The end date must not be before the start date."})
+        report = customer_contribution_report(**filters)
+        is_export = request.query_params.get("export") == "1"
+        if not is_export:
+            report["customers"], report["page"] = _nested_page(
+                report["customers"], request, prefix="customer"
+            )
+        record_finance_action(
+            actor=request.user,
+            action="customer_contribution_report_viewed",
+            entity_type="finance.CustomerContributionReport",
+            after_data={
+                "date_from": filters["date_from"],
+                "date_to": filters["date_to"],
+                "customer_ids": sorted(customer_ids),
+                "product_type": product_type,
+                "full_filtered_export": is_export,
+            },
+        )
+        return Response(json_safe(report))
 
 
 class OwnerContributorViewSet(

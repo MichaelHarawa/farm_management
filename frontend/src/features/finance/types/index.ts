@@ -821,6 +821,159 @@ export type BatchFundingMix = {
   }>;
 };
 
+export type CustomerContributionLabel =
+  | "ideal"
+  | "healthy"
+  | "review"
+  | "unprofitable"
+  | "strategic_exception";
+
+export type Customer = {
+  id: number;
+  public_id: string;
+  display_name: string;
+  customer_type: string;
+  contact_name: string;
+  phone: string;
+  email: string;
+  notes: string;
+  is_active: boolean;
+  contribution_label: CustomerContributionLabel | "";
+  review_notes: string;
+  reviewed_at: string | null;
+  reviewed_by_name: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CustomerCostAttribution = {
+  id: number;
+  date: string;
+  category: "direct_delivery" | "support" | "rework" | "acquisition";
+  amount: DecimalString;
+  source_type: string;
+  source_id: number | null;
+  source_label: string;
+  source_href: string | null;
+  evidence_status: "actual" | "estimated";
+  attribution_basis: string;
+  reason: string;
+  sale_id: number | null;
+  batch_id: number | null;
+  created_by: string | null;
+};
+
+export type CustomerContributionRow = {
+  customer_id: number;
+  customer_public_id: string;
+  customer_name: string;
+  customer_type: string;
+  is_active: boolean;
+  sale_count: number;
+  revenue: DecimalString;
+  cash_collected: DecimalString;
+  receivables: DecimalString;
+  direct_delivery_cost: DecimalString;
+  support_cost: DecimalString;
+  rework_cost: DecimalString;
+  acquisition_cost: DecimalString;
+  production_cost_in_direct_delivery: DecimalString;
+  contribution: DecimalString;
+  margin_percent: DecimalString | null;
+  customer_concentration_percent: DecimalString | null;
+  actual_explicit_cost: DecimalString;
+  estimated_explicit_cost: DecimalString;
+  coverage_status: "complete" | "incomplete";
+  category_coverage: Record<string, "actual" | "estimated" | "partial" | "not_attributed">;
+  missing_production_sale_count: number;
+  recommended_label: CustomerContributionLabel;
+  management_label: CustomerContributionLabel | null;
+  review_notes: string;
+  reviewed_at: string | null;
+  reviewed_by: string | null;
+  products: Array<{
+    product_type: string;
+    sale_count: number;
+    quantity: number;
+    revenue: DecimalString;
+    production_delivery_cost: DecimalString;
+  }>;
+  sales: Array<{
+    id: number;
+    sale_id: string;
+    sale_date: string;
+    batch_id: number;
+    batch_code: string;
+    product_type: string;
+    quantity: number;
+    revenue: DecimalString;
+    cash_collected: DecimalString;
+    production_delivery_cost: DecimalString | null;
+    production_cost_status: "available" | "missing" | "not_applicable";
+    cost_basis: {
+      batch_code: string;
+      total_production_cost: DecimalString;
+      survived_birds: number | null;
+      cost_per_survived_bird: DecimalString | null;
+      basis: string;
+      is_final: boolean;
+    } | null;
+  }>;
+  attributions: CustomerCostAttribution[];
+};
+
+export type CustomerContributionReport = {
+  date_from: string | null;
+  date_to: string;
+  product_type: string | null;
+  basis: string;
+  formula: string;
+  summary: {
+    customer_count: number;
+    revenue: DecimalString;
+    cash_collected: DecimalString;
+    receivables: DecimalString;
+    direct_delivery_cost: DecimalString;
+    support_cost: DecimalString;
+    rework_cost: DecimalString;
+    acquisition_cost: DecimalString;
+    contribution: DecimalString;
+    margin_percent: DecimalString | null;
+    incomplete_customer_count: number;
+    unlinked_sale_count: number;
+    unlinked_revenue: DecimalString;
+  };
+  customers: CustomerContributionRow[];
+  products: Array<{
+    product_type: string;
+    sale_count: number;
+    revenue: DecimalString;
+    contribution_before_explicit_customer_costs: DecimalString;
+  }>;
+  page?: OwnerCapitalPage;
+};
+
+export type CustomerCostSource = {
+  source_type: "expenditure" | "payroll" | "labour" | "cost_allocation";
+  source_id: number;
+  date: string;
+  label: string;
+  recognized_amount: DecimalString;
+  available_amount: DecimalString;
+};
+
+export type CustomerUnlinkedSale = {
+  id: number;
+  sale_id: string;
+  sale_date: string;
+  buyer_name: string;
+  buyer_type: string;
+  batch_id: number;
+  batch_code: string;
+  product_type: string;
+  revenue: DecimalString;
+};
+
 export type OwnerContributor = {
   id: number;
   public_id: string;
