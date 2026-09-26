@@ -33,6 +33,7 @@ from .models import (
     CostAllocation,
     EmployeeBatchWorkLog,
     EmployeeProfile,
+    EmployeeSalaryAdjustment,
     ExpenseRecognitionSchedule,
     ExpenditureStatus,
     FundingAllocation,
@@ -140,6 +141,21 @@ class EmployeeProfileSerializer(serializers.ModelSerializer):
         if self.instance and "password" in attrs:
             raise serializers.ValidationError(
                 {"password": "Password can only be supplied during account creation."}
+            )
+
+        proposed_salary = attrs.get("base_monthly_salary")
+        if (
+            self.instance
+            and proposed_salary is not None
+            and proposed_salary != self.instance.base_monthly_salary
+        ):
+            raise serializers.ValidationError(
+                {
+                    "base_monthly_salary": (
+                        "Use Adjust salary on the Payroll page so the change "
+                        "is dated and retained in salary history."
+                    )
+                }
             )
 
         account_values = [attrs.get(field) for field in ("username", "email", "password")]
@@ -264,6 +280,78 @@ class AccountingPeriodSerializer(serializers.ModelSerializer):
         model = AccountingPeriod
         fields = "__all__"
         read_only_fields = ("closed_at", "closed_by", "created_at", "updated_at")
+
+
+class EmployeeSalaryAdjustmentSerializer(serializers.ModelSerializer):
+    employee_name = serializers.SerializerMethodField()
+    effective_period_label = serializers.SerializerMethodField()
+    change_amount = serializers.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        read_only=True,
+    )
+    change_type = serializers.CharField(read_only=True)
+    created_by_name = serializers.CharField(
+        source="created_by.username",
+        read_only=True,
+        allow_null=True,
+    )
+
+    class Meta:
+        model = EmployeeSalaryAdjustment
+        fields = (
+            "id",
+            "employee",
+            "employee_name",
+            "effective_period",
+            "effective_period_label",
+            "previous_salary",
+            "new_salary",
+            "change_amount",
+            "change_type",
+            "reason",
+            "created_by",
+            "created_by_name",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = (
+            "id",
+            "previous_salary",
+            "created_by",
+            "created_at",
+            "updated_at",
+        )
+
+    def get_employee_name(self, obj):
+        name = f"{obj.employee.first_name} {obj.employee.last_name}".strip()
+        if name:
+            return name
+        if obj.employee.user_id:
+            return obj.employee.user.get_full_name() or obj.employee.user.username
+        return obj.employee.employee_number
+
+    def get_effective_period_label(self, obj):
+        period = obj.effective_period
+        return f"{period.period_start:%d %b %Y} to {period.period_end:%d %b %Y}"
+
+    def validate_reason(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError("Explain why the salary is changing.")
+        return value
+
+    def create(self, validated_data):
+        from .services.payroll import record_salary_adjustment
+
+        request = self.context.get("request")
+        try:
+            return record_salary_adjustment(
+                **validated_data,
+                created_by=request.user if request else None,
+            )
+        except ValueError as error:
+            raise serializers.ValidationError({"detail": str(error)}) from error
 
 
 class PayrollEntrySerializer(serializers.ModelSerializer):

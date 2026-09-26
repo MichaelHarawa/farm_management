@@ -36,6 +36,7 @@ from .models import (
     CustomerCostAttribution,
     EmployeeBatchWorkLog,
     EmployeeProfile,
+    EmployeeSalaryAdjustment,
     ExpenseRecognitionSchedule,
     Expenditure,
     ExpenditureCategory,
@@ -87,6 +88,7 @@ from .serializers import (
     CustomerSerializer,
     EmployeeBatchWorkLogSerializer,
     EmployeeProfileSerializer,
+    EmployeeSalaryAdjustmentSerializer,
     ExpenseRecognitionScheduleSerializer,
     PayrollEntrySerializer,
     PayrollPaymentSerializer,
@@ -210,6 +212,29 @@ class EmployeeProfileViewSet(
             employee.user.save(update_fields=["is_active", "updated_at"])
         employee.save(update_fields=["is_active", "updated_at"])
         return Response(self.get_serializer(employee).data)
+
+
+class EmployeeSalaryAdjustmentViewSet(
+    mixins.CreateModelMixin,
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    viewsets.GenericViewSet,
+):
+    serializer_class = EmployeeSalaryAdjustmentSerializer
+    permission_classes = (FinancePermission,)
+    queryset = EmployeeSalaryAdjustment.objects.select_related(
+        "employee",
+        "employee__user",
+        "effective_period",
+        "created_by",
+    )
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        employee_id = self.request.query_params.get("employee")
+        if employee_id:
+            queryset = queryset.filter(employee_id=employee_id)
+        return queryset
 
 
 class AccountingPeriodViewSet(viewsets.ModelViewSet):

@@ -364,6 +364,63 @@ class EmployeeProfile(DollarReferenceMixin, TimestampedModel):
         super().save(*args, **kwargs)
 
 
+class EmployeeSalaryAdjustment(TimestampedModel):
+    """An auditable salary rate change that starts with a payroll period."""
+
+    employee = models.ForeignKey(
+        EmployeeProfile,
+        on_delete=models.PROTECT,
+        related_name="salary_adjustments",
+    )
+    effective_period = models.ForeignKey(
+        AccountingPeriod,
+        on_delete=models.PROTECT,
+        related_name="salary_adjustments",
+    )
+    previous_salary = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal("0.01"))],
+    )
+    new_salary = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal("0.01"))],
+    )
+    reason = models.CharField(max_length=500)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_salary_adjustments",
+    )
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["employee", "effective_period"],
+                name="unique_salary_adjustment_per_employee_period",
+            )
+        ]
+        indexes = [models.Index(fields=["employee", "effective_period"])]
+
+    def __str__(self) -> str:
+        return (
+            f"{self.employee.employee_number}: "
+            f"{self.previous_salary} to {self.new_salary}"
+        )
+
+    @property
+    def change_amount(self) -> Decimal:
+        return abs(self.new_salary - self.previous_salary).quantize(Decimal("0.01"))
+
+    @property
+    def change_type(self) -> str:
+        return "increase" if self.new_salary > self.previous_salary else "reduction"
+
+
 class PayrollEntry(DollarReferenceMixin, TimestampedModel):
     accounting_period = models.ForeignKey(
         AccountingPeriod,

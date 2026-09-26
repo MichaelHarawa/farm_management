@@ -18,6 +18,7 @@ from .models import (
     CustomerCostAttribution,
     EmployeeBatchWorkLog,
     EmployeeProfile,
+    EmployeeSalaryAdjustment,
     ExpenseRecognitionSchedule,
     PayrollEntry,
     ReplacementReserveTransaction,
@@ -64,6 +65,34 @@ class EmployeeProfileAdmin(admin.ModelAdmin):
     list_filter = ("employment_type", "is_active", "department")
     search_fields = ("employee_number", "user__username", "user__email", "job_title")
     autocomplete_fields = ("user", "created_by")
+
+
+@admin.register(EmployeeSalaryAdjustment)
+class EmployeeSalaryAdjustmentAdmin(admin.ModelAdmin):
+    list_display = (
+        "employee",
+        "effective_period",
+        "previous_salary",
+        "new_salary",
+        "created_by",
+    )
+    list_filter = ("effective_period",)
+    search_fields = (
+        "employee__employee_number",
+        "employee__user__username",
+        "reason",
+    )
+    autocomplete_fields = ("employee", "effective_period", "created_by")
+    readonly_fields = (
+        "employee",
+        "effective_period",
+        "previous_salary",
+        "new_salary",
+        "reason",
+        "created_by",
+        "created_at",
+        "updated_at",
+    )
 
 
 @admin.register(AccountingPeriod)

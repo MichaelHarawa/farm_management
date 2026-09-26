@@ -19,6 +19,7 @@ import type {
   CustomerCostSource,
   CustomerUnlinkedSale,
   EmployeeProfile,
+  EmployeeSalaryAdjustment,
   FinanceDashboard,
   MonthlyReport,
   OwnerContributionReport,
@@ -59,6 +60,19 @@ export async function getAccountingPeriods(returnTo: string): Promise<Accounting
   const data = await authenticatedBackendFetch<
     AccountingPeriod[] | PaginatedResponse<AccountingPeriod>
   >(financeApiPaths.accountingPeriods, {
+    returnTo,
+    cache: "no-store",
+  });
+
+  return normalizeList(data);
+}
+
+export async function getSalaryAdjustments(
+  returnTo: string,
+): Promise<EmployeeSalaryAdjustment[]> {
+  const data = await authenticatedBackendFetch<
+    EmployeeSalaryAdjustment[] | PaginatedResponse<EmployeeSalaryAdjustment>
+  >(financeApiPaths.salaryAdjustments, {
     returnTo,
     cache: "no-store",
   });

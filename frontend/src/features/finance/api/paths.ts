@@ -6,6 +6,7 @@ export const financeApiPaths = {
   employee: (id: number) => `${FINANCE_ROOT}/employees/${id}`,
   employeeActivate: (id: number) => `${FINANCE_ROOT}/employees/${id}/activate`,
   employeeDeactivate: (id: number) => `${FINANCE_ROOT}/employees/${id}/deactivate`,
+  salaryAdjustments: `${FINANCE_ROOT}/salary-adjustments`,
   accountingPeriods: `${FINANCE_ROOT}/accounting-periods`,
   accountingPeriod: (id: number) => `${FINANCE_ROOT}/accounting-periods/${id}`,
   generatePayroll: (id: number) =>

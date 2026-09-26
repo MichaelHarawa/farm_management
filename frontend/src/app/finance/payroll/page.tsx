@@ -1,9 +1,12 @@
 import {
   getAccountingPeriods,
+  getEmployees,
   getPayrollEntries,
+  getSalaryAdjustments,
 } from "@/features/finance/api/finance";
 import { getPoultryBatches } from "@/features/poultry/api/batches";
 import { PayrollLedgerManager } from "@/features/finance/components/PayrollLedgerManager";
+import { SalaryAdjustmentManager } from "@/features/finance/components/SalaryAdjustmentManager";
 import {
   AccountingPeriodCreateDialog,
   PeriodActionButtons,
@@ -19,10 +22,12 @@ import {
 } from "@/features/finance/utils/formatters";
 
 export default async function FinancePayrollPage() {
-  const [periods, entries, batches] = await Promise.all([
+  const [periods, entries, batches, employees, salaryAdjustments] = await Promise.all([
     getAccountingPeriods("/finance/payroll"),
     getPayrollEntries("/finance/payroll"),
     getPoultryBatches("/finance/payroll"),
+    getEmployees("/finance/payroll"),
+    getSalaryAdjustments("/finance/payroll"),
   ]);
   return (
     <FinancePageShell
@@ -33,6 +38,14 @@ export default async function FinancePayrollPage() {
     >
       <Panel title="Payroll Actions">
         <AccountingPeriodCreateDialog />
+      </Panel>
+
+      <Panel title="Employee Salary Management">
+        <SalaryAdjustmentManager
+          employees={employees}
+          periods={periods}
+          adjustments={salaryAdjustments}
+        />
       </Panel>
 
       {periods.length ? (

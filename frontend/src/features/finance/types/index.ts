@@ -54,6 +54,23 @@ export type AccountingPeriod = {
   notes: string;
 };
 
+export type EmployeeSalaryAdjustment = {
+  id: number;
+  employee: number;
+  employee_name: string;
+  effective_period: number;
+  effective_period_label: string;
+  previous_salary: DecimalString;
+  new_salary: DecimalString;
+  change_amount: DecimalString;
+  change_type: "increase" | "reduction";
+  reason: string;
+  created_by: number | null;
+  created_by_name: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type PayrollEntry = {
   id: number;
   accounting_period: number;

@@ -22,6 +22,7 @@ from .views import (
     DashboardView,
     EmployeeBatchWorkLogViewSet,
     EmployeeProfileViewSet,
+    EmployeeSalaryAdjustmentViewSet,
     ExpenseRecognitionScheduleViewSet,
     ExpenditureViewSet,
     ExpenditureCategoryViewSet,
@@ -53,6 +54,11 @@ from .views import (
 
 router = DefaultRouter(trailing_slash=False)
 router.register("employees", EmployeeProfileViewSet, basename="finance-employee")
+router.register(
+    "salary-adjustments",
+    EmployeeSalaryAdjustmentViewSet,
+    basename="finance-salary-adjustment",
+)
 router.register(
     "accounting-periods",
     AccountingPeriodViewSet,
