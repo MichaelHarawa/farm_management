@@ -66,6 +66,7 @@ export default async function FinanceDashboardPage({ searchParams }: { searchPar
 
         <Panel title="Performance by batch">
           <MobileRecordList
+            desktopBreakpoint="xl"
             pageSize={10}
             emptyMessage="No batch performance records are available."
             records={analysis.portfolio.results.map((row) => ({
@@ -83,7 +84,7 @@ export default async function FinanceDashboardPage({ searchParams }: { searchPar
               ],
             }))}
           />
-          <div className="hidden overflow-x-auto md:block">
+          <div className="hidden overflow-x-auto xl:block">
             <table className="w-full min-w-[1120px] text-left text-sm">
               <thead><tr className="border-b"><th className="p-3">Batch</th><th className="p-3 text-right">Mortality</th><th className="p-3 text-right">Production cost</th><th className="p-3 text-right">Cost to sell</th><th className="p-3 text-right">Gross profit</th><th className="p-3 text-right">Net profit</th><th className="p-3 text-right">Break-even / bird</th><th className="p-3 text-right">Remaining-bird price needed</th></tr></thead>
               <PaginatedTableBody columnCount={8} itemLabel="batch results">{analysis.portfolio.results.map((row) => <tr key={row.batch} className="border-b">

@@ -386,8 +386,8 @@ export default function ExpenditureDetailPage() {
       {error ? <p role="alert" className="mt-4 rounded-lg bg-red-50 p-4 text-red-800">{error}</p> : null}
 
       {showSourceForm ? (
-        <div role="dialog" aria-modal="true" aria-labelledby="historical-source-title" className="fixed inset-0 z-50 grid place-items-center bg-[#151f36]/45 p-4">
-          <form onSubmit={addNonSalesSource} className="w-full max-w-xl rounded-2xl bg-white p-6 shadow-2xl">
+        <div role="dialog" aria-modal="true" aria-labelledby="historical-source-title" className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-[#151f36]/45 p-2 sm:p-4">
+          <form onSubmit={addNonSalesSource} className="max-h-[calc(100dvh-1rem)] w-full max-w-xl overflow-y-auto rounded-2xl bg-white p-4 shadow-2xl sm:p-6">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="finance-eyebrow">Non-sales funding</p>
@@ -418,7 +418,7 @@ export default function ExpenditureDetailPage() {
                 <input value={newSource.reference} onChange={(event) => setNewSource((current) => ({ ...current, reference: event.target.value }))} className="form-input mt-2 w-full" placeholder="Optional receipt, loan, or contribution reference" />
               </label>
             </div>
-            <div className="mt-6 flex justify-end gap-3">
+            <div className="mt-6 grid grid-cols-2 gap-3 sm:flex sm:justify-end">
               <button type="button" onClick={() => setShowSourceForm(false)} className="rounded-lg border px-5 py-3 font-bold">Cancel</button>
               <button disabled={busy} className="finance-button disabled:opacity-40">Add source</button>
             </div>

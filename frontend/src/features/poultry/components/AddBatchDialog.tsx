@@ -223,7 +223,7 @@ export function BookChicksDialog({ buttonClassName }: AddBatchDialogProps) {
 
       {isOpen ? (
         <div
-          className="fixed inset-0 z-50 grid place-items-center bg-[rgba(23,36,67,0.72)] px-4 py-6"
+          className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-[rgba(23,36,67,0.72)] p-2 sm:px-4 sm:py-6"
           role="presentation"
           onMouseDown={closeDialog}
         >
@@ -231,17 +231,17 @@ export function BookChicksDialog({ buttonClassName }: AddBatchDialogProps) {
             role="dialog"
             aria-modal="true"
             aria-labelledby="book-chicks-title"
-            className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-lg border border-[var(--line)] bg-[var(--surface-cream)] shadow-[var(--shadow-card)]"
+            className="max-h-[calc(100dvh-1rem)] w-full max-w-3xl overflow-y-auto rounded-xl border border-[var(--line)] bg-[var(--surface-cream)] shadow-[var(--shadow-card)]"
             onMouseDown={(event) => event.stopPropagation()}
           >
-            <div className="flex items-start justify-between gap-4 border-b border-[var(--line)] px-6 py-5">
-              <div>
+            <div className="flex items-start justify-between gap-3 border-b border-[var(--line)] px-4 py-4 sm:gap-4 sm:px-6 sm:py-5">
+              <div className="min-w-0">
                 <p className="text-label text-[var(--navy-muted)]">
                   Batch Planning
                 </p>
                 <h2
                   id="book-chicks-title"
-                  className="font-display mt-2 text-4xl leading-none text-[var(--navy)]"
+                  className="font-display mt-2 break-words text-2xl leading-none text-[var(--navy)] sm:text-4xl"
                 >
                   Book chicks.
                 </h2>
@@ -252,7 +252,7 @@ export function BookChicksDialog({ buttonClassName }: AddBatchDialogProps) {
                 onClick={closeDialog}
                 disabled={isSubmitting}
                 aria-label="Close booking dialog"
-                className="grid h-10 w-10 place-items-center rounded-full border border-[var(--line)] text-[var(--navy)] transition hover:bg-[var(--gold-soft)] disabled:cursor-not-allowed disabled:opacity-60"
+                className="grid h-11 w-11 shrink-0 place-items-center rounded-full border border-[var(--line)] text-[var(--navy)] transition hover:bg-[var(--gold-soft)] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <X className="h-5 w-5" aria-hidden="true" />
               </button>
@@ -261,7 +261,7 @@ export function BookChicksDialog({ buttonClassName }: AddBatchDialogProps) {
             <form
               onSubmit={handleSubmit(onSubmit)}
               noValidate
-              className="grid gap-6 px-6 py-6"
+              className="grid gap-6 px-4 py-5 sm:px-6 sm:py-6"
             >
               <div className="grid gap-5 md:grid-cols-2">
                 <FormField label="Bird type" error={errors.bird_type?.message}>
@@ -481,7 +481,7 @@ export function AddBatchDialog({ buttonClassName }: AddBatchDialogProps) {
 
       {isOpen ? (
         <div
-          className="fixed inset-0 z-50 grid place-items-center bg-[rgba(23,36,67,0.72)] px-4 py-6"
+          className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-[rgba(23,36,67,0.72)] p-2 sm:px-4 sm:py-6"
           role="presentation"
           onMouseDown={closeDialog}
         >
@@ -489,17 +489,17 @@ export function AddBatchDialog({ buttonClassName }: AddBatchDialogProps) {
             role="dialog"
             aria-modal="true"
             aria-labelledby="add-batch-title"
-            className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-lg border border-[var(--line)] bg-[var(--surface-cream)] shadow-[var(--shadow-card)]"
+            className="max-h-[calc(100dvh-1rem)] w-full max-w-3xl overflow-y-auto rounded-xl border border-[var(--line)] bg-[var(--surface-cream)] shadow-[var(--shadow-card)]"
             onMouseDown={(event) => event.stopPropagation()}
           >
-            <div className="flex items-start justify-between gap-4 border-b border-[var(--line)] px-6 py-5">
-              <div>
+            <div className="flex items-start justify-between gap-3 border-b border-[var(--line)] px-4 py-4 sm:gap-4 sm:px-6 sm:py-5">
+              <div className="min-w-0">
                 <p className="text-label text-[var(--navy-muted)]">
                   New Production Cycle
                 </p>
                 <h2
                   id="add-batch-title"
-                  className="font-display mt-2 text-4xl leading-none text-[var(--navy)]"
+                  className="font-display mt-2 break-words text-2xl leading-none text-[var(--navy)] sm:text-4xl"
                 >
                   Add poultry batch.
                 </h2>
@@ -510,7 +510,7 @@ export function AddBatchDialog({ buttonClassName }: AddBatchDialogProps) {
                 onClick={closeDialog}
                 disabled={isSubmitting}
                 aria-label="Close add batch dialog"
-                className="grid h-10 w-10 place-items-center rounded-full border border-[var(--line)] text-[var(--navy)] transition hover:bg-[var(--gold-soft)] disabled:cursor-not-allowed disabled:opacity-60"
+                className="grid h-11 w-11 shrink-0 place-items-center rounded-full border border-[var(--line)] text-[var(--navy)] transition hover:bg-[var(--gold-soft)] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <X className="h-5 w-5" aria-hidden="true" />
               </button>
@@ -519,7 +519,7 @@ export function AddBatchDialog({ buttonClassName }: AddBatchDialogProps) {
             <form
               onSubmit={handleSubmit(onSubmit)}
               noValidate
-              className="grid gap-6 px-6 py-6"
+              className="grid gap-6 px-4 py-5 sm:px-6 sm:py-6"
             >
               <div className="grid gap-5 md:grid-cols-2">
                 <FormField label="Bird type" error={errors.bird_type?.message}>

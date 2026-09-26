@@ -56,7 +56,7 @@ export default async function FinanceMonthlyPage({ searchParams }: PageProps) {
               ))}
             </select>
           </label>
-          <button className="finance-button" type="submit">Review period</button>
+          <button className="finance-button w-full sm:w-auto" type="submit">Review period</button>
         </form>
         {report ? (
           <p className="mt-3 text-sm text-[var(--navy-muted)]">
@@ -325,9 +325,9 @@ function ReportRows({ rows }: { rows: Array<[string, string]> }) {
   return (
     <dl className="grid gap-3">
       {rows.map(([label, value]) => (
-        <div key={label} className="flex items-center justify-between gap-4 border-b border-[var(--line)] py-2">
-          <dt className="text-sm text-[var(--navy-muted)]">{label}</dt>
-          <dd className="text-sm font-extrabold text-[var(--navy)]">{value}</dd>
+        <div key={label} className="grid min-w-0 gap-1 border-b border-[var(--line)] py-2 min-[420px]:grid-cols-[minmax(0,1fr)_auto] min-[420px]:items-center min-[420px]:gap-4">
+          <dt className="min-w-0 break-words text-sm text-[var(--navy-muted)]">{label}</dt>
+          <dd className="min-w-0 break-words text-sm font-extrabold text-[var(--navy)] min-[420px]:text-right">{value}</dd>
         </div>
       ))}
     </dl>

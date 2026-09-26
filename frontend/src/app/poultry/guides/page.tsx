@@ -4,16 +4,16 @@ import { BackLink } from "@/components/ui";
 export default function PoultryGuidesPage() {
   return (
     <main className="min-h-screen bg-[#f6f3eb] text-[#151926]">
-      <div className="mx-auto max-w-5xl px-5 py-10 sm:px-8">
+      <div className="mx-auto max-w-5xl px-4 py-6 sm:px-8 sm:py-10">
         <BackLink href="/poultry">Poultry register</BackLink>
 
-        <h1 className="mt-6 text-5xl font-extrabold tracking-[-0.02em]">System Guide</h1>
-        <p className="mt-3 max-w-2xl text-lg text-[#747b8d]">
+        <h1 className="mt-6 text-4xl font-extrabold tracking-[-0.02em] sm:text-5xl">System Guide</h1>
+        <p className="mt-3 max-w-2xl text-base leading-7 text-[#747b8d] sm:text-lg">
           Zero-knowledge walkthrough for Poultry + Finance modules. Click sections to expand.
         </p>
 
         {/* Table of Contents */}
-        <div className="mt-8 rounded-xl border border-[#ddd7c9] bg-white p-6">
+        <div className="mt-8 rounded-xl border border-[#ddd7c9] bg-white p-4 sm:p-6">
           <div className="text-sm font-bold uppercase tracking-widest text-[#e1aa3f] mb-3">Table of Contents</div>
           <ul className="grid gap-x-8 gap-y-1 text-sm md:grid-cols-2">
             <li><a href="#getting-started" className="hover:underline">Getting Started</a></li>

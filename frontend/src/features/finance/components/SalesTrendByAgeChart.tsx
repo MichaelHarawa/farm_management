@@ -54,6 +54,7 @@ function aggregatePoints(rows: SalesTrendPoint[]) {
 
 export function SalesTrendByAgeChart({ rows }: { rows: SalesTrendPoint[] }) {
   const [activePoint, setActivePoint] = useState<SalesTrendPoint | null>(null);
+  const [mobileBatchId, setMobileBatchId] = useState("");
   const points = useMemo(() => aggregatePoints(rows), [rows]);
 
   if (!points.length) {
@@ -74,6 +75,22 @@ export function SalesTrendByAgeChart({ rows }: { rows: SalesTrendPoint[] }) {
   const xTicks = dayTicks(minDay, maxDay);
   const yTicks = Array.from({ length: 5 }, (_, index) => (maxRevenue / 4) * index);
   const batches = Array.from(new Map(points.map((row) => [row.batch_id, row.batch_code])).entries());
+  const selectedMobileBatchId = mobileBatchId || String(batches[0][0]);
+  const mobilePoints = points
+    .filter((row) => String(row.batch_id) === selectedMobileBatchId)
+    .sort((a, b) => a.age_day - b.age_day);
+  const mobileWidth = 320;
+  const mobileHeight = 210;
+  const mobileLeft = 54;
+  const mobileRight = 12;
+  const mobileTop = 14;
+  const mobileBottom = 42;
+  const mobileMaxDay = Math.max(minDay, ...mobilePoints.map((row) => row.age_day));
+  const mobileMaxRevenue = niceMaximum(Math.max(...mobilePoints.map((row) => parseDecimal(row.revenue))));
+  const mobileX = (day: number) => mobileLeft + ((day - minDay) / Math.max(mobileMaxDay - minDay, 1)) * (mobileWidth - mobileLeft - mobileRight);
+  const mobileY = (revenue: number) => mobileTop + (1 - revenue / mobileMaxRevenue) * (mobileHeight - mobileTop - mobileBottom);
+  const mobileColor = chartColors[Math.max(0, batches.findIndex(([id]) => String(id) === selectedMobileBatchId)) % chartColors.length];
+  const activeMobilePoint = activePoint && String(activePoint.batch_id) === selectedMobileBatchId ? activePoint : null;
 
   const tooltip = activePoint ? {
     x: x(activePoint.age_day),
@@ -86,7 +103,71 @@ export function SalesTrendByAgeChart({ rows }: { rows: SalesTrendPoint[] }) {
 
   return (
     <div>
-      <div className="overflow-hidden rounded-xl bg-white/35 p-2 sm:p-3">
+      <div className="rounded-xl bg-white/35 p-2 sm:p-3 md:hidden">
+        <label className="block text-xs font-extrabold uppercase tracking-[0.12em] text-[var(--navy-muted)]">
+          Batch to display
+          <select
+            className="form-input mt-2 bg-white text-sm font-bold normal-case tracking-normal"
+            value={selectedMobileBatchId}
+            onChange={(event) => {
+              setMobileBatchId(event.target.value);
+              setActivePoint(null);
+            }}
+          >
+            {batches.map(([id, code]) => <option key={id} value={String(id)}>{code}</option>)}
+          </select>
+        </label>
+        <svg viewBox={`0 0 ${mobileWidth} ${mobileHeight}`} className="mt-3 h-auto w-full" role="img" aria-label="Selected batch sales revenue by flock age">
+          {[0, mobileMaxRevenue / 2, mobileMaxRevenue].map((tick) => (
+            <g key={tick}>
+              <line x1={mobileLeft} x2={mobileWidth - mobileRight} y1={mobileY(tick)} y2={mobileY(tick)} stroke="#d9d3c6" strokeDasharray={tick === 0 ? undefined : "4 5"} />
+              <text x={mobileLeft - 7} y={mobileY(tick) + 4} textAnchor="end" fontSize="10" fill="#6b7280">{compactCurrency(tick)}</text>
+            </g>
+          ))}
+          <text x={mobileX(minDay)} y={mobileHeight - 14} textAnchor="start" fontSize="10" fontWeight="700" fill="#5f6674">Day {minDay}</text>
+          <text x={mobileX(mobileMaxDay)} y={mobileHeight - 14} textAnchor="end" fontSize="10" fontWeight="700" fill="#5f6674">Day {mobileMaxDay}</text>
+          <polyline
+            fill="none"
+            stroke={mobileColor}
+            strokeWidth="3.5"
+            strokeLinejoin="round"
+            strokeLinecap="round"
+            points={mobilePoints.map((point) => `${mobileX(point.age_day)},${mobileY(parseDecimal(point.revenue))}`).join(" ")}
+          />
+          {mobilePoints.map((point) => {
+            const active = activeMobilePoint?.age_day === point.age_day;
+            return (
+              <circle
+                key={`${point.batch_id}-${point.age_day}`}
+                cx={mobileX(point.age_day)}
+                cy={mobileY(parseDecimal(point.revenue))}
+                r={active ? 7 : 6}
+                fill="white"
+                stroke={mobileColor}
+                strokeWidth={active ? 4 : 3}
+                role="button"
+                tabIndex={0}
+                aria-label={`Day ${point.age_day}, ${formatCurrency(point.revenue)}, ${formatNumber(point.quantity)} birds`}
+                className="cursor-pointer outline-none"
+                onClick={() => setActivePoint(active ? null : point)}
+                onFocus={() => setActivePoint(point)}
+                onBlur={() => setActivePoint(null)}
+              />
+            );
+          })}
+        </svg>
+        <div className="mt-2 min-h-16 rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-sm" aria-live="polite">
+          {activeMobilePoint ? (
+            <div className="grid grid-cols-2 gap-2">
+              <span className="text-[var(--navy-muted)]">Day {activeMobilePoint.age_day} · {formatDate(activeMobilePoint.date)}</span>
+              <strong className="text-right">{formatCurrency(activeMobilePoint.revenue)}</strong>
+              <span className="col-span-2 text-xs text-[var(--navy-muted)]">{formatNumber(activeMobilePoint.quantity)} bird{activeMobilePoint.quantity === 1 ? "" : "s"} sold</span>
+            </div>
+          ) : <p className="text-xs leading-5 text-[var(--navy-muted)]">Tap a point to view its exact sale value and quantity.</p>}
+        </div>
+      </div>
+
+      <div className="hidden overflow-hidden rounded-xl bg-white/35 p-3 md:block">
         <svg viewBox={`0 0 ${width} ${height}`} className="h-auto w-full" role="img" aria-label="Sales revenue by flock age from day 28 onward">
           {yTicks.map((tick) => (
             <g key={tick}>
@@ -156,7 +237,7 @@ export function SalesTrendByAgeChart({ rows }: { rows: SalesTrendPoint[] }) {
         </svg>
       </div>
 
-      <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2">
+      <div className="mt-3 hidden flex-wrap gap-x-5 gap-y-2 md:flex">
         {batches.map(([id, code], index) => (
           <span key={id} className="flex items-center gap-2 text-xs font-bold">
             <i className="h-2.5 w-6 rounded-full" style={{ backgroundColor: chartColors[index % chartColors.length] }} />
@@ -164,7 +245,7 @@ export function SalesTrendByAgeChart({ rows }: { rows: SalesTrendPoint[] }) {
           </span>
         ))}
       </div>
-      <p className="mt-3 text-xs text-[var(--navy-muted)]">Hover, tap, or focus a point for the exact sale value and quantity.</p>
+      <p className="mt-3 hidden text-xs text-[var(--navy-muted)] md:block">Hover, tap, or focus a point for the exact sale value and quantity.</p>
     </div>
   );
 }

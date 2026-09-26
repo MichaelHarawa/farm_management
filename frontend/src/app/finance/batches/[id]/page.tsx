@@ -161,7 +161,16 @@ export default async function FinanceBatchProfitabilityPage({ params }: PageProp
       </div>
 
       <Panel title="Complete Cost Breakdown">
-        <div className="overflow-x-auto">
+        <MobileRecordList
+          emptyMessage="No recognized costs are available for this batch."
+          records={report.management_cost_breakdown.map((line) => ({
+            key: line.key,
+            title: line.label,
+            badge: <span className="inline-flex rounded-full bg-[var(--surface-cream-soft)] px-2.5 py-1 text-xs font-extrabold">{formatCurrency(line.amount)}</span>,
+            fields: [{ label: "Allocation basis", value: line.basis }],
+          }))}
+        />
+        <div className="hidden overflow-x-auto md:block">
           <table className="min-w-full text-left text-sm">
             <thead>
               <tr className="border-b border-[var(--line)] text-xs uppercase tracking-[0.12em] text-[var(--navy-muted)]">
@@ -243,9 +252,9 @@ function Rows({ rows }: { rows: Array<[string, string]> }) {
   return (
     <dl className="grid gap-3">
       {rows.map(([label, value]) => (
-        <div key={label} className="flex items-center justify-between gap-4 border-b border-[var(--line)] py-2">
-          <dt className="text-sm text-[var(--navy-muted)]">{label}</dt>
-          <dd className="text-sm font-extrabold text-[var(--navy)]">{value}</dd>
+        <div key={label} className="grid min-w-0 gap-1 border-b border-[var(--line)] py-2 min-[420px]:grid-cols-[minmax(0,1fr)_auto] min-[420px]:items-center min-[420px]:gap-4">
+          <dt className="min-w-0 break-words text-sm text-[var(--navy-muted)]">{label}</dt>
+          <dd className="min-w-0 break-words text-sm font-extrabold text-[var(--navy)] min-[420px]:text-right">{value}</dd>
         </div>
       ))}
     </dl>

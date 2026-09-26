@@ -730,7 +730,7 @@ export function BatchDetailView({
   const pageHeader = getPageHeader(activeTab, batch);
 
   return (
-    <main className="min-h-screen bg-[#f6f3eb] text-[#151926] lg:grid lg:grid-cols-[260px_1fr]">
+    <main className="min-h-screen bg-[#f6f3eb] text-[#151926] xl:grid xl:grid-cols-[260px_1fr]">
       <DetailSidebar
         activeTab={activeTab}
         batch={batch}
@@ -1065,7 +1065,7 @@ type DetailSidebarProps = {
 
 function DetailSidebar({ activeTab, batch, onTabChange }: DetailSidebarProps) {
   return (
-    <aside className="hidden bg-[#151f36] px-6 py-8 text-white lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col">
+    <aside className="hidden bg-[#151f36] px-6 py-8 text-white xl:sticky xl:top-0 xl:flex xl:h-screen xl:flex-col">
       <Link href="/" className="flex items-center gap-3">
         <span className="grid h-10 w-10 place-items-center rounded-full bg-[#e1aa3f] text-base font-bold text-[#151f36]">
           F
@@ -1168,7 +1168,7 @@ function PageHeader({
         </select>
       </label>
 
-      <nav className="mt-6 hidden flex-wrap gap-3 sm:flex" aria-label="Batch sections">
+      <nav className="mt-6 hidden flex-wrap gap-3 sm:flex xl:hidden" aria-label="Batch sections">
         {tabs.map((tab) => {
           const isActive = activeTab === tab.id;
 
@@ -1223,11 +1223,11 @@ function OverviewTab({
 
       <Card className="overflow-hidden">
         <div className="grid gap-0 lg:grid-cols-[1fr_0.42fr]">
-          <div className="p-6 lg:p-8">
+          <div className="p-4 sm:p-6 lg:p-8">
             <SectionLabel>Batch Information</SectionLabel>
             <div className="mt-5 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
               <div>
-                <h2 className="text-4xl font-extrabold tracking-[-0.02em]">
+                <h2 className="text-3xl font-extrabold tracking-[-0.02em] sm:text-4xl">
                   Production cycle
                 </h2>
                 <p className="mt-3 max-w-2xl text-base leading-7 text-[#747b8d]">
@@ -1246,7 +1246,7 @@ function OverviewTab({
               </div>
             </div>
 
-            <div className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <div className="mt-8 grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
               <ExecutiveMetric
                 label="Live Birds"
                 value={formatNumber(metrics.currentBirds)}
@@ -1504,7 +1504,7 @@ function FlockTab({
 
   return (
     <div className="mt-8 grid gap-8">
-      <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-6 md:grid-cols-2 2xl:grid-cols-4">
         <KpiCard
           label="Initial Birds"
           value={formatNumber(metrics.birdsPlaced)}
@@ -1634,7 +1634,7 @@ function CostsTab({
 
   return (
     <div className="mt-8 grid gap-8">
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid gap-6 md:grid-cols-2 2xl:grid-cols-3">
         <KpiCard
           label="Total Input Costs"
           value={formatCurrency(metrics.recordedInputCosts)}
@@ -1806,7 +1806,7 @@ function SalesTab({ batch, sales, metrics, followUpSale }: SalesTabProps) {
   );
   return (
     <div className="mt-8 grid gap-8">
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-6 md:grid-cols-2 2xl:grid-cols-4">
         <KpiCard
           label="Total Sales Value"
           value={formatCurrency(metrics.totalSales)}
@@ -1913,7 +1913,7 @@ function MortalityTab({
 
   return (
     <div className="mt-8 grid gap-8">
-      <div className="grid gap-6 lg:grid-cols-4">
+      <div className="grid gap-6 md:grid-cols-2 2xl:grid-cols-4">
         <KpiCard
           label="Total Mortality"
           value={formatNumber(metrics.mortality)}
@@ -2076,7 +2076,7 @@ function FeedUsageTab({
 }: FeedUsageTabProps) {
   return (
     <div className="mt-8 grid gap-8">
-      <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-5">
+      <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
         <KpiCard
           label="Total Feed Issued"
           value={`${formatNumber(metrics.totalFeedKg)} kg`}
@@ -2319,13 +2319,12 @@ function ExecutiveMetric({
   const color = colorByTone[tone];
 
   return (
-    <div className="rounded-xl border border-[#ddd7c9] bg-white px-5 py-4">
+    <div className="min-w-0 rounded-xl border border-[#ddd7c9] bg-white px-4 py-4 sm:px-5">
       <p className="text-xs font-extrabold uppercase tracking-[0.15em] text-[#747b8d]">
         {label}
       </p>
-      <p className="mt-3 flex items-baseline gap-0.5 text-3xl font-extrabold tracking-[-0.02em] text-[#151926]">
-        {value.startsWith("-") && <span className="select-none">-</span>}
-        <span className="whitespace-nowrap">{value.replace(/^-/, "")}</span>
+      <p className="mt-3 max-w-full break-words text-[clamp(1.45rem,3vw,1.875rem)] font-extrabold leading-tight tracking-[-0.02em] text-[#151926] [overflow-wrap:anywhere]">
+        {value}
       </p>
       <p className="mt-2 text-sm leading-6 text-[#747b8d]">{detail}</p>
       {typeof progress === "number" ? (
@@ -2366,10 +2365,10 @@ function KpiCard({
   tone = "default",
 }: KpiCardProps) {
   return (
-    <Card className="p-6">
+    <Card className="min-w-0 p-4 sm:p-5 lg:p-6">
       <p className="text-sm font-extrabold uppercase text-[#747b8d]">{label}</p>
       <p
-        className={`mt-3 text-4xl font-extrabold tracking-[-0.02em] ${
+        className={`mt-3 max-w-full break-words text-[clamp(1.55rem,3.2vw,2.25rem)] font-extrabold leading-tight tracking-[-0.02em] [overflow-wrap:anywhere] ${
           tone === "danger" ? "text-[#b24a43]" : "text-[#151926]"
         }`}
       >
@@ -2677,7 +2676,7 @@ function RecordDetailModal({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[9999] overflow-y-auto bg-[#e9ecf3]/80 px-4 py-8 backdrop-blur-[7px]"
+      className="fixed inset-0 z-[9999] overflow-y-auto bg-[#e9ecf3]/80 px-2 py-2 backdrop-blur-[7px] sm:px-4 sm:py-8"
       role="presentation"
       onMouseDown={onClose}
     >
@@ -2685,13 +2684,13 @@ function RecordDetailModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="record-detail-title"
-        className="relative mx-auto mt-12 w-full max-w-4xl overflow-hidden rounded-[1.75rem] border border-white/90 bg-white shadow-[0_30px_90px_rgba(21,31,54,0.24)]"
+        className="relative mx-auto max-h-[calc(100dvh-1rem)] w-full max-w-4xl overflow-y-auto rounded-2xl border border-white/90 bg-white shadow-[0_30px_90px_rgba(21,31,54,0.24)] sm:mt-12 sm:max-h-none sm:overflow-hidden sm:rounded-[1.75rem]"
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="pointer-events-none absolute -left-24 -top-24 h-72 w-72 rounded-full bg-[var(--gold-soft)]/70 blur-3xl" />
         <div className="pointer-events-none absolute -bottom-24 -right-24 h-72 w-72 rounded-full bg-[#f3f5fa] blur-3xl" />
 
-        <div className="relative px-8 py-8 sm:px-12 sm:py-10">
+        <div className="relative px-4 py-5 sm:px-12 sm:py-10">
           <div className="flex items-start justify-between gap-6">
             <div>
               <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-[var(--navy-muted)]">
@@ -2699,7 +2698,7 @@ function RecordDetailModal({
               </p>
               <h2
                 id="record-detail-title"
-                className="mt-4 max-w-2xl text-3xl font-extrabold leading-tight text-[var(--navy)] sm:text-4xl"
+                className="mt-3 max-w-2xl break-words text-2xl font-extrabold leading-tight text-[var(--navy)] sm:mt-4 sm:text-4xl"
               >
                 {detail.title}
               </h2>
@@ -2721,7 +2720,7 @@ function RecordDetailModal({
             </button>
           </div>
 
-          <div className="mt-9 border-t border-[var(--line)] pt-8">
+          <div className="mt-5 border-t border-[var(--line)] pt-5 sm:mt-9 sm:pt-8">
             <div className="grid gap-x-16 gap-y-8 md:grid-cols-2">
               {detail.fields.map((field) => (
                 <RecordDetailField
@@ -2733,7 +2732,7 @@ function RecordDetailModal({
             </div>
           </div>
 
-          <div className="mt-10 flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="mt-6 flex flex-col gap-3 sm:mt-10 sm:flex-row sm:items-center">
             <button
               type="button"
               onClick={onClose}
@@ -2966,7 +2965,7 @@ function DetailModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="batch-detail-modal-title"
-        className="relative mx-auto w-full max-w-5xl overflow-hidden rounded-2xl border border-white/90 bg-white shadow-[0_30px_90px_rgba(21,31,54,0.24)] sm:mt-12 sm:rounded-[1.75rem]"
+        className="relative mx-auto max-h-[calc(100dvh-1.5rem)] w-full max-w-5xl overflow-y-auto rounded-2xl border border-white/90 bg-white shadow-[0_30px_90px_rgba(21,31,54,0.24)] sm:mt-12 sm:max-h-none sm:overflow-hidden sm:rounded-[1.75rem]"
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="pointer-events-none absolute -left-24 -top-24 h-72 w-72 rounded-full bg-[var(--gold-soft)]/70 blur-3xl" />

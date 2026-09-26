@@ -499,7 +499,7 @@ function MarkDeliveredDialog({ batch }: MarkDeliveredDialogProps) {
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby="mark-delivered-title"
-                className="w-full max-w-md rounded-lg border border-[var(--line)] bg-[var(--surface-cream)] shadow-[var(--shadow-card)]"
+                className="max-h-[calc(100dvh-1rem)] w-full max-w-md overflow-y-auto rounded-lg border border-[var(--line)] bg-[var(--surface-cream)] shadow-[var(--shadow-card)]"
                 onMouseDown={(event) => event.stopPropagation()}
               >
                 <DialogHeader
@@ -510,7 +510,7 @@ function MarkDeliveredDialog({ batch }: MarkDeliveredDialogProps) {
                   disabled={isSubmitting}
                 />
 
-                <form onSubmit={onSubmit} className="grid gap-5 px-6 py-6">
+                <form onSubmit={onSubmit} className="grid gap-5 px-4 py-5 sm:px-6 sm:py-6">
                   <FormField label="Status">
                     <select
                       value={selectedStatus}
@@ -626,7 +626,7 @@ function ConfirmDeliveryDialog({ batch }: ConfirmDeliveryDialogProps) {
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby="confirm-delivery-title"
-                className="w-full max-w-2xl rounded-lg border border-[var(--line)] bg-[var(--surface-cream)] shadow-[var(--shadow-card)]"
+                className="max-h-[calc(100dvh-1rem)] w-full max-w-2xl overflow-y-auto rounded-lg border border-[var(--line)] bg-[var(--surface-cream)] shadow-[var(--shadow-card)]"
                 onMouseDown={(event) => event.stopPropagation()}
               >
                 <DialogHeader
@@ -640,7 +640,7 @@ function ConfirmDeliveryDialog({ batch }: ConfirmDeliveryDialogProps) {
                 <form
                   onSubmit={handleSubmit(onSubmit)}
                   noValidate
-                  className="grid gap-6 px-6 py-6"
+                  className="grid gap-6 px-4 py-5 sm:px-6 sm:py-6"
                 >
                   <div className="grid gap-5 sm:grid-cols-2">
                     <FormField
@@ -730,7 +730,7 @@ function BatchRecordModal({ batch, onClose }: BatchRecordModalProps) {
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[100] overflow-y-auto bg-[#e9ecf3]/80 px-4 py-8 backdrop-blur-[7px]"
+      className="fixed inset-0 z-[100] overflow-y-auto bg-[#e9ecf3]/80 px-2 py-2 backdrop-blur-[7px] sm:px-4 sm:py-8"
       role="presentation"
       onMouseDown={onClose}
     >
@@ -738,10 +738,10 @@ function BatchRecordModal({ batch, onClose }: BatchRecordModalProps) {
         role="dialog"
         aria-modal="true"
         aria-labelledby="batch-row-detail-title"
-        className="relative mx-auto mt-12 w-full max-w-4xl overflow-hidden rounded-[1.75rem] border border-white/90 bg-white shadow-[0_30px_90px_rgba(21,31,54,0.24)]"
+        className="relative mx-auto max-h-[calc(100dvh-1rem)] w-full max-w-4xl overflow-y-auto rounded-2xl border border-white/90 bg-white shadow-[0_30px_90px_rgba(21,31,54,0.24)] sm:mt-12 sm:max-h-none sm:overflow-hidden sm:rounded-[1.75rem]"
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <div className="relative px-8 py-8 sm:px-12 sm:py-10">
+        <div className="relative px-4 py-5 sm:px-12 sm:py-10">
           <div className="flex items-start justify-between gap-6">
             <div>
               <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-[var(--navy-muted)]">
@@ -749,7 +749,7 @@ function BatchRecordModal({ batch, onClose }: BatchRecordModalProps) {
               </p>
               <h2
                 id="batch-row-detail-title"
-                className="mt-4 max-w-2xl text-3xl font-extrabold leading-tight text-[var(--navy)] sm:text-4xl"
+                className="mt-3 max-w-2xl break-words text-2xl font-extrabold leading-tight text-[var(--navy)] sm:mt-4 sm:text-4xl"
               >
                 {batch.batch_id}
               </h2>
@@ -769,7 +769,7 @@ function BatchRecordModal({ batch, onClose }: BatchRecordModalProps) {
             </button>
           </div>
 
-          <div className="mt-9 border-t border-[var(--line)] pt-8">
+          <div className="mt-5 border-t border-[var(--line)] pt-5 sm:mt-9 sm:pt-8">
             <div className="grid gap-x-16 gap-y-8 md:grid-cols-2">
               <BatchDetailField
                 label="Bird Type"
@@ -796,7 +796,7 @@ function BatchRecordModal({ batch, onClose }: BatchRecordModalProps) {
             </div>
           </div>
 
-          <div className="mt-10 flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="mt-6 flex flex-col gap-3 sm:mt-10 sm:flex-row sm:items-center">
             {isBooked ? (
               <MarkDeliveredDialog batch={batch} />
             ) : isDelivered ? (
@@ -833,7 +833,7 @@ type DialogBackdropProps = {
 function DialogBackdrop({ children, onClose }: DialogBackdropProps) {
   return (
     <div
-      className="fixed inset-0 z-[110] grid place-items-center bg-[rgba(23,36,67,0.72)] px-4 py-6"
+      className="fixed inset-0 z-[110] grid place-items-center overflow-y-auto bg-[rgba(23,36,67,0.72)] p-2 sm:px-4 sm:py-6"
       role="presentation"
       onMouseDown={onClose}
     >
@@ -858,12 +858,12 @@ function DialogHeader({
   disabled = false,
 }: DialogHeaderProps) {
   return (
-    <div className="flex items-start justify-between gap-4 border-b border-[var(--line)] px-6 py-5">
-      <div>
+    <div className="flex items-start justify-between gap-3 border-b border-[var(--line)] px-4 py-4 sm:gap-4 sm:px-6 sm:py-5">
+      <div className="min-w-0">
         <p className="text-label text-[var(--navy-muted)]">{eyebrow}</p>
         <h2
           id={labelId}
-          className="font-display mt-2 text-4xl leading-none text-[var(--navy)]"
+          className="font-display mt-2 break-words text-2xl leading-none text-[var(--navy)] sm:text-4xl"
         >
           {title}
         </h2>
@@ -874,7 +874,7 @@ function DialogHeader({
         onClick={onClose}
         disabled={disabled}
         aria-label="Close dialog"
-        className="grid h-10 w-10 place-items-center rounded-full border border-[var(--line)] text-[var(--navy)] transition hover:bg-[var(--gold-soft)] disabled:cursor-not-allowed disabled:opacity-60"
+        className="grid h-11 w-11 shrink-0 place-items-center rounded-full border border-[var(--line)] text-[var(--navy)] transition hover:bg-[var(--gold-soft)] disabled:cursor-not-allowed disabled:opacity-60"
       >
         <X className="h-5 w-5" aria-hidden="true" />
       </button>

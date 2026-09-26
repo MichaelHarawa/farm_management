@@ -24,12 +24,16 @@ export function MobileRecordList({
   records: MobileRecord[];
   emptyMessage: string;
   className?: string;
-  desktopBreakpoint?: "md" | "lg";
+  desktopBreakpoint?: "md" | "lg" | "xl";
   pageSize?: number;
   itemLabel?: string;
 }) {
   const [currentPage, setCurrentPage] = useState(1);
-  const desktopHiddenClass = desktopBreakpoint === "lg" ? "lg:hidden" : "md:hidden";
+  const desktopHiddenClass = desktopBreakpoint === "xl"
+    ? "xl:hidden"
+    : desktopBreakpoint === "lg"
+      ? "lg:hidden"
+      : "md:hidden";
   const effectivePageSize = pageSize ?? Math.max(1, records.length);
   const totalPages = Math.max(1, Math.ceil(records.length / effectivePageSize));
   const safePage = Math.min(currentPage, totalPages);

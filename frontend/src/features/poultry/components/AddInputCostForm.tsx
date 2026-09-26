@@ -325,11 +325,11 @@ export function AddInputCostForm({ batchId, onSuccess }: AddInputCostFormProps) 
       </section>
 
       {showAddFunds ? (
-        <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 grid place-items-center bg-[#151f36]/45 p-4">
-          <div className="w-full max-w-xl rounded-2xl bg-white p-6 shadow-2xl">
-            <div className="flex justify-between">
-              <h2 className="text-2xl font-extrabold">Add available funds</h2>
-              <button type="button" onClick={() => setShowAddFunds(false)} aria-label="Close" className="text-2xl">×</button>
+        <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-[#151f36]/45 p-2 sm:p-4">
+          <div className="max-h-[calc(100dvh-1rem)] w-full max-w-xl overflow-y-auto rounded-2xl bg-white p-4 shadow-2xl sm:p-6">
+            <div className="flex items-start justify-between gap-3">
+              <h2 className="min-w-0 break-words text-xl font-extrabold sm:text-2xl">Add available funds</h2>
+              <button type="button" onClick={() => setShowAddFunds(false)} aria-label="Close" className="grid h-11 w-11 shrink-0 place-items-center rounded-full text-2xl">×</button>
             </div>
             <p className="mt-2 text-sm text-[var(--navy-muted)]">Record a receipt into loans, grants, farm cash or other income. Owner contributions use the protected Owner Capital workspace.</p>
             <div className="mt-5 grid gap-4 sm:grid-cols-2">
@@ -352,9 +352,9 @@ export function AddInputCostForm({ batchId, onSuccess }: AddInputCostFormProps) 
               </label>
             </div>
             {addFundsError ? <p className="mt-3 text-sm text-red-700">{addFundsError}</p> : null}
-            <div className="mt-6 flex justify-end gap-3">
-              <button type="button" onClick={() => setShowAddFunds(false)} className="rounded-lg px-4 py-2 text-sm font-bold text-[var(--navy-muted)]">Cancel</button>
-              <button type="button" onClick={addAdditionalIncomeSource} disabled={addFundsBusy} className="rounded-lg bg-[var(--gold)] px-5 py-2 text-sm font-bold disabled:opacity-60">{addFundsBusy ? "Adding…" : "Add funds & use for this cost"}</button>
+            <div className="mt-6 grid grid-cols-[0.75fr_1.25fr] gap-3 sm:flex sm:justify-end">
+              <button type="button" onClick={() => setShowAddFunds(false)} className="rounded-lg px-3 py-2 text-sm font-bold text-[var(--navy-muted)] sm:px-4">Cancel</button>
+              <button type="button" onClick={addAdditionalIncomeSource} disabled={addFundsBusy} className="rounded-lg bg-[var(--gold)] px-3 py-2 text-sm font-bold disabled:opacity-60 sm:px-5">{addFundsBusy ? "Adding…" : "Add funds & use for this cost"}</button>
             </div>
           </div>
         </div>

@@ -42,7 +42,7 @@ export function FinanceForecast({ forecast }: Props) {
           </>
         ) : (
           <>
-            <p className={"font-display whitespace-nowrap text-3xl font-bold " + (total < 0 ? "text-[var(--danger)]" : "text-[#315f3e]")}>
+            <p className={"font-display max-w-full break-words text-2xl font-bold leading-tight [overflow-wrap:anywhere] sm:text-3xl " + (total < 0 ? "text-[var(--danger)]" : "text-[#315f3e]")}>
               {total < 0 ? "Expected loss: " : "Expected profit: "}{formatCurrency(Math.abs(total))}
             </p>
             <p className="mt-2 text-sm text-[var(--navy-muted)]">
@@ -73,7 +73,7 @@ function ForecastRow({ row }: { row: BatchProfitabilityReport }) {
         {result === null ? (
           <span className="rounded-full bg-[var(--gold-soft)] px-3 py-1 text-xs font-bold">Forecast unavailable</span>
         ) : (
-          <p className={"whitespace-nowrap font-extrabold " + (result < 0 ? "text-[var(--danger)]" : "text-[#315f3e]")}>
+          <p className={"max-w-full break-words font-extrabold [overflow-wrap:anywhere] md:text-right " + (result < 0 ? "text-[var(--danger)]" : "text-[#315f3e]")}>
             {result < 0 ? "Expected loss " : "Expected profit "}{formatCurrency(Math.abs(result))}
           </p>
         )}
@@ -163,6 +163,5 @@ function NumberInput({ label, value, onChange, max }: { label: string; value: st
 }
 
 function SmallMetric({ label, value }: { label: string; value: string }) {
-  return <div><p className="text-xs font-bold uppercase tracking-wide text-[var(--navy-muted)]">{label}</p><p className="mt-1 whitespace-nowrap font-extrabold">{value}</p></div>;
+  return <div className="min-w-0"><p className="text-xs font-bold uppercase tracking-wide text-[var(--navy-muted)]">{label}</p><p className="mt-1 break-words font-extrabold [overflow-wrap:anywhere]">{value}</p></div>;
 }
-

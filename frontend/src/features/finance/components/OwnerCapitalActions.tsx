@@ -318,14 +318,14 @@ export function OwnerCapitalActions({
 
   return (
     <>
-      <div className="flex flex-wrap gap-3">
-        <button className="finance-button" type="button" onClick={() => setDialog("contribution")}>
+      <div className="grid gap-3 sm:flex sm:flex-wrap">
+        <button className="finance-button w-full sm:w-auto" type="button" onClick={() => setDialog("contribution")}>
           Record owner contribution
         </button>
-        <button className="rounded-lg border border-[var(--navy)] px-4 py-3 font-bold text-[var(--navy)]" type="button" onClick={() => setDialog("owner")}>
+        <button className="min-h-11 w-full rounded-lg border border-[var(--navy)] px-4 py-3 font-bold text-[var(--navy)] sm:w-auto" type="button" onClick={() => setDialog("owner")}>
           Add owner or contributor
         </button>
-        <button className="rounded-lg border border-[var(--navy)] px-4 py-3 font-bold text-[var(--navy)]" type="button" disabled={busy} onClick={exportCsv}>
+        <button className="min-h-11 w-full rounded-lg border border-[var(--navy)] px-4 py-3 font-bold text-[var(--navy)] sm:w-auto" type="button" disabled={busy} onClick={exportCsv}>
           Export filtered CSV
         </button>
       </div>
@@ -335,7 +335,7 @@ export function OwnerCapitalActions({
           <label className="text-sm font-bold">Display name<input required className="form-input mt-2 w-full" value={ownerName} onChange={(event) => setOwnerName(event.target.value)} /></label>
           <label className="text-sm font-bold">Notes<textarea className="form-input mt-2 min-h-24 w-full" value={ownerNotes} onChange={(event) => setOwnerNotes(event.target.value)} /></label>
           {error ? <p role="alert" className="text-sm font-bold text-[var(--danger)]">{error}</p> : null}
-          <button disabled={busy} className="finance-button justify-self-end">{busy ? "Saving…" : "Save contributor"}</button>
+          <button disabled={busy} className="finance-button w-full sm:w-auto sm:justify-self-end">{busy ? "Saving…" : "Save contributor"}</button>
         </form>
       </Dialog>
 
@@ -351,7 +351,7 @@ export function OwnerCapitalActions({
           <div><h3 className="font-extrabold">Optional batch designation</h3><p className="mb-3 text-sm text-[var(--navy-muted)]">A designation explains intended use. It does not create spending or duplicate cash.</p>{designationFields}<p className="mt-3 text-sm font-bold">Designated now: MWK {designatedTotal.toLocaleString()}</p></div>
           {Number(contribution.amount) > 0 && designatedTotal > Number(contribution.amount) ? <p role="alert" className="text-sm font-bold text-[var(--danger)]">Designations cannot exceed the receipt.</p> : null}
           {error ? <p role="alert" className="text-sm font-bold text-[var(--danger)]">{error}</p> : null}
-          <button disabled={busy || designatedTotal > Number(contribution.amount)} className="finance-button justify-self-end">{busy ? "Recording…" : "Record contribution"}</button>
+          <button disabled={busy || designatedTotal > Number(contribution.amount)} className="finance-button w-full sm:w-auto sm:justify-self-end">{busy ? "Recording…" : "Record contribution"}</button>
         </form>
       </Dialog>
 
@@ -362,7 +362,7 @@ export function OwnerCapitalActions({
               <p className="text-sm text-[var(--navy-muted)]">Unassigned amount: <strong>MWK {Number(receipt.unassigned_as_of).toLocaleString()}</strong></p>
               <label className="text-sm font-bold">Designation date<input required type="date" className="form-input mt-2 w-full" value={designationDate} onChange={(event) => setDesignationDate(event.target.value)} /></label>
               {designationFields}
-              <button disabled={busy || designatedTotal > Number(receipt.unassigned_as_of)} className="finance-button justify-self-end">Add designations</button>
+              <button disabled={busy || designatedTotal > Number(receipt.unassigned_as_of)} className="finance-button w-full sm:w-auto sm:justify-self-end">Add designations</button>
             </form>
             {receipt.designations.length ? <div><h3 className="font-extrabold">Designation history</h3><div className="mt-3 grid gap-2">{receipt.designations.map((item) => <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3" key={item.id}><span>{item.batch_code} · MWK {Number(item.amount).toLocaleString()} · {item.current_status}</span>{item.current_status === "posted" ? <button disabled={busy} className="font-bold text-[var(--danger)] underline" onClick={() => reverse(`/api/finance/owner-designations/${item.id}/reverse`, "Why is this designation being reversed?")}>Reverse designation</button> : null}</div>)}</div></div> : null}
             {error ? <p role="alert" className="text-sm font-bold text-[var(--danger)]">{error}</p> : null}
@@ -386,7 +386,7 @@ export function OwnerReceiptAction({ receiptId }: { receiptId: number }) {
   return (
     <button
       type="button"
-      className="font-bold text-[var(--navy)] underline"
+      className="inline-flex min-h-11 items-center justify-center rounded-lg border border-[var(--navy)] bg-white px-4 py-2 font-bold text-[var(--navy)] transition hover:bg-[var(--gold-soft)]"
       onClick={() => {
         const trigger = document.querySelector<HTMLButtonElement>(`[data-owner-receipt-action="${receiptId}"]`);
         trigger?.click();
