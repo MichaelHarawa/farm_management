@@ -142,14 +142,27 @@ function FundingPie({ mix }: { mix: FinanceDashboard["batch_analysis"]["funding_
     return `${chartColors[colorIndex % chartColors.length]} ${start}deg ${end}deg`;
   }).join(", ");
   return <div className="grid min-w-0 gap-5 sm:grid-cols-[200px_minmax(0,1fr)] sm:items-center">
-    <div className="mx-auto grid aspect-square w-44 place-items-center rounded-full sm:w-48" style={{ background: gradient ? `conic-gradient(${gradient})` : "#e7e4d9" }}>
-      <div className="grid aspect-square w-24 place-items-center rounded-full bg-white px-2 text-center sm:w-28" title={`Total batch costs: ${formatCurrency(total)}`}>
-        <span className="text-[0.65rem] font-bold uppercase tracking-wide text-[var(--navy-muted)]">
-          Total costs
-          <strong className="mt-1 block whitespace-nowrap text-base leading-none tracking-tight text-[var(--navy)]">
-            {formatCompactCurrency(total)}
-          </strong>
-        </span>
+    <div className="grid min-w-0 gap-3">
+      <div className="flex items-center justify-between gap-3 rounded-xl border border-[var(--line)] bg-white/70 px-4 py-3 sm:hidden">
+        <span className="text-xs font-bold uppercase tracking-wide text-[var(--navy-muted)]">Total costs</span>
+        <strong className="whitespace-nowrap text-base text-[var(--navy)]" title={formatCurrency(total)}>
+          {formatCompactCurrency(total)}
+        </strong>
+      </div>
+      <div
+        className="mx-auto grid aspect-square w-40 place-items-center rounded-full sm:w-48"
+        style={{ background: gradient ? `conic-gradient(${gradient})` : "#e7e4d9" }}
+        role="img"
+        aria-label={`Funding mix for total batch costs of ${formatCurrency(total)}`}
+      >
+        <div className="grid aspect-square w-[5.75rem] place-items-center rounded-full bg-white sm:w-28 sm:px-2 sm:text-center" title={`Total batch costs: ${formatCurrency(total)}`}>
+          <span className="hidden text-[0.65rem] font-bold uppercase tracking-wide text-[var(--navy-muted)] sm:block">
+            Total costs
+            <strong className="mt-1 block whitespace-nowrap text-base leading-none tracking-tight text-[var(--navy)]">
+              {formatCompactCurrency(total)}
+            </strong>
+          </span>
+        </div>
       </div>
     </div>
     <div className="grid min-w-0 gap-3">{mix.groups.map((row, index) => <div key={row.key} className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-3"><span className="flex min-w-0 items-start gap-2"><i className="mt-1 h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: chartColors[index % chartColors.length] }} /><span className="min-w-0"><strong className="block break-words text-sm sm:text-base">{row.label}</strong><span className="text-xs text-[var(--navy-muted)]">{row.percent ?? "0.00"}%</span></span></span><strong className="whitespace-nowrap text-right text-sm" title={formatCurrency(row.amount)}><span className="sm:hidden">{formatCompactCurrency(parseDecimal(row.amount))}</span><span className="hidden sm:inline">{formatCurrency(row.amount)}</span></strong></div>)}</div>
