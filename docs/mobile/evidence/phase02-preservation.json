@@ -1,0 +1,23 @@
+{
+  "database": {
+    "host": "127.0.0.1",
+    "name": "farm_management",
+    "read_only": true
+  },
+  "fingerprinted_tables": 63,
+  "business_fingerprints_unchanged": true,
+  "finance_audit_unchanged": false,
+  "finance_business_audit_unchanged": true,
+  "unapplied": [
+    [
+      "mobile_sync",
+      "0001_initial"
+    ],
+    [
+      "mobile_sync",
+      "0002_seed_identity"
+    ]
+  ],
+  "sync_capture_enabled": false,
+  "sync_api_enabled": false
+}

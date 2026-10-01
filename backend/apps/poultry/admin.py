@@ -1,4 +1,5 @@
 from django.contrib import admin
+from apps.mobile_sync.writers import capture_enabled
 
 from .models import (
     Batch,
@@ -13,8 +14,24 @@ from .models import (
 )
 
 
+class PublishedReadOnlyAdmin(admin.ModelAdmin):
+    """Old generic admin editors bypass dated lifecycle/financial services.
+
+    Once sync capture is active, retain admin viewing but require the authorized
+    operational service API for writes. Do not pretend generic admin is safe.
+    """
+    def has_add_permission(self, request):
+        return not capture_enabled() and super().has_add_permission(request)
+
+    def has_change_permission(self, request, obj=None):
+        return not capture_enabled() and super().has_change_permission(request, obj)
+
+    def has_delete_permission(self, request, obj=None):
+        return not capture_enabled() and super().has_delete_permission(request, obj)
+
+
 @admin.register(Batch)
-class BatchAdmin(admin.ModelAdmin):
+class BatchAdmin(PublishedReadOnlyAdmin):
     list_display = ("batch_id", "bird_type", "broiler_strain", "quantity", "status", "entry_date")
     list_filter = ("status", "bird_type", "broiler_strain", "source")
     search_fields = ("batch_id",)
@@ -29,7 +46,7 @@ class InputCostsAdmin(admin.ModelAdmin):
 
 
 @admin.register(Sales)
-class SalesAdmin(admin.ModelAdmin):
+class SalesAdmin(PublishedReadOnlyAdmin):
     list_display = ("sale_id", "batch", "product_type", "sale_total", "balance", "payment_status", "receivable_follow_up_name")
     list_filter = ("product_type", "payment_status", "sale_date")
     search_fields = ("sale_id", "batch__batch_id", "buyer_name", "receivable_follow_up_name")
@@ -45,7 +62,7 @@ class SaleSellingCostAdmin(admin.ModelAdmin):
 
 
 @admin.register(Mortality)
-class MortalityAdmin(admin.ModelAdmin):
+class MortalityAdmin(PublishedReadOnlyAdmin):
     list_display = ("batch", "quantity_dead", "mortality_date", "suspected_cause")
     list_filter = ("mortality_date",)
     search_fields = ("batch__batch_id", "suspected_cause")
@@ -53,7 +70,7 @@ class MortalityAdmin(admin.ModelAdmin):
 
 
 @admin.register(FeedUsage)
-class FeedUsageAdmin(admin.ModelAdmin):
+class FeedUsageAdmin(PublishedReadOnlyAdmin):
     list_display = ("batch", "feed_type", "quantity_given", "feeding_start_date")
     list_filter = ("feed_type", "feed_source")
     search_fields = ("batch__batch_id",)

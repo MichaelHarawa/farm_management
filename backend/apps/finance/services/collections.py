@@ -6,6 +6,7 @@ from django.db import transaction
 from django.db.models import Sum
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
+from apps.mobile_sync.writers import sync_atomic
 
 from apps.poultry.models import PaymentStatus, Sales
 
@@ -22,6 +23,7 @@ def active_payment_total(sale: Sales) -> Decimal:
     return Decimal(total or ZERO).quantize(Decimal("0.01"))
 
 
+@sync_atomic
 def sync_sale_payment_totals(sale: Sales) -> Sales:
     """Refresh the compatibility payment fields from the immutable ledger."""
     paid = active_payment_total(sale)
@@ -48,6 +50,7 @@ def sync_sale_payment_totals(sale: Sales) -> Sales:
     return sale
 
 
+@sync_atomic
 @transaction.atomic
 def record_sale_payment(
     *,
@@ -109,6 +112,7 @@ def record_sale_payment(
     return payment, True
 
 
+@sync_atomic
 def record_initial_sale_payment(*, sale: Sales, amount: Decimal, created_by) -> SalePayment | None:
     amount = Decimal(amount or ZERO).quantize(Decimal("0.01"))
     if amount <= ZERO or sale.payment_status == PaymentStatus.CANCELLED:
@@ -127,6 +131,7 @@ def record_initial_sale_payment(*, sale: Sales, amount: Decimal, created_by) -> 
     return payment
 
 
+@sync_atomic
 @transaction.atomic
 def reverse_sale_payment(*, payment_id: int, reason: str, reversed_by) -> SalePayment:
     payment = (

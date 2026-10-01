@@ -1,0 +1,19 @@
+{
+  "example_valid": true,
+  "invalid_cases_rejected": [
+    "missing reporter",
+    "whitespace reporter",
+    "caller-controlled age",
+    "negative birds",
+    "number-valued UUID",
+    "invalid timestamp",
+    "non-UTC timestamp",
+    "unregistered action",
+    "append revision",
+    "unknown envelope field",
+    "oversized command count",
+    "duplicate dependencies"
+  ],
+  "note": "Shape tests only; PostgreSQL authorization/flock/idempotency behavior is Phase 2.",
+  "schema_valid": true
+}

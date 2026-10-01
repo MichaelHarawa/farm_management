@@ -7,6 +7,7 @@ from django.db import transaction
 from django.db.models import Sum
 from django.utils import timezone
 from rest_framework import serializers
+from rest_framework.exceptions import PermissionDenied
 
 from apps.accounts.models import Role, RoleChoices
 from apps.accounts.serializers import RoleSummarySerializer
@@ -144,6 +145,15 @@ class EmployeeProfileSerializer(serializers.ModelSerializer):
             )
 
         proposed_salary = attrs.get("base_monthly_salary")
+        request = self.context.get("request")
+        if request and not request.user.has_admin_access and any(key in attrs for key in ("user", "username", "email", "password", "role_slugs")):
+            raise PermissionDenied("Login accounts, links and roles require Administration access.")
+        if self.instance and self.instance.user_id and "role_slugs" in attrs:
+            linked_user = self.instance.user
+            from apps.accounts.views import active_administrator_count
+            if (linked_user.is_active and linked_user.has_admin_access and not linked_user.is_superuser
+                    and RoleChoices.ADMIN not in attrs["role_slugs"] and active_administrator_count() <= 1):
+                raise serializers.ValidationError("The last active administrator cannot lose administrator access.")
         if (
             self.instance
             and proposed_salary is not None
@@ -245,7 +255,8 @@ class EmployeeProfileSerializer(serializers.ModelSerializer):
         for key in ("first_name", "last_name"):
             if key in identity_fields:
                 setattr(instance, key, identity_fields[key])
-        if instance.user_id:
+        request = self.context.get("request")
+        if instance.user_id and (request is None or request.user.has_admin_access):
             for key, value in identity_fields.items():
                 setattr(instance.user, key, value)
             if identity_fields:

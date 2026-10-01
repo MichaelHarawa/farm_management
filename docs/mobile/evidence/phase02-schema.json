@@ -1,0 +1,7 @@
+{
+  "validated": true,
+  "openapi": "3.0.3",
+  "paths": 8,
+  "methods": 9,
+  "artifact": "docs\\mobile\\contracts\\sync-api-v1.openapi.json"
+}

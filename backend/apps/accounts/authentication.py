@@ -9,6 +9,7 @@ from rest_framework_simplejwt.views import (
 from .serializers import (
     FarmTokenObtainPairSerializer,
 )
+from apps.mobile_sync.authentication import FarmTokenRefreshSerializer, FarmTokenVerifySerializer
 
 
 class PublicTokenViewMixin:
@@ -29,11 +30,11 @@ class RefreshView(
     PublicTokenViewMixin,
     TokenRefreshView,
 ):
-    pass
+    serializer_class = FarmTokenRefreshSerializer
 
 
 class VerifyView(
     PublicTokenViewMixin,
     TokenVerifyView,
 ):
-    pass
+    serializer_class = FarmTokenVerifySerializer

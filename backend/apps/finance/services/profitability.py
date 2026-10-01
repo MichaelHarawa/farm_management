@@ -8,6 +8,7 @@ from rest_framework.exceptions import ValidationError
 
 from django.db.models import DecimalField, ExpressionWrapper, F, Q, Sum
 from django.utils import timezone
+from apps.mobile_sync.writers import sync_atomic
 
 from apps.poultry.models import (
     Batch,
@@ -1588,6 +1589,7 @@ def batch_portfolio_report(batches: Iterable[Batch]) -> dict:
     }
 
 
+@sync_atomic
 def create_final_snapshot(
     batch: Batch,
     *,

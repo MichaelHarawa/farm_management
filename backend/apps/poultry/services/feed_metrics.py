@@ -10,6 +10,7 @@ from django.db import transaction
 from django.db.models import DecimalField, ExpressionWrapper, F, Max, Q, Sum
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
+from apps.mobile_sync.writers import sync_atomic
 
 from apps.poultry.models import (
     Batch,
@@ -63,6 +64,7 @@ def live_birds_at(batch: Batch, event_at: datetime) -> int:
     return actual_birds_received(batch) + adjustments - mortality - sold
 
 
+@sync_atomic
 def recalculate_feed_event_populations(batch: Batch) -> list[FeedUsage]:
     records = list(batch.feed_usage_row.order_by("feeding_start_date", "pk"))
     calculated_at = timezone.now()
@@ -79,6 +81,7 @@ def recalculate_feed_event_populations(batch: Batch) -> list[FeedUsage]:
     return records
 
 
+@sync_atomic
 @transaction.atomic
 def record_feed_usage(*, batch_id: int, created_by, **data) -> FeedUsage:
     from .batch_lifecycle import assert_batch_in_production
@@ -104,6 +107,7 @@ def record_feed_usage(*, batch_id: int, created_by, **data) -> FeedUsage:
     return record
 
 
+@sync_atomic
 @transaction.atomic
 def create_flock_adjustment(*, batch_id: int, approved_by, **data) -> FlockAdjustment:
     batch = Batch.objects.select_for_update().get(pk=batch_id)

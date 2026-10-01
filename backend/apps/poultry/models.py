@@ -8,6 +8,7 @@ from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models, transaction
 from django.utils import timezone
+from apps.mobile_sync.writers import SyncTrackedModel, guarded_model_write
 
 
 MONEY_VALIDATOR = MinValueValidator(Decimal("0.00"))
@@ -137,7 +138,7 @@ class SaleIDSequence(models.Model):
     def __str__(self) -> str:
         return f"{self.sequence_date:%Y%m%d}: {self.last_number}"
 
-class Batch(models.Model):
+class Batch(SyncTrackedModel):
     batch_id = models.CharField(max_length=32, unique=True, editable=False, db_index=True)
     bird_type = models.CharField(max_length=200,
         choices=BirdType.choices,
@@ -236,6 +237,7 @@ class Batch(models.Model):
                 }
             )
 
+    @guarded_model_write
     def save(self, *args, **kwargs):
         if not self.batch_id:
             self.batch_id = self.next_batch_id()
@@ -351,7 +353,7 @@ class InputCosts(models.Model):
         super().save(*args, **kwargs)
 
 
-class Sales(models.Model):
+class Sales(SyncTrackedModel):
     batch = models.ForeignKey(
     Batch,
     on_delete=models.CASCADE,
@@ -439,6 +441,7 @@ class Sales(models.Model):
     related_name="created_sales",
     )
 
+    @guarded_model_write
     def save(self, *args, **kwargs):
         if not self.sale_id:
             self.sale_id = self.next_sale_id()
@@ -614,7 +617,7 @@ class SaleSellingCost(models.Model):
         if self.amount <= Decimal("0.00"):
             raise ValidationError({"amount": "Selling cost must be greater than zero."})
 
-class Mortality(models.Model):
+class Mortality(SyncTrackedModel):
     batch = models.ForeignKey(
     Batch,
     on_delete=models.CASCADE,
@@ -647,7 +650,7 @@ class Mortality(models.Model):
             )
 
 
-class FeedUsage(models.Model):
+class FeedUsage(SyncTrackedModel):
     batch = models.ForeignKey(
     Batch,
     on_delete=models.CASCADE,
@@ -710,7 +713,7 @@ class FlockAdjustmentStatus(models.TextChoices):
     REVERSED = "reversed", "Reversed"
 
 
-class FlockAdjustment(models.Model):
+class FlockAdjustment(SyncTrackedModel):
     batch = models.ForeignKey(
         Batch,
         on_delete=models.PROTECT,

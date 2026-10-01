@@ -18,6 +18,7 @@ from apps.poultry.models import (
     Sales,
     SaleSellingCost,
 )
+from apps.mobile_sync.writers import sync_atomic
 
 
 BIRD_PRODUCT_TYPES = {
@@ -120,6 +121,7 @@ def calculate_batch_status(batch: Batch) -> str:
     return BatchStatus.ACTIVE
 
 
+@sync_atomic
 def recalculate_batch_status(batch: Batch, *, save: bool = True) -> Batch:
     status = calculate_batch_status(batch)
     changed_fields: list[str] = []
@@ -188,6 +190,7 @@ def assert_batch_accepts_cost(
     )
 
 
+@sync_atomic
 def create_sale_with_lifecycle(*, batch_id: int, created_by, **data) -> Sales:
     with transaction.atomic():
         batch = Batch.objects.select_for_update().get(pk=batch_id)
@@ -232,10 +235,15 @@ def create_sale_with_lifecycle(*, batch_id: int, created_by, **data) -> Sales:
 
 
 
+@sync_atomic
 def create_mortality_with_lifecycle(*, batch_id: int, created_by, **data) -> Mortality:
     with transaction.atomic():
+        from apps.mobile_sync.validation import validate_mortality, FARM_ZONE
+        from apps.finance.models import AccountingPeriod
+        day = data["mortality_date"].astimezone(FARM_ZONE).date()
+        list(AccountingPeriod.objects.select_for_update().filter(period_start__lte=day, period_end__gte=day).order_by("pk"))
         batch = Batch.objects.select_for_update().get(pk=batch_id)
-        assert_batch_in_production(batch)
+        data["age_in_days"] = validate_mortality(batch, data)
         mortality = Mortality(batch=batch, created_by=created_by, **data)
         mortality.full_clean()
         mortality.save()

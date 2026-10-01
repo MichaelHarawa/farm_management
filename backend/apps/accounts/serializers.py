@@ -176,6 +176,9 @@ class LogoutSerializer(serializers.Serializer):
                 }
             ) from error
 
+        from django.conf import settings
+        from apps.mobile_sync.authentication import check_binding
+        check_binding(self.refresh_token, self.refresh_token.get(settings.SIMPLE_JWT.get("USER_ID_CLAIM", "user_id")))
         return attrs
 
     def save(self, **kwargs):

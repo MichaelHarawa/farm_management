@@ -319,6 +319,8 @@ class DatedFeedMetricsTests(TestCase):
 class PoultryDashboardTests(TestCase):
     def setUp(self):
         self.user = get_user_model().objects.create_user(username="dashboard-user")
+        from apps.accounts.models import Role
+        self.user.roles.add(Role.objects.get(slug="farm_manager"))
         self.arrival = timezone.now() - timedelta(days=10)
         self.batch = Batch.objects.create(
             batch_id="DASHBOARD-1",

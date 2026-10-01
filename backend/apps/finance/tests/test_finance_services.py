@@ -86,6 +86,7 @@ class FinanceServiceTests(TestCase):
             email="manager@example.com",
             password="password",
         )
+        self.user.roles.add(Role.objects.get(slug=RoleChoices.FARM_MANAGER))
 
     def batch(self, quantity=100, entry=date(2026, 1, 1), maturity=date(2026, 1, 20)):
         batch = Batch.objects.create(
@@ -1813,9 +1814,11 @@ class FinancePermissionTests(TestCase):
             email="closed-batch-reader@example.com",
             password="password",
         )
+        user.roles.add(Role.objects.get(slug=RoleChoices.STAKE_HOLDER))
         self.client.force_authenticate(user)
         closed = Batch.objects.create(batch_id="CLOSED-TEST", entry_date=timezone.now(), expected_maturity_date=timezone.now(), status=BatchStatus.CLOSED)
         # list endpoint should include
         resp = self.client.get("/api/v1/poultry-management/")
+        self.assertEqual(resp.status_code, 200)
         ids = [b["id"] for b in resp.json()] if resp.status_code == 200 else []
         self.assertIn(closed.id, ids)  # or partial if paginated

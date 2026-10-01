@@ -6,8 +6,12 @@ from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
+from apps.mobile_sync.policy import PoultryPermission, SUPERVISORS, permits
+from apps.mobile_sync.projections import project
+from rest_framework import serializers
 from rest_framework.response import Response
 from django.utils import timezone
+from django.core.exceptions import ValidationError as DjangoValidationError
 
 from apps.finance.models import AccountingPeriod, PeriodStatus
 from apps.finance.permissions import FinancePermission
@@ -62,13 +66,20 @@ from .serializers import(
     DrugsVaccinationSerializer,
 )
 
+class OperationalBatchSerializer(serializers.BaseSerializer):
+    def to_representation(self, instance):
+        return project(instance, None)
+
+
 class BatchViewset(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
     serializer_class = BatchSerializer
     queryset = Batch.objects.select_related("created_by")
-    permission_classes = (IsAuthenticated,)
+    permission_classes = (PoultryPermission,)
 
     @action(detail=False, methods=["get"], url_path="dashboard")
     def dashboard(self, request):
+        if not permits(request.user, SUPERVISORS | {"stake_holder"}):
+            return Response({"server_time": timezone.now(), "results": [project(batch, None) for batch in self.get_queryset()]})
         return Response(poultry_dashboard(request.query_params))
 
     def perform_create(self, serializer):
@@ -102,6 +113,8 @@ class BatchViewset(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retrie
             return DrugsVaccinationSerializer
         elif self.action == "weight_samples":
             return BatchWeightSampleSerializer
+        if self.request.method == "GET" and not permits(self.request.user, SUPERVISORS | {"stake_holder"}):
+            return OperationalBatchSerializer
         return BatchSerializer
 
     @action(
@@ -289,6 +302,8 @@ class BatchViewset(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retrie
                 created_by=request.user,
                 **serializer.validated_data,
             )
+        except DjangoValidationError as error:
+            raise ValidationError(error.message_dict) from error
         except ValueError as error:
             raise ValidationError({"quantity_dead": str(error)}) from error
         return Response(
@@ -319,6 +334,8 @@ class BatchViewset(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retrie
                 created_by=request.user,
                 **serializer.validated_data,
             )
+        except DjangoValidationError as error:
+            raise ValidationError(error.message_dict) from error
         except ValueError as error:
             raise ValidationError({"batch": str(error)}) from error
 

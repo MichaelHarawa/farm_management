@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:farm-management:mobile-sync:push:v1",
+  "title": "Phase 2 mobile sync push: mortality only",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocol_version", "device_id", "operations"],
+  "properties": {
+    "protocol_version": {"const": 1},
+    "device_id": {"$ref": "#/$defs/uuid"},
+    "operations": {"type": "array", "minItems": 1, "maxItems": 50, "items": {"$ref": "#/$defs/mortalityOperation"}}
+  },
+  "$defs": {
+    "uuid": {"type": "string", "format": "uuid", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"},
+    "instant": {"type": "string", "format": "date-time", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,6})?Z$"},
+    "mortalityOperation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operation_id", "entity_type", "entity_uuid", "action", "payload_version", "base_version", "captured_at", "depends_on", "payload"],
+      "properties": {
+        "operation_id": {"$ref": "#/$defs/uuid"},
+        "entity_type": {"const": "poultry.mortality"},
+        "entity_uuid": {"$ref": "#/$defs/uuid"},
+        "action": {"const": "record"},
+        "payload_version": {"const": 1},
+        "base_version": {"type": "null"},
+        "captured_at": {"$ref": "#/$defs/instant"},
+        "supersedes_operation_id": {"$ref": "#/$defs/uuid"},
+        "depends_on": {"type": "array", "maxItems": 20, "uniqueItems": true, "items": {"$ref": "#/$defs/uuid"}},
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["batch_uuid", "mortality_date", "quantity_dead", "suspected_cause", "description", "action_taken", "reported_by_name"],
+          "properties": {
+            "batch_uuid": {"$ref": "#/$defs/uuid"},
+            "mortality_date": {"$ref": "#/$defs/instant"},
+            "quantity_dead": {"type": "integer", "minimum": 1, "maximum": 2147483647},
+            "suspected_cause": {"type": "string", "minLength": 1, "maxLength": 200, "pattern": "\\S"},
+            "description": {"type": "string", "minLength": 1, "maxLength": 4000, "pattern": "\\S"},
+            "action_taken": {"type": "string", "minLength": 1, "maxLength": 4000, "pattern": "\\S"},
+            "reported_by_name": {"type": "string", "minLength": 1, "maxLength": 200, "pattern": "\\S"}
+          }
+        }
+      }
+    }
+  }
+}

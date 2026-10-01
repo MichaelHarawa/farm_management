@@ -106,9 +106,11 @@ INSTALLED_APPS = [
     'apps.inventory',
     'apps.poultry',
     'apps.finance',
+    'apps.mobile_sync',
 ]
 
 MIDDLEWARE = [
+    'apps.mobile_sync.middleware.SyncWriterMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -201,8 +203,9 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 REST_FRAMEWORK = {
+    "DEFAULT_THROTTLE_RATES": {"mobile_sync": "180/min", "mobile_registration": "20/hour"},
     "DEFAULT_AUTHENTICATION_CLASSES": (
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
+        "apps.mobile_sync.authentication.FarmJWTAuthentication",
     ),
     "DEFAULT_SCHEMA_CLASS": (
         "drf_spectacular.openapi.AutoSchema"
@@ -240,6 +243,20 @@ SPECTACULAR_SETTINGS = {
 }
 
 FARM_CURRENCY_CODE = env("FARM_CURRENCY_CODE", "MWK")
+
+# Deploy migrations and seed metadata before opting in. API can be disabled
+# independently; never disable capture on a database with active sync cursors.
+MOBILE_SYNC_CAPTURE = env_bool("MOBILE_SYNC_CAPTURE", False)
+MOBILE_SYNC_ENABLED = env_bool("MOBILE_SYNC_ENABLED", False)
+MOBILE_SYNC_ENTITY_BYTES = 16 * 1024
+MOBILE_SYNC_PAGE_BYTES = 1024 * 1024
+MOBILE_SYNC_PAGE_ROWS = 500
+MOBILE_SYNC_SCAN_ROWS = 5000
+MOBILE_SYNC_GROUP_ROWS = 10000
+MOBILE_SYNC_GROUP_BYTES = 16 * 1024 * 1024
+MOBILE_SYNC_SNAPSHOT_ROWS = 100000
+MOBILE_SYNC_SNAPSHOT_BYTES = 32 * 1024 * 1024
+MOBILE_SYNC_ACTIVE_SNAPSHOTS_PER_USER = 4
 
 FINANCE_WARNING_THRESHOLDS = {
     "high_mortality_rate": env("FINANCE_HIGH_MORTALITY_RATE", "8.0"),

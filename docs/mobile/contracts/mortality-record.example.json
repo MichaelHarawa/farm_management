@@ -1,0 +1,23 @@
+{
+  "protocol_version": 1,
+  "device_id": "8d7455a0-92b1-451f-97d5-43d216d0a341",
+  "operations": [{
+    "operation_id": "9b7b91cb-0271-4be7-a0ee-22f4d775b473",
+    "entity_type": "poultry.mortality",
+    "entity_uuid": "31d8a2fb-fd4b-4998-a807-c2c173755fcf",
+    "action": "record",
+    "payload_version": 1,
+    "base_version": null,
+    "captured_at": "2026-10-01T06:35:00Z",
+    "depends_on": [],
+    "payload": {
+      "batch_uuid": "6f2337e0-72bf-436c-a516-8657bc8fa870",
+      "mortality_date": "2026-10-01T06:30:00Z",
+      "quantity_dead": 2,
+      "suspected_cause": "Unknown",
+      "description": "Morning inspection",
+      "action_taken": "Reported to supervisor",
+      "reported_by_name": "Example field worker"
+    }
+  }]
+}

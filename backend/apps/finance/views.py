@@ -196,6 +196,8 @@ class EmployeeProfileViewSet(
     @action(detail=True, methods=["post"], url_path="activate")
     def activate(self, request, pk=None):
         employee = self.get_object()
+        if employee.user_id and not request.user.has_admin_access:
+            raise ValidationError("Linked login activation requires Administration access.")
         employee.is_active = True
         if employee.user_id:
             employee.user.is_active = True
@@ -206,6 +208,12 @@ class EmployeeProfileViewSet(
     @action(detail=True, methods=["post"], url_path="deactivate")
     def deactivate(self, request, pk=None):
         employee = self.get_object()
+        if employee.user_id:
+            from apps.accounts.views import active_administrator_count
+            if not request.user.has_admin_access:
+                raise ValidationError("Linked login deactivation requires Administration access.")
+            if employee.user.is_active and employee.user.has_admin_access and active_administrator_count() <= 1:
+                raise ValidationError("The last active administrator cannot be deactivated.")
         employee.is_active = False
         if employee.user_id:
             employee.user.is_active = False
