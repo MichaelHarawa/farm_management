@@ -1,6 +1,0 @@
-{
-  "component_count": 166,
-  "openapi": "3.0.3",
-  "path_count": 139,
-  "schema_note": "Generation warnings/errors are inherited; see stderr. No generated mobile client should rely on unannotated APIView responses."
-}

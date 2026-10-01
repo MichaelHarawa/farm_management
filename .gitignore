@@ -18,8 +18,5 @@ frontend/dev.log
 .vercel
 .env*
 
-docs/mobile/PHASE**
-docs/mobile/ACCEPTANCE**
-docs/mobile/IMPLEMENTATION**
-docs/
-docs/mobile/
+/docs/
+
