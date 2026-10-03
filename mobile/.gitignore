@@ -1,0 +1,12 @@
+node_modules/
+.expo/
+android/
+ios/
+dist/
+coverage/
+*.jks
+*.keystore
+.env*
+!.env.example
+*.db*
+*.sqlite*
