@@ -21,14 +21,25 @@ export default function NativeSyncCheck() {
     <Button title="Hold automatic sync for death checks" disabled={disabled} onPress={()=>{void run(()=>probe!.manual(true));}}/>
     <Button title="Capture three synthetic mortality entries offline" disabled={disabled} onPress={()=>{void run(()=>probe!.captureThree());}}/>
     <Button title="Verify exact original Phase4 drafts" disabled={disabled} onPress={()=>{void run(()=>probe!.verifyDrafts());}}/>
+    <Button title="Checkpoint existing form commands without replacement" disabled={disabled} onPress={()=>{void run(()=>probe!.checkpointCurrentCommands());}}/>
     <Button title="Inspect native sync state" disabled={disabled} onPress={()=>{void run(()=>probe!.summary());}}/>
     <Button title="Pause inside real local save" disabled={disabled} onPress={()=>{void run(()=>probe!.pauseSave(setMessage));}}/>
     <Button title="Pause before push HTTP" disabled={disabled} onPress={()=>{void run(()=>probe!.pausePush(false,setMessage));}}/>
     <Button title="Pause after real committed push response" disabled={disabled} onPress={()=>{void run(()=>probe!.pausePush(true,setMessage));}}/>
     <Button title="Pause inside real pull-page transaction" disabled={disabled} onPress={()=>{void run(()=>probe!.pausePull(setMessage));}}/>
+    <Button title="Pause after committed incomplete fragment" disabled={disabled} onPress={()=>{void run(()=>probe!.pauseCommittedFragment(setMessage));}}/>
     <Button title="Verify retained death checkpoint" disabled={disabled} onPress={()=>{void run(()=>probe!.verifyInterruption());}}/>
     <Button title="Add one synthetic mortality offline" disabled={disabled} onPress={()=>{void run(()=>probe!.addOne());}}/>
     <Button title="Add over-flock evidence for rejection review" disabled={disabled} onPress={()=>{void run(()=>probe!.addOne(1000));}}/>
+    <Button title="Capture unsent parent and dependent offline" disabled={disabled} onPress={()=>{void run(()=>probe!.captureDependencyPair());}}/>
+    <Button title="Verify explicit discard and original dependency" disabled={disabled} onPress={()=>{void run(()=>probe!.verifyDiscardedDependency());}}/>
+    <Button title="Download only without uploads" disabled={disabled} onPress={()=>{void run(()=>probe!.downloadOnly());}}/>
+    <Button title="Start real cursor recovery at one-page budget" disabled={disabled} onPress={()=>{void run(()=>probe!.startCursorRecovery());}}/>
+    <Button title="Complete real expired snapshot recovery" disabled={disabled} onPress={()=>{void run(()=>probe!.completeExpiredSnapshot());}}/>
+    <Button title="Verify real hidden-page continuation" disabled={disabled} onPress={()=>{void run(()=>probe!.hiddenContinuation());}}/>
+    <Button title="Download overlapping current and batch packs" disabled={disabled} onPress={()=>{void run(()=>probe!.downloadOnly(true));}}/>
+    <Button title="Verify native competing sync coordinators" disabled={disabled} onPress={()=>{void run(()=>probe!.coordinatorOverlap());}}/>
+    <Button title="Replay actual original receipt against newer data" disabled={disabled} onPress={()=>{void run(()=>probe!.replayOldReceipt());}}/>
     <Button title="Run real manual sync" disabled={disabled} onPress={()=>{void run(syncNow);}}/>
     <Button title="Restore automatic sync" disabled={disabled} onPress={()=>{void run(()=>probe!.manual(false));}}/>
   </Card></Screen>;

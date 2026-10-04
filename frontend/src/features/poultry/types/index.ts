@@ -60,6 +60,16 @@ export type CreatePoultryBatchPayload = {
   quantity: number;
 };
 
+// Positive operational projection returned to roles without financial access.
+export type OperationalPoultryBatch = {
+  server_id: string;
+  batch_id: string;
+  status: PoultryBatch["status"];
+  initial_birds: number;
+  total_mortality: number;
+  remaining_birds: number;
+};
+
 export type ConfirmBatchDeliveryPayload = {
   entry_date: string;
   expected_maturity_date?: string;

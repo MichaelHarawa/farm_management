@@ -11,6 +11,7 @@ export const capabilitiesSchema = z.object({
   entities: z.array(z.enum(['poultry.batch', 'poultry.mortality', 'poultry.feed_usage'])),
   commands: z.record(z.string(), z.object({ available: z.boolean(), payload_version: z.number().optional(), reason: z.string().optional() })),
   offline: z.object({ operational_days: z.number().positive().max(7), sensitive_hours: z.number().positive().max(24) }),
+  limits: z.object({ page_rows: z.number().int().positive().max(500) }).optional(),
 });
 export type Capabilities = z.infer<typeof capabilitiesSchema>;
 export interface StoreIdentity { deploymentId: string; actorId: string; deviceId: string }

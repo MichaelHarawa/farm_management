@@ -1,4 +1,7 @@
 import { notFound } from "next/navigation";
+import { getOptionalCurrentUser } from "@/features/auth/server/current-user";
+import { canAccessFinance } from "@/features/auth/utils/permissions";
+import { OperationalBatchDetailView } from "@/features/poultry/components/OperationalBatchDetailView";
 
 import { getBatchProfitability } from "@/features/finance/api/finance";
 import {
@@ -11,6 +14,7 @@ import {
   getBatchSales,
   getBatchVaccinations,
   getPoultryBatch,
+  getOperationalPoultryBatch,
 } from "@/features/poultry/api/batches";
 
 // NOTE:
@@ -75,6 +79,18 @@ export default async function BatchDetailPage({
 
   const returnTo =
     `/poultry/batches/${batchId}`;
+
+  const user = await getOptionalCurrentUser();
+  if (user && !canAccessFinance(user)) {
+    const [operationalBatch, mortalities] = await Promise.all([
+      getOperationalPoultryBatch(batchId, returnTo),
+      getBatchMortality(batchId, returnTo),
+    ]).catch((error: unknown) => {
+      if (error instanceof BackendApiError && error.status === 404) notFound();
+      throw error; // Normal auth/permission redirects and other failures remain.
+    });
+    return <OperationalBatchDetailView batch={operationalBatch} mortalities={mortalities} />;
+  }
 
   let batch: PoultryBatch;
 

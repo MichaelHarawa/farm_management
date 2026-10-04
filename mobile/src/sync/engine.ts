@@ -54,6 +54,7 @@ export class SyncEngine {
       if (await store.notBefore()>now()) return outcome('paused');
       await active(); const capabilities = await this.options.authorize(); await active();
       if (capabilities.deployment_id !== store.repository.identity.deploymentId || capabilities.device_id !== store.repository.identity.deviceId) throw new Error('server_identity_mismatch');
+      const pageRows = capabilities.limits?.page_rows ?? 500;
       await store.recoverSending(fence());
       let coverage = await store.coverage();
       if (coverage && (coverage.scope !== capabilities.scope_revision || coverage.epoch !== capabilities.stream_epoch)) {
@@ -81,7 +82,7 @@ export class SyncEngine {
         for (;;) {
           if (pages>=maxPages) return false;
           const cursor = await store.cursor(); if (!cursor) throw new Error('bootstrap_required');
-          const p = changesPage.parse(await call(`/mobile-sync/changes?cursor=${encodeURIComponent(cursor)}&limit=500`));
+          const p = changesPage.parse(await call(`/mobile-sync/changes?cursor=${encodeURIComponent(cursor)}&limit=${pageRows}`));
           await store.applyPage(p,cursor,fence()); pages++;
           if (p.run_complete) return true; // Empty visible page is not a completion signal.
         }
@@ -90,7 +91,8 @@ export class SyncEngine {
         if (!coverage || await store.snapshot() || canonical(coverage.packs)!==canonical(selected)) if (!await download()) return outcome('paused');
         if (!await pull()) return outcome('paused');
       } catch (error) {
-        if (!(error instanceof ApiError) || ![409,410].includes(error.status) || !['resync_required','scope_reset_required','snapshot_not_found'].includes(error.code)) throw error;
+        const missingSnapshot=error instanceof ApiError&&error.status===404&&error.code==='snapshot_not_found';
+        if (!(error instanceof ApiError) || !missingSnapshot&&(![409,410].includes(error.status)||!['resync_required','scope_reset_required'].includes(error.code))) throw error;
         // At most one recovery per run. History expiry preserves the last good replica.
         if (error.code==='scope_reset_required') { await store.repository.invalidateScope(fence()); throw new ApiError(401,'sign_in_required'); }
         await store.restartStaging(fence()); if (!await download() || !await pull()) return outcome('paused');

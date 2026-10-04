@@ -18,6 +18,7 @@ export function MortalityForm({correctionId}:{correctionId?:string}){
   const [local,setLocal]=useState<{store:typeof store;after:string;revision:number;downloaded:boolean;rows:{entity_uuid:string;payload_json:string}[]}|null>(null);
   const [after,setAfter]=useState('');const [original,setOriginal]=useState<MortalityCommand|null>(null);
   const [busy,setBusy]=useState(false);const [error,setError]=useState<string|null>(null);const [saved,setSaved]=useState<string|null>(null);
+  const [errorAttempt,setErrorAttempt]=useState(0);
   const {control,handleSubmit,reset,setValue}=useForm({defaultValues:defaults()});
   useEffect(()=>{let active=true;if(!store)return;
     Promise.all([store.coverage(),store.repository.batches(after)]).then(([coverage,rows])=>{if(active)setLocal({store,after,revision,downloaded:!!coverage,rows});})
@@ -43,7 +44,7 @@ export function MortalityForm({correctionId}:{correctionId?:string}){
       if(correctionId)await store.correctTerminal(correctionId,op);else await store.repository.saveDraftAndEnqueue(op,store.hash);
       notify();setSaved(`Saved on this device, awaiting Django validation. New operation ${op.operation_id}.`);
       if(!correctionId)reset(defaults());
-    }catch{setError('Could not save. Choose a downloaded production batch, positive whole-bird quantity, valid farm date/time and all evidence fields. A retained correction must be reviewed in Sync; the original record was not edited.');}
+    }catch{setErrorAttempt(value=>value+1);setError('Could not save. Choose a downloaded production batch, positive whole-bird quantity, valid farm date/time and all evidence fields. A retained correction must be reviewed in Sync; the original record was not edited.');}
     finally{setBusy(false);}
   }
   return <Screen title={correctionId?'Correct rejected mortality':'Record mortality'}>
@@ -64,7 +65,7 @@ export function MortalityForm({correctionId}:{correctionId?:string}){
       <Controller control={control} name="quantity" render={({field})=><Field label="Dead birds (whole birds)" value={field.value} onChangeText={field.onChange} keyboardType="number-pad" editable={permitted&&!busy}/>}/>
       {(['suspected_cause','description','action_taken','reported_by_name'] as const).map(name=><Controller key={name} control={control} name={name} render={({field})=><Field
         label={{suspected_cause:'Suspected cause',description:'Description',action_taken:'Action taken',reported_by_name:'Observed reporter'}[name]} value={field.value} onChangeText={field.onChange} editable={permitted&&!busy} maxLength={name==='description'||name==='action_taken'?4000:200}/>}/>)}
-      <ErrorMessage message={error}/><Notice message={saved}/>
+      <ErrorMessage message={error} announcementKey={errorAttempt}/><Notice message={saved}/>
       <Button title={busy?'Saving locally…':correctionId?'Save new linked correction':'Save mortality on this device'} disabled={!permitted||busy||!!(correctionId&&saved)} onPress={()=>{
         if(correctionId)Alert.alert('Save a new correction?','The original rejection remains. The new operation will require its own Django validation.',[{text:'Review form',style:'cancel'},{text:'Save correction',onPress:()=>{void handleSubmit(save)();}}]);else void handleSubmit(save)();
       }}/>

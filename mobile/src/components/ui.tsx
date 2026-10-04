@@ -1,6 +1,7 @@
-import React from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type TextInputProps } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { AccessibilityInfo, ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type TextInputProps } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { announceErrorChange, type ErrorAnnouncement } from './error-announcement';
 export const colors = { cream: '#FAF6EB', navy: '#162D43', gold: '#BD922B', muted: '#45586A', border: '#D6CDB8', danger: '#992A27', white: '#FFFFFF' };
 export function Screen({ title, children }: { title: string; children: React.ReactNode }) {
   return <SafeAreaView style={styles.safe} edges={['left', 'right', 'bottom']}><ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.screen}>
@@ -14,15 +15,23 @@ export function Notice({ message }: { message: string | null }) {
 export function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return <View style={styles.card}><Text accessibilityRole="header" style={styles.heading}>{title}</Text>{children}</View>;
 }
-export function Button({ title, onPress, disabled = false }: { title: string; onPress: () => void; disabled?: boolean }) {
-  return <Pressable accessibilityRole="button" accessibilityLabel={title} accessibilityState={{ disabled }} disabled={disabled} onPress={onPress}
+export function Button({ title, onPress, disabled = false, accessibilityLabel=title }: { title: string; onPress: () => void; disabled?: boolean; accessibilityLabel?:string }) {
+  return <Pressable accessibilityRole="button" accessibilityLabel={accessibilityLabel} accessibilityState={{ disabled }} disabled={disabled} onPress={onPress}
     style={({ pressed }) => [styles.button, (disabled || pressed) && { opacity: 0.65 }]}><Text style={styles.buttonText}>{title}</Text></Pressable>;
 }
 export function Field({ label, ...props }: TextInputProps & { label: string }) {
   return <View style={styles.field}><Text style={styles.body}>{label}</Text><TextInput accessibilityLabel={label} placeholderTextColor={colors.muted} style={styles.input} {...props} /></View>;
 }
-export function ErrorMessage({ message }: { message: string | null }) {
-  return message ? <Text accessible accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.error}>{message}</Text> : null;
+export function ErrorMessage({ message, announcementKey }: { message: string | null; announcementKey?: number }) {
+  const previous = useRef<ErrorAnnouncement | null>(null);
+  useEffect(() => {
+    previous.current = announceErrorChange(previous.current, { message, attempt: announcementKey }, text => {
+      if (Platform.OS === 'android') AccessibilityInfo.announceForAccessibility(text);
+    });
+  }, [message, announcementKey]);
+  // Explicit Android announcements work without moving focus to an off-screen
+  // error. Avoid a second live-region announcement of the same native event.
+  return message ? <Text accessible accessibilityRole="alert" accessibilityLiveRegion={Platform.OS === 'android' ? 'none' : 'polite'} style={styles.error}>{message}</Text> : null;
 }
 export function Loading({ label = 'Opening local records…' }: { label?: string }) {
   return <View accessible accessibilityRole="progressbar" accessibilityLabel={label} style={styles.card}><ActivityIndicator importantForAccessibility="no" color={colors.navy} /><Body>{label}</Body></View>;

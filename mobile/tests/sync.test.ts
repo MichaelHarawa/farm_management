@@ -8,6 +8,7 @@ import { migrate,Repository,canonical,commandHashInput } from '../src/db/reposit
 import { migrations } from '../src/db/schema';
 import { SyncStore } from '../src/sync/store';
 import { SyncEngine,backoff } from '../src/sync/engine';
+import { checkSyncCoordination } from '../src/test/sync-coordination';
 import { entity,changesPage,type Entity } from '../src/sync/protocol';
 import { ApiError } from '../src/auth/client';
 import { capabilitiesSchema } from '../src/protocol';
@@ -22,6 +23,22 @@ const batch: Entity = entity.parse({entity_type:'poultry.batch',entity_uuid:comm
 const caps=capabilitiesSchema.parse({protocol_version:1,schema_version:1,policy_version:1,projection_version:1,deployment_id:identity.deploymentId,
  device_id:identity.deviceId,stream_epoch:epoch,server_time:at,scope_revision:scope,entities:['poultry.batch','poultry.mortality','poultry.feed_usage'],
  commands:{'poultry.mortality.record':{available:true}},offline:{operational_days:7,sensitive_hours:24}});
+
+test('pull requests honor the validated server row budget and continue bounded pages',async()=>{
+ const {repo,store}=await setup();
+ try{
+  const s=await snapshot(store);await store.stageSnapshotPage(s.page,'snapshot_cursor',at);
+  const limited=capabilitiesSchema.parse({...caps,limits:{page_rows:1,page_bytes:1048576}});
+  assert.equal(limited.limits?.page_rows,1);
+  assert.equal(capabilitiesSchema.safeParse({...caps,limits:{page_rows:0}}).success,false);
+  let calls=0;
+  const engine=new SyncEngine({store,owner:'budget',uploadsEnabled:false,authorize:async()=>limited,now:()=>Date.parse(at),api:{async request(path){
+   assert.equal(new URL(path,'http://synthetic.invalid').searchParams.get('limit'),'1');
+   calls++;return delta([],[],`limited_${calls}`,calls===2);
+  }}});
+  assert.equal((await engine.run()).status,'complete');assert.equal(calls,2);
+ }finally{await repo.db.close();}
+});
 
 test('canonical optional fields retain JSON wire semantics and existing command hashes',()=>{
  assert.equal(canonical({b:undefined,a:[undefined,1]}),'{"a":[null,1]}');
@@ -72,6 +89,37 @@ function accepted(op=command) {
  return {operation_id:op.operation_id,outcome:'accepted',code:'accepted',message:'Recorded once',field_errors:{},recovery_action:'reconcile_and_pull',
  canonical_entities:[batch,mortality],entity_mappings:[{entity_type:op.entity_type,entity_uuid:op.entity_uuid,server_id:'1',revision:'2'}],transaction_id:randomUUID(),committed_at:at};
 }
+test('native coordination orchestration shares a flight and excludes a persisted-lease contender before HTTP',async()=>{
+ const {repo,store}=await setup();let calls=0,auth=0;
+ try {
+  const s=await snapshot(store);await store.stageSnapshotPage(s.page,'snapshot_cursor',at);await repo.saveDraftAndEnqueue(command,hash);
+  const before=await store.operationDetails(command.operation_id);
+  const proof=await checkSyncCoordination({store,now:()=>Date.parse(at),authorize:async()=>{auth++;return caps;},api:{async request(path){
+   assert.ok(path.startsWith('/mobile-sync/changes?'));calls++;return delta([],[],`overlap_${calls}`);
+  }}},['native-first','native-second']);
+  assert.equal(proof.sharedFlight,true);assert.equal(proof.contender.status,'busy');assert.equal(proof.contender.requests,0);
+  assert.equal(proof.completed.commands,0);assert.equal(auth,1);assert.equal(calls,1);
+  assert.deepEqual(await store.operationDetails(command.operation_id),before);
+  assert.equal(await repo.db.first('SELECT owner FROM sync_lease'),null);
+ }finally{await repo.db.close();}
+});
+test('coordination diagnostics refuse an already owned lease without authentication or removing its owner',async()=>{
+ const {repo,store}=await setup();
+ try {
+  await repo.acquireLease('existing',Date.parse(at),60000);
+  await assert.rejects(checkSyncCoordination({store,now:()=>Date.parse(at),authorize:async()=>{assert.fail('no auth');},api:{async request(){assert.fail('no HTTP');}}},
+   ['native-first','native-second']),/first_lease_not_acquired/);
+  assert.equal((await repo.db.first<{owner:string}>('SELECT owner FROM sync_lease'))?.owner,'existing');
+ }finally{await repo.db.close();}
+});
+test('coordination diagnostics surface authorization failure and release only their lease',async()=>{
+ const {repo,store}=await setup();
+ try {
+  await assert.rejects(checkSyncCoordination({store,now:()=>Date.parse(at),authorize:async()=>{throw new ApiError(403,'revoked');},api:{async request(){assert.fail('no HTTP');}}},
+   ['native-first','native-second']),/revoked/);
+  assert.equal(await repo.db.first('SELECT owner FROM sync_lease'),null);
+ }finally{await repo.db.close();}
+});
 test('frozen bootstrap checksum failure retains last good replica/outbox; activation rolls back atomically',async()=>{
  const {repo,store}=await setup();
  try {
@@ -196,6 +244,29 @@ test('expired cursor preserves pending exact evidence and old replica during rep
   await repo.invalidateScope();assert.equal((await store.queue())[0]?.status,'quarantined');assert.equal((await repo.batches()).length,0);
  }finally{await repo.db.close();}
 });
+test('actual snapshot-not-found 404 restarts only staging, retaining the last replica and exact command',async()=>{
+ const {repo,store}=await setup();
+ try{
+  const old=await snapshot(store);await store.stageSnapshotPage(old.page,'snapshot_cursor',at);
+  await repo.saveDraftAndEnqueue(command,hash);const original=await store.operationDetails(command.operation_id);
+  const staged=await snapshot(store);let manifests=0;
+  const replacement={...staged.manifest,snapshot_id:randomUUID()};
+  const engine=new SyncEngine({store,owner:'missing-snapshot',uploadsEnabled:false,authorize:async()=>caps,now:()=>Date.parse(at),api:{async request(path,body){
+   if(path==='/mobile-sync/bootstrap'){
+    manifests++;assert.deepEqual(await store.operationDetails(command.operation_id),original);
+    assert.equal((await store.batch(batch.entity_uuid))?.payload.remaining_birds,100);
+    if(manifests===1){assert.equal((body as {resume_snapshot_id:string}).resume_snapshot_id,staged.manifest.snapshot_id);throw new ApiError(404,'snapshot_not_found');}
+    assert.equal((body as {resume_snapshot_id?:string}).resume_snapshot_id,undefined);return replacement;
+   }
+   if(path.includes('/pages?'))return {...staged.page,snapshot_id:replacement.snapshot_id};
+   if(path.startsWith('/mobile-sync/changes?'))return delta([],[],'replacement_cursor');
+   throw new Error('unexpected');
+  }}});
+  assert.equal((await engine.run()).status,'complete');assert.equal(manifests,2);assert.equal(await store.snapshot(),null);
+  assert.deepEqual(await store.operationDetails(command.operation_id),original);assert.equal((await store.queue())[0]?.ever_sent,0);
+ }finally{await repo.db.close();}
+});
+
 test('strict positive projections reject restricted fields, malformed fragment and foreign deployment',async()=>{
  const {repo,store}=await setup();
  try {

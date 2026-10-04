@@ -8,7 +8,7 @@ export function OperationDetails({store,id}:{store:SyncStore;id:string}) {
   useEffect(()=>{let active=true;if(!expanded)return;
     store.operationDetails(id).then(value=>{if(active)setDetails(value);}).catch(()=>{if(active)setError('Cannot read this record. No evidence was changed.');});
     return()=>{active=false;};},[expanded,store,id]);
-  return <><Button title={expanded?'Hide original record details':'View original record and server outcome'} onPress={()=>setExpanded(v=>!v)}/>
+  return <><Button title={expanded?'Hide original record details':'View original record and server outcome'} accessibilityLabel={`${expanded?'Hide original record details':'View original record and server outcome'} ${id}`} onPress={()=>setExpanded(v=>!v)}/>
     {expanded&&<><ErrorMessage message={error}/>{details&&<>
       <Body>Event UUID: {details.command.entity_uuid}. Event UTC time: {details.command.payload.mortality_date}.</Body>
       <Body>Cause: {details.command.payload.suspected_cause}. Description: {details.command.payload.description}.</Body>

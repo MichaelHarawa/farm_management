@@ -9,6 +9,7 @@ import type {
   InputCost,
   PaginatedResponse,
   PoultryBatch,
+  OperationalPoultryBatch,
   PoultryDashboardResponse,
   PoultryFeedMetrics,
   PoultryFeedUsage,
@@ -70,6 +71,10 @@ export async function getPoultryBatch(
       cache: "no-store",
     }
   );
+}
+
+export async function getOperationalPoultryBatch(id: number, returnTo: string): Promise<OperationalPoultryBatch> {
+  return authenticatedBackendFetch<OperationalPoultryBatch>(poultryApiPaths.batch(id), { returnTo, cache: "no-store" });
 }
 
 export async function getBatchInputCosts(
