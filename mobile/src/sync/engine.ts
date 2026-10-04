@@ -9,6 +9,7 @@ export interface SyncApi { request(path: string, body?: unknown): Promise<unknow
 export interface EngineOptions {
   api: SyncApi; store: SyncStore; authorize(): Promise<Capabilities>; owner: string;
   uploadsEnabled: boolean; now?: () => number; random?: () => number;
+  defaultPacks?: string[];
   maxPages?: number; maxCommands?: number; maxRunMs?: number;
 }
 export interface SyncOutcome { status: 'complete'|'paused'|'busy'; requests: number; pages: number; commands: number }
@@ -26,7 +27,7 @@ export class SyncEngine {
   private canceled = false;
   constructor(private options: EngineOptions) {}
   cancel() { this.canceled = true; }
-  run(packs = ['operational-current-v1']): Promise<SyncOutcome> {
+  run(packs = this.options.defaultPacks ?? ['operational-current-v1']): Promise<SyncOutcome> {
     if (this.flight) return this.flight;
     this.canceled = false;
     this.flight = this.execute(packs).finally(() => { this.flight = null; });
@@ -88,7 +89,7 @@ export class SyncEngine {
         }
       };
       try {
-        if (!coverage || await store.snapshot() || canonical(coverage.packs)!==canonical(selected)) if (!await download()) return outcome('paused');
+        if (!coverage || !await store.cursor() || await store.snapshot() || canonical(coverage.packs)!==canonical(selected)) if (!await download()) return outcome('paused');
         if (!await pull()) return outcome('paused');
       } catch (error) {
         const missingSnapshot=error instanceof ApiError&&error.status===404&&error.code==='snapshot_not_found';
@@ -97,10 +98,10 @@ export class SyncEngine {
         if (error.code==='scope_reset_required') { await store.repository.invalidateScope(fence()); throw new ApiError(401,'sign_in_required'); }
         await store.restartStaging(fence()); if (!await download() || !await pull()) return outcome('paused');
       }
-      if (this.options.uploadsEnabled && capabilities.commands['poultry.mortality.record']?.available) {
+      if (this.options.uploadsEnabled && Object.values(capabilities.commands).some(c => c.available && c.mode !== 'online')) {
         while (commands < (this.options.maxCommands ?? 50)) {
           await active();
-          const rows = await store.claim(now(),owner,Math.min(20,(this.options.maxCommands??50)-commands));
+          const rows = await store.claim(now(),owner,Math.min(20,(this.options.maxCommands??50)-commands),capabilities);
           if (!rows.length) break;
           const resend: Delivery[] = [];
           try {

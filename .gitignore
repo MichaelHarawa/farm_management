@@ -20,3 +20,9 @@ frontend/dev.log
 
 /docs/
 
+# Private Phase 5 synthetic acceptance credentials and generated host-test outputs.
+/tmp/phase05-synthetic-credentials.json
+/tmp/phase05-poultry.integration.mjs
+/tmp/phase05-backend-tests.log
+/tmp/Phase05SelectorProbe.java
+

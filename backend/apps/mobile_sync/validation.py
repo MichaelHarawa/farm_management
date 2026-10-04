@@ -1,4 +1,3 @@
-from collections import defaultdict
 from datetime import timedelta
 from zoneinfo import ZoneInfo
 
@@ -10,8 +9,7 @@ FARM_ZONE = ZoneInfo("Africa/Blantyre")
 
 def validate_mortality(batch, data):
     from apps.finance.models import AccountingPeriod, PeriodStatus
-    from apps.poultry.models import FeedUsage, FlockAdjustment, Mortality, Sales
-    from apps.poultry.services.batch_lifecycle import BIRD_PRODUCT_TYPES, assert_batch_in_production
+    from apps.poultry.services.batch_lifecycle import assert_batch_in_production
 
     assert_batch_in_production(batch)
     at = data["mortality_date"]
@@ -23,19 +21,6 @@ def validate_mortality(batch, data):
     periods = list(AccountingPeriod.objects.select_for_update().filter(period_start__lte=day, period_end__gte=day).order_by("pk"))
     if any(period.status == PeriodStatus.CLOSED for period in periods):
         raise ValidationError({"period_locked": "Original business date belongs to a closed accounting period."})
-    grouped = defaultdict(int)
-    for event_at, quantity in Mortality.objects.filter(batch=batch).values_list("mortality_date", "quantity_dead"):
-        grouped[event_at] -= quantity
-    for event_at, quantity in Sales.objects.filter(batch=batch, product_type__in=BIRD_PRODUCT_TYPES).exclude(payment_status="cancelled").values_list("sale_date", "quantity_sold"):
-        grouped[event_at] -= quantity
-    for event_at, quantity in FlockAdjustment.objects.filter(batch=batch, status="approved").values_list("effective_at", "quantity_change"):
-        grouped[event_at] += quantity
-    grouped[at] -= data["quantity_dead"]
-    feed_dates = set(FeedUsage.objects.filter(batch=batch).values_list("feeding_start_date", flat=True))
-    balance = batch.actual_quantity_received or batch.quantity
-    for event_at in sorted(set(grouped) | feed_dates):
-        balance += grouped[event_at]
-        if balance < 0 or (event_at in feed_dates and balance <= 0):
-            raise ValidationError({"quantity_dead": ValidationError(
-                "Mortality would invalidate a dated flock/feed balance.", code="insufficient_birds")})
+    from apps.poultry.services.operations import validate_population_history
+    validate_population_history(batch, at=at, change=-data["quantity_dead"], field="quantity_dead")
     return (day - batch.entry_date.astimezone(FARM_ZONE).date()).days

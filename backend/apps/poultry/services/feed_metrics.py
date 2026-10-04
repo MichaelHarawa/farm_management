@@ -35,11 +35,11 @@ SAME_TIMESTAMP_ORDERING = (
 
 
 def actual_birds_received(batch: Batch) -> int:
-    return batch.actual_quantity_received or batch.quantity
+    return batch.actual_quantity_received if batch.actual_quantity_received is not None else batch.quantity
 
 
 def batch_has_arrived(batch: Batch) -> bool:
-    return batch.status not in {BatchStatus.BOOKED, BatchStatus.PLANNED}
+    return batch.status not in {BatchStatus.BOOKED, BatchStatus.PLANNED, BatchStatus.DELIVERED}
 
 
 def live_birds_at(batch: Batch, event_at: datetime) -> int:
@@ -84,10 +84,15 @@ def recalculate_feed_event_populations(batch: Batch) -> list[FeedUsage]:
 @sync_atomic
 @transaction.atomic
 def record_feed_usage(*, batch_id: int, created_by, **data) -> FeedUsage:
-    from .batch_lifecycle import assert_batch_in_production
-
+    from .operations import lock_periods, validate_event
+    lock_periods(data["feeding_start_date"], data["feeding_end_date"])
     batch = Batch.objects.select_for_update().get(pk=batch_id)
-    assert_batch_in_production(batch)
+    data["initial_age"] = validate_event(batch, data["feeding_start_date"], "feeding_start_date")
+    validate_event(batch, data["feeding_end_date"], "feeding_end_date")
+    if data["feeding_end_date"] < data["feeding_start_date"]:
+        raise ValidationError({"feeding_end_date": "End cannot precede start."})
+    if data["quantity_given"] <= 0:
+        raise ValidationError({"quantity_given": "Quantity must be positive."})
     data.pop("current_number_of_birds", None)
     live_birds = live_birds_at(batch, data["feeding_start_date"])
     if live_birds <= 0:
@@ -110,13 +115,17 @@ def record_feed_usage(*, batch_id: int, created_by, **data) -> FeedUsage:
 @sync_atomic
 @transaction.atomic
 def create_flock_adjustment(*, batch_id: int, approved_by, **data) -> FlockAdjustment:
+    from .operations import lock_periods, validate_event, validate_population_history
+    from .batch_lifecycle import recalculate_batch_status
+    lock_periods(data["effective_at"])
     batch = Batch.objects.select_for_update().get(pk=batch_id)
+    validate_event(batch, data["effective_at"], "effective_at")
+    validate_population_history(batch, at=data["effective_at"], change=data["quantity_change"])
     adjustment = FlockAdjustment(batch=batch, approved_by=approved_by, **data)
     adjustment.full_clean()
     adjustment.save()
-    if live_birds_at(batch, adjustment.effective_at) < 0:
-        raise ValidationError({"quantity_change": "This adjustment would make the flock negative."})
     recalculate_feed_event_populations(batch)
+    recalculate_batch_status(batch)
     return adjustment
 
 

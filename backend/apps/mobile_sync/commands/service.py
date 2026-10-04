@@ -56,7 +56,7 @@ def outcome(command, status, code, message, fields=None):
             "recovery_action": "wait_for_dependency" if status == "dependency_blocked" else "review_and_supersede"}
 
 
-def execute(command, actor, session, token):
+def execute(command, actor, session, token, *, mode="queued", version=1):
     with sync_boundary(operation_id=command["operation_id"]) as state:
         actor = get_user_model().objects.select_for_update().get(pk=actor.pk)
         # Recheck under stream lock: revocation/role writes cannot race receipt replay.
@@ -83,10 +83,13 @@ def execute(command, actor, session, token):
         spec = REGISTRY.get((command["entity_type"], command["action"], command["payload_version"]))
         if spec is None:
             return outcome(command, "validation_failed", "command_unavailable", "Command is unavailable.")
+        if spec.mode != mode:
+            return outcome(command, "validation_failed", "online_confirmation_required", "This action requires an explicit foreground online confirmation.")
         dependencies = list(SyncOperationReceipt.objects.filter(stream=stream, actor=actor, device=session.device,
                                                                operation_id__in=command["depends_on"]))
         if len(dependencies) != len(command["depends_on"]) or any(row.outcome != "accepted" for row in dependencies):
             return outcome(command, "dependency_blocked", "dependency_blocked", "A prerequisite is missing or not accepted.")
+        state["dependencies"] = dependencies
         result = None
         if not permits(actor, spec.roles):
             result = outcome(command, "permission_denied", "permission_denied", "Current role cannot capture this event.")
@@ -97,7 +100,7 @@ def execute(command, actor, session, token):
                 result = outcome(command, "conflict", "invalid_supersession", "Only an owned terminal rejection can be superseded.")
         if result is None and command["captured_at"] > timezone.now() + timedelta(minutes=5):
             result = outcome(command, "validation_failed", "future_capture", "Capture timestamp cannot be in the future.")
-        if result is None and SyncEntity.objects.filter(stream=stream, entity_uuid=command["entity_uuid"]).exists():
+        if result is None and not spec.mutates_existing and SyncEntity.objects.filter(stream=stream, entity_uuid=command["entity_uuid"]).exists():
             result = outcome(command, "conflict", "entity_uuid_conflict", "Entity identity already exists.")
         if result is None:
             try:
@@ -106,10 +109,15 @@ def execute(command, actor, session, token):
                     changes = publish_batches(state)
                     state["changes"].extend(changes)
                     state["batches"].clear()
-                    mapping = SyncEntity.objects.get(stream=stream, entity_type="poultry.mortality", source_pk=str(record.pk))
+                    mapping = SyncEntity.objects.get(stream=stream, entity_type=command["entity_type"], source_pk=str(record.pk))
+                    if batch_mapping is None:
+                        batch_mapping = mapping
                     batch_mapping.refresh_from_db()
                     result = outcome(command, "accepted", "accepted", "Event recorded once.")
-                    result.update(canonical_entities=[wire_entity(batch_mapping), wire_entity(mapping)],
+                    entities = [wire_entity(batch_mapping, version)]
+                    if mapping.pk != batch_mapping.pk:
+                        entities.append(wire_entity(mapping, version))
+                    result.update(canonical_entities=entities,
                                   entity_mappings=[{"entity_type": mapping.entity_type, "entity_uuid": str(mapping.entity_uuid),
                                                     "server_id": mapping.source_pk, "revision": str(mapping.revision)}],
                                   transaction_id=str(state["transaction_id"]), committed_at=json_value(timezone.now()),
@@ -125,8 +133,9 @@ def execute(command, actor, session, token):
                 fields = normalized(fields)
                 locked = "period_locked" in fields
                 insufficient = any(item.code == "insufficient_birds" for errors in getattr(error, "error_dict", {}).values() for item in errors)
-                status = "period_locked" if locked else "conflict" if insufficient else "validation_failed"
-                code = "period_locked" if locked else "insufficient_birds" if insufficient else "invalid_business_event"
+                conflict_code = error.detail.get("code") if isinstance(error, SyncError) and error.status_code == 409 else None
+                status = "period_locked" if locked else "conflict" if insufficient or conflict_code else "validation_failed"
+                code = "period_locked" if locked else "insufficient_birds" if insufficient else conflict_code or "invalid_business_event"
                 result = outcome(command, status, code, "Event requires correction or review.", fields)
         SyncOperationReceipt.objects.create(stream=stream, actor=actor, device=session.device, operation_id=command["operation_id"],
             request_hash=request_hash, command=immutable, outcome=result["outcome"], result=result,

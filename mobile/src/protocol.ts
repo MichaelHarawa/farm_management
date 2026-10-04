@@ -6,10 +6,12 @@ export type CurrentUser = z.infer<typeof userSchema>;
 export const tokenPairSchema = z.object({ access: z.string().min(1), refresh: z.string().min(1) });
 export const registrationSchema = tokenPairSchema.extend({ deployment_id: uuid, device_id: uuid, policy: z.object({ protocol_version: z.literal(1), operational_offline_days: z.number().positive().max(7), sensitive_offline_hours: z.number().positive().max(24) }) });
 export const capabilitiesSchema = z.object({
-  protocol_version: z.literal(1), schema_version: z.literal(1), policy_version: z.literal(1), projection_version: z.literal(1),
+  protocol_version: z.literal(1), schema_version: z.union([z.literal(1),z.literal(2)]), policy_version: z.literal(1), projection_version: z.union([z.literal(1),z.literal(2)]),
   deployment_id: uuid, device_id: uuid, stream_epoch: uuid, server_time: instant, scope_revision: z.string().min(1),
-  entities: z.array(z.enum(['poultry.batch', 'poultry.mortality', 'poultry.feed_usage'])),
-  commands: z.record(z.string(), z.object({ available: z.boolean(), payload_version: z.number().optional(), reason: z.string().optional() })),
+  entities: z.array(z.enum(['poultry.batch', 'poultry.mortality', 'poultry.feed_usage','poultry.treatment','poultry.weight_sample','poultry.flock_adjustment','poultry.adjustment_proposal'])),
+  commands: z.record(z.string(), z.object({ available: z.boolean(), payload_version: z.number().optional(), reason: z.string().optional(), mode: z.enum(['queued','online']).optional() })),
+  lookups: z.object({ version: z.literal(1), choices: z.record(z.string(), z.array(z.object({ value: z.string(), label: z.string() }))),
+    treatment_quantity_unit: z.string(), stock_linked_capture: z.literal(false), mortality_threshold_percent: z.string() }).optional(),
   offline: z.object({ operational_days: z.number().positive().max(7), sensitive_hours: z.number().positive().max(24) }),
   limits: z.object({ page_rows: z.number().int().positive().max(500) }).optional(),
 });

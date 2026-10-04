@@ -5,11 +5,12 @@ const root = path.resolve(__dirname, '..');
 const windows = process.platform === 'win32';
 const args = process.argv.slice(2);
 const phase4 = args.includes('--phase4-acceptance');
-const acceptance = args.includes('--acceptance') || phase4;
+const phase5 = args.includes('--phase5-acceptance');
+const acceptance = args.includes('--acceptance') || phase4 || phase5;
 const abi = args.find((arg) => arg.startsWith('--abi='))?.slice('--abi='.length);
-if (args.some((arg) => !['--acceptance', '--phase4-acceptance', '--release'].includes(arg) && !arg.startsWith('--abi=')) ||
+if (phase4 && phase5 || args.some((arg) => !['--acceptance', '--phase4-acceptance', '--phase5-acceptance', '--release'].includes(arg) && !arg.startsWith('--abi=')) ||
     (abi && !['x86_64', 'arm64-v8a', 'armeabi-v7a', 'x86'].includes(abi))) {
-  console.error('Usage: npm run build:android -- [--acceptance|--phase4-acceptance] [--abi=x86_64|arm64-v8a|armeabi-v7a|x86]');
+  console.error('Usage: npm run build:android -- [--acceptance|--phase4-acceptance|--phase5-acceptance] [--abi=x86_64|arm64-v8a|armeabi-v7a|x86]');
   process.exit(1);
 }
 if (acceptance && ((process.env.APP_ENV ?? 'development') !== 'development' || process.env.MOBILE_RELEASE === '1')) {
@@ -19,8 +20,12 @@ if (acceptance && ((process.env.APP_ENV ?? 'development') !== 'development' || p
 if (phase4 && process.env.API_BASE_URL && process.env.API_BASE_URL !== 'http://10.0.2.2:7073/api/v1') {
   console.error('Phase 4 acceptance can only use its new synthetic backend on port7073.'); process.exit(1);
 }
+if (phase5 && process.env.API_BASE_URL && process.env.API_BASE_URL !== 'http://10.0.2.2:7074/api/v1') {
+  console.error('Phase 5 acceptance can only use its separate synthetic backend on port7074.'); process.exit(1);
+}
 const buildEnvironment = { ...process.env, MOBILE_LOCAL_ACCEPTANCE: acceptance ? '1' : '0', MOBILE_PHASE4_PILOT: phase4 ? '1' : '0',
-  ...(phase4 ? { API_BASE_URL: 'http://10.0.2.2:7073/api/v1' } : {}), NODE_ENV: acceptance ? 'production' : process.env.NODE_ENV ?? 'development' };
+  MOBILE_PHASE5_PILOT: phase5 ? '1' : '0',
+  ...(phase4 ? { API_BASE_URL: 'http://10.0.2.2:7073/api/v1' } : phase5 ? { API_BASE_URL: 'http://10.0.2.2:7074/api/v1' } : {}), NODE_ENV: acceptance ? 'production' : process.env.NODE_ENV ?? 'development' };
 const sdk = process.env.ANDROID_HOME;
 const javaHome = process.env.JAVA_HOME;
 if (!sdk || !fs.existsSync(path.join(sdk, 'platforms', 'android-36', 'android.jar'))) {
@@ -40,7 +45,7 @@ if (args.includes('--release')) {
 // and avoid deleting files while an IDE's Gradle importer holds them open.
 const prebuild = spawnSync(windows ? 'npx.cmd' : 'npx', ['expo', 'prebuild', '--platform', 'android', '--no-install', '--no-clean'], { cwd: root, stdio: 'inherit', shell: windows, env: buildEnvironment });
 if (prebuild.status !== 0) process.exit(prebuild.status ?? 1);
-if (acceptance) console.log(`Building Farm Management (offline test): separate .dev.acceptance${phase4 ? '.phase4' : ''} package, embedded JS, debug signing. Not for distribution.`);
+if (acceptance) console.log(`Building Farm Management (offline test): separate .dev.acceptance${phase5 ? '.phase5' : phase4 ? '.phase4' : ''} package, embedded JS, debug signing. Not for distribution.`);
 const gradleArgs = [acceptance ? 'assembleLocalAcceptance' : 'assembleDebug', '--no-daemon', '--console=plain', '--max-workers=2', '--project-cache-dir', '.gradle-verification'];
 if (abi) gradleArgs.push(`-PreactNativeArchitectures=${abi}`);
 const build = spawnSync(windows ? 'gradlew.bat' : './gradlew', gradleArgs, {

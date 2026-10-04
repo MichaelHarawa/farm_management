@@ -1,7 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import Constants from 'expo-constants';
-import { developmentChecksEnabled, localAcceptance } from '../build-mode.native';
+import { developmentChecksEnabled, localAcceptance, phase5Pilot } from '../build-mode.native';
 import { validateSettings } from '../config';
 import { capabilitiesSchema, registrationSchema, tokenPairSchema, userSchema, type Capabilities, type CurrentUser } from '../protocol';
 import { openEncrypted, storePartition } from '../db/native';
@@ -67,7 +67,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     } finally { stage.current = undefined; running.current = false; setState((s) => ({ ...s, busy: false })); }
   }
   function clientFor(pointer: SessionPointer, repository: Repository, generation: number) {
-    return new AuthClient(httpTransport(pointer.base), vault.credentials(pointer.partition), async () => {
+    return new AuthClient(httpTransport(pointer.base, phase5Pilot ? 2 : 1), vault.credentials(pointer.partition), async () => {
       await lifecycle.retire(generation, async (previous) => {
         try {
           await vault.writePointer({ ...pointer, offlineAllowed: false });
@@ -94,7 +94,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       stage.current = 'sign_in_request';
       // A LAN backend may be reachable without validated public internet.
       // The bounded HTTP request, not Android's network hint, is authority.
-      const transport = httpTransport(settings.apiBaseUrl);
+      const transport = httpTransport(settings.apiBaseUrl, phase5Pilot ? 2 : 1);
       const login = tokenPairSchema.extend({ user: userSchema }).parse(await transport('/auth/login', { username, password }));
       stage.current = 'device_registration';
       const registration = registrationSchema.parse(await transport('/mobile-sync/devices', {

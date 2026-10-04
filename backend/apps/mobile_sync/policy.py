@@ -11,12 +11,18 @@ def permits(user, roles):
     return bool(user and user.is_authenticated and user.is_active and (user.is_superuser or user.role_slugs & roles))
 
 
-def scope_revision(user):
+def scope_revision(user, version=1):
     # Re-fetch through M2M; prefetched role summaries cannot grant stale access.
     roles = sorted(user.roles.values_list("slug", flat=True))
-    return checksum({"policy": 1, "projections": 1, "roles": roles, "active": user.is_active,
-                     "superuser": user.is_superuser, "entities": ["poultry.batch", "poultry.mortality", "poultry.feed_usage"],
-                     "commands": ["poultry.mortality.record"]})
+    value = {"policy": 1, "projections": 1, "roles": roles, "active": user.is_active,
+             "superuser": user.is_superuser, "entities": ["poultry.batch", "poultry.mortality", "poultry.feed_usage"],
+             "commands": ["poultry.mortality.record"]}
+    if version == 2:
+        from .projections import TYPES
+        from .commands.registry import REGISTRY
+        value.update(projections=2, entities=sorted(TYPES.values()),
+                     commands=sorted(f"{kind}.{action}" for kind, action, _ in REGISTRY))
+    return checksum(value)
 
 
 class PoultryPermission(BasePermission):

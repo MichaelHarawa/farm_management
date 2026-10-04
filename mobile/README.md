@@ -1,5 +1,16 @@
 # Farm Management Android operational pilot
 
+**Phase5, 4 October 2026: implemented source; native acceptance pending.** Daily
+poultry forms, lifecycle dependencies, online-reviewed flock proposals, dated
+summaries and safe offline batch packs are added.70 mobile tests/lint/typechecks
+and65 PostgreSQL tests pass. Android prebuild passes, but Gradle's workstation
+socket-selector failure blocks a Phase5 APK on both JDK21 and17. Only physical
+phone/biometrics is deferred; emulator/TalkBack/web checks remain required. See
+[Phase5 checkpoint](../docs/mobile/checkpoints/PHASE_05.md) for exact evidence,
+dependency findings and recovery. The separate `.dev.acceptance.phase5` package
+uses synthetic7074 only; source farm and original Phase4 fixtures are preserved.
+The Phase4 completion paragraph below records the previous accepted scope.
+
 **Phase4's operational emulator milestone is complete (4 October 2026).** [The checkpoint](../docs/mobile/checkpoints/PHASE_04.md) records real API24 download/encrypted offline capture, lost-response receipt recovery, transaction termination, linked correction, fragment recovery, explicit discard/dependency retention, tombstone replay, role/session recovery and rendered web reconciliation. The latest retained-data APK additionally passes real batch-closure current-pack eviction/archive preservation, all nine exact original IDs/payloads/hashes and original child dependency across an offline restart. API36 passes corrected audible TalkBack error announcements, native coordinator exclusion and automatic cold-start/resume sync after private unlock; reconnect also passes. **Only physical-phone/biometric acceptance is deferred for this phase**, required before release. Uploads remain restricted to the actual separate `.dev.acceptance.phase4` localAcceptance package against synthetic7073; ordinary/A/B/staging/release builds stay gated. Django is authoritative; financial commands, attachments and production activation remain off. Fresh58 host tests, lint/typechecks and16 guarded Python tests pass; host success does not establish native encryption. Phase5 is not started.
 
 From the root, reproduce guarded real sync integration with local PostgreSQL settings below and `python docs/mobile/tools/phase03_local_backend.py --phase4-test`. It creates/removes a new synthetic DB, never the farm/retained Phase3 deployments. Recover the retained native fixture with the exact ownership-checked recovery command in the checkpoint, not a new factory/replacement on7073. Its original main batch is deliberately closed and all nine original operations are retained. Do not reset/reseed it or rearm its consumed TCP fault for later work.

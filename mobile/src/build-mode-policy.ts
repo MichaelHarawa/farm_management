@@ -16,3 +16,10 @@ export function phase4PilotEnabled(environment: unknown, apiBaseUrl: unknown, fl
   return environment === 'development' && apiBaseUrl === 'http://10.0.2.2:7073/api/v1' && flag === true &&
     build.applicationId === 'com.farmmanagement.mobile.dev.acceptance.phase4' && build.buildType === 'localAcceptance';
 }
+
+export function phase5PilotEnabled(environment: unknown, apiBaseUrl: unknown, flag: unknown, nativeBuild: unknown): boolean {
+  if (!nativeBuild || typeof nativeBuild !== 'object') return false;
+  const build = nativeBuild as Record<string, unknown>;
+  return environment === 'development' && apiBaseUrl === 'http://10.0.2.2:7074/api/v1' && flag === true &&
+    build.applicationId === 'com.farmmanagement.mobile.dev.acceptance.phase5' && build.buildType === 'localAcceptance';
+}

@@ -11,7 +11,7 @@ import { ApiError } from '../auth/client';
 import { result as receiptSchema } from './protocol';
 
 interface SyncContextValue { store:SyncStore|null; revision:number; busy:boolean; message:string|null; error:string|null;
-  enabled:boolean; notify():void; syncNow():Promise<void>; reviewQuarantined(id:string):Promise<void> }
+  enabled:boolean; notify():void; syncNow():Promise<void>; downloadBatch(id:string):Promise<void>; reviewQuarantined(id:string):Promise<void> }
 const Context=createContext<SyncContextValue|null>(null);
 export function useSync(){const value=useContext(Context);if(!value)throw new Error('Sync provider required');return value;}
 export function SyncProvider({children}:{children:React.ReactNode}){
@@ -19,7 +19,8 @@ export function SyncProvider({children}:{children:React.ReactNode}){
   const store=useMemo(()=>session?new SyncStore(session.repository,sha256):null,[session]);
   const [revision,setRevision]=useState(0);
   const [result,setResult]=useState<{engine:SyncEngine|null;busy:boolean;message:string|null;error:string|null}|null>(null);
-  const engine=useMemo(()=>store&&session?new SyncEngine({store,api:session.client,authorize:authorizeSync,owner:Crypto.randomUUID(),uploadsEnabled:nativeSyncPilotEnabled}):null,[store,session,authorizeSync]);
+  const engine=useMemo(()=>store&&session?new SyncEngine({store,api:session.client,authorize:authorizeSync,owner:Crypto.randomUUID(),uploadsEnabled:nativeSyncPilotEnabled,
+    defaultPacks:session.capabilities.projection_version===2?['operational-current-v2']:['operational-current-v1']}):null,[store,session,authorizeSync]);
   const notify=()=>setRevision(v=>v+1);
   const syncNow=useCallback(async(automatic=false)=>{
     if (!nativeSyncPilotEnabled || !engine) {setResult({engine,busy:false,message:nativeSyncGateReason,error:null});return;}
@@ -35,6 +36,17 @@ export function SyncProvider({children}:{children:React.ReactNode}){
       setRevision(v=>v+1);
     }catch(e){setResult(s=>s?.engine===engine?{engine,busy:false,message:null,error:e instanceof ApiError&&[401,403].includes(e.status)?'Sign in again to validate access. Original local work is retained.':'Sync did not complete. Pending work and original operation IDs are retained.'}:s);}
   },[engine,store]);
+  const downloadBatch=useCallback(async(id:string)=>{
+    if (!nativeSyncPilotEnabled || !engine || !session) throw new Error('sync_disabled');
+    setResult({engine,busy:true,message:null,error:null});
+    try {
+      const pack=`${session.capabilities.projection_version===2?'batch-v2:':'batch:'}${id}`;
+      const outcome=await engine.run([pack]);
+      const downloaded=(await store?.coverage())?.packs.includes(pack)&&!(await store?.excludedBatches())?.some(b=>b.batch_uuid===id);
+      setRevision(v=>v+1);
+      setResult({engine,busy:false,message:outcome.status==='complete'&&downloaded?'Batch pack downloaded and verified.':'Batch pack not yet complete. Retry this download after the current run; last good data and pending work retained.',error:null});
+    } catch {setResult({engine,busy:false,message:null,error:'Batch download did not complete. Existing data and work remain.'});}
+  },[engine,session,store]);
   const reviewQuarantined=useCallback(async(id:string)=>{
     if(!nativeSyncPilotEnabled || !store || !session || !engine)throw new Error('sync_disabled');
     const owner=Crypto.randomUUID();
@@ -60,5 +72,5 @@ export function SyncProvider({children}:{children:React.ReactNode}){
     return()=>{engine.cancel();app.remove();network.remove();};
   },[engine,syncNow]);
   const visible=result?.engine===engine?result:null;
-  return <Context.Provider value={{store,revision,busy:visible?.busy??false,message:visible?.message??null,error:visible?.error??null,enabled:nativeSyncPilotEnabled,notify,syncNow,reviewQuarantined}}>{children}</Context.Provider>;
+  return <Context.Provider value={{store,revision,busy:visible?.busy??false,message:visible?.message??null,error:visible?.error??null,enabled:nativeSyncPilotEnabled,notify,syncNow,downloadBatch,reviewQuarantined}}>{children}</Context.Provider>;
 }

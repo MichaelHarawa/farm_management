@@ -55,4 +55,10 @@ CREATE TABLE delta_fragments (
  changes_json TEXT NOT NULL,byte_count INTEGER NOT NULL,row_count INTEGER NOT NULL,
  PRIMARY KEY(transaction_id,fragment_index));
 CREATE INDEX delivery_queue ON deliveries(status,next_ms,operation_id);
+`, String.raw`
+-- Additive Phase5; never rewrite existing IDs, payloads, hashes or deliveries.
+CREATE TABLE form_drafts (draft_key TEXT PRIMARY KEY, values_json TEXT NOT NULL, updated_at TEXT NOT NULL);
+CREATE TABLE online_intents (operation_id TEXT PRIMARY KEY REFERENCES outbox(operation_id), submitted INTEGER NOT NULL DEFAULT 0 CHECK(submitted IN (0,1)));
+CREATE TABLE offline_batch_exclusions (batch_uuid TEXT PRIMARY KEY);
+CREATE INDEX batch_history ON confirmed_entities(entity_type,json_extract(payload_json,'$.batch_uuid'),entity_uuid);
 `];

@@ -749,7 +749,7 @@ class FlockAdjustment(SyncTrackedModel):
         return f"{self.batch.batch_id}: {self.quantity_change:+d} on {self.effective_at}"
 
 
-class DrugsVaccination(models.Model):
+class DrugsVaccination(SyncTrackedModel):
     batch = models.ForeignKey(
     Batch,
     on_delete=models.CASCADE,
@@ -783,7 +783,7 @@ class DrugsVaccination(models.Model):
         return f"{self.batch} {self.quantity} administered on {self.vaccination_date}"
 
 
-class BatchWeightSample(models.Model):
+class BatchWeightSample(SyncTrackedModel):
     """Actual average weight samples taken from the flock at a known age.
 
     Used to compare against breed-specific target curves (Ross 308 / Cobb 500)
@@ -836,4 +836,29 @@ class BatchWeightSample(models.Model):
             raise ValidationError(
                 {"sample_size": "Sample size must be greater than zero."}
             )
+
+
+class FlockAdjustmentProposal(SyncTrackedModel):
+    """Evidence only. Pending proposals never enter the flock balance."""
+    batch = models.ForeignKey(Batch, on_delete=models.PROTECT, related_name="adjustment_proposals")
+    effective_at = models.DateTimeField()
+    quantity_change = models.IntegerField()
+    reason = models.CharField(max_length=255)
+    status = models.CharField(max_length=20, default="pending", choices=[
+        ("pending", "Pending online approval"), ("approved", "Approved"), ("rejected", "Rejected")])
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="flock_proposals")
+    reviewed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT,
+                                    related_name="reviewed_flock_proposals")
+    adjustment = models.OneToOneField(FlockAdjustment, null=True, blank=True, on_delete=models.PROTECT,
+                                     related_name="proposal")
+    review_reason = models.CharField(max_length=255, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def clean(self):
+        super().clean()
+        if self.quantity_change == 0:
+            raise ValidationError({"quantity_change": "Adjustment cannot be zero."})
+        if not self.reason.strip():
+            raise ValidationError({"reason": "Reason is required."})
 

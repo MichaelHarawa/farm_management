@@ -102,8 +102,9 @@ class FarmBuildInfoModule(context: ReactApplicationContext) : ReactContextBaseJa
     // fallbacks exclude Expo's launcher. Embedded JS uses production mode;
     // application-owned synthetic probes require an explicit native test flag.
     const phase4 = config.extra.phase4Pilot === true;
+    const phase5 = config.extra.phase5Pilot === true;
     const acceptanceAllowed = config.extra.environment === 'development' && config.android.package === 'com.farmmanagement.mobile.dev' &&
-      config.extra.apiBaseUrl === `http://10.0.2.2:${phase4 ? '7073' : '7071'}/api/v1` && config.extra.localAcceptance === true;
+      config.extra.apiBaseUrl === `http://10.0.2.2:${phase5 ? '7074' : phase4 ? '7073' : '7071'}/api/v1` && config.extra.localAcceptance === true && !(phase4 && phase5);
     const acceptanceBlock = `
 // FARM_LOCAL_ACCEPTANCE
 android {
@@ -113,7 +114,7 @@ android {
    debuggable false
    jniDebuggable false
    signingConfig signingConfigs.debug
-   applicationIdSuffix '.acceptance${phase4 ? '.phase4' : ''}'
+   applicationIdSuffix '.acceptance${phase5 ? '.phase5' : phase4 ? '.phase4' : ''}'
    versionNameSuffix '-offline-test'
    matchingFallbacks = ['release']
    resValue 'string', 'app_name', 'Farm Management (offline test)'

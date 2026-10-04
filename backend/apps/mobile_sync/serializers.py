@@ -103,6 +103,135 @@ class PushSerializer(StrictSerializer):
     operations = MortalityOperationSerializer(many=True, min_length=1, max_length=50)
 
 
+class FarmDate(serializers.DateField):
+    def to_internal_value(self, data):
+        if not isinstance(data, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", data):
+            raise serializers.ValidationError("Expected farm calendar date YYYY-MM-DD.")
+        return super().to_internal_value(data)
+
+
+class BookPayload(StrictSerializer):
+    from apps.poultry.models import BirdType, BroilerStrain, ChicksSource
+    bird_type = serializers.ChoiceField(choices=BirdType.choices)
+    broiler_strain = serializers.ChoiceField(choices=BroilerStrain.choices, allow_blank=True, required=False)
+    source = serializers.ChoiceField(choices=ChicksSource.choices)
+    source_other = StrictText(max_length=200, allow_blank=True, required=False, trim_whitespace=False)
+    booking_date = FarmDate()
+    estimated_chick_arrival_date = FarmDate()
+    supplier_name = StrictText(max_length=200, allow_blank=True, required=False, trim_whitespace=False)
+    booking_reference = StrictText(max_length=120, allow_blank=True, required=False, trim_whitespace=False)
+    expected_quantity = StrictInteger(min_value=1, max_value=2147483647)
+    entry_date = UTCInstant()
+    expected_maturity_date = UTCInstant()
+
+
+class BatchReferencePayload(StrictSerializer):
+    batch_uuid = StrictUUID()
+
+
+class DeliveryPayload(BatchReferencePayload):
+    entry_date = UTCInstant()
+    expected_maturity_date = UTCInstant(required=False)
+    quantity = StrictInteger(min_value=1, max_value=2147483647)
+
+
+class FeedPayload(BatchReferencePayload):
+    from apps.poultry.models import FeedType, FeedSource, UnitMeasurement
+    feeding_start_date = UTCInstant()
+    feeding_end_date = UTCInstant()
+    feed_type = serializers.ChoiceField(choices=FeedType.choices)
+    feed_source = serializers.ChoiceField(choices=FeedSource.choices)
+    quantity_given = StrictInteger(min_value=1, max_value=2147483647)
+    unit_of_measurement = serializers.ChoiceField(choices=UnitMeasurement.choices)
+    notes = StrictText(max_length=4000, trim_whitespace=False)
+    reported_by_name = StrictText(max_length=200, trim_whitespace=False)
+
+
+class TreatmentPayload(BatchReferencePayload):
+    from apps.poultry.models import DrugCategory, DrugVaccinationType
+    vaccination_date = UTCInstant()
+    drug_category = serializers.ChoiceField(choices=DrugCategory.choices)
+    drug_vaccination_type = serializers.ChoiceField(choices=DrugVaccinationType.choices)
+    other_drug_vaccination = StrictText(max_length=200, allow_blank=True, required=False, trim_whitespace=False)
+    quantity = StrictInteger(min_value=1, max_value=2147483647)
+    description = StrictText(max_length=4000, trim_whitespace=False)
+    timely_status = StrictText(max_length=200, trim_whitespace=False)
+    reported_by_name = StrictText(max_length=200, trim_whitespace=False)
+
+
+class WeightPayload(BatchReferencePayload):
+    sampled_at = UTCInstant()
+    average_weight_g = StrictInteger(min_value=1, max_value=2147483647)
+    sample_size = StrictInteger(min_value=1, max_value=2147483647)
+    notes = StrictText(max_length=4000, allow_blank=True, required=False, trim_whitespace=False)
+    reported_by_name = StrictText(max_length=200, trim_whitespace=False)
+
+
+class ProposalPayload(BatchReferencePayload):
+    effective_at = UTCInstant()
+    quantity_change = StrictInteger(min_value=-2147483648, max_value=2147483647)
+    reason = StrictText(max_length=255, trim_whitespace=False)
+
+    def validate_quantity_change(self, value):
+        if value == 0:
+            raise serializers.ValidationError("Adjustment cannot be zero.")
+        return value
+
+
+class ReviewPayload(StrictSerializer):
+    reason = StrictText(max_length=255, trim_whitespace=False)
+
+
+class RecalculatePayload(BatchReferencePayload):
+    reason = StrictText(max_length=255, trim_whitespace=False)
+
+
+PAYLOAD_SERIALIZERS = {
+    ("poultry.mortality", "record"): MortalityPayloadSerializer,
+    ("poultry.batch", "book"): BookPayload,
+    ("poultry.batch", "mark_delivered"): BatchReferencePayload,
+    ("poultry.batch", "confirm_delivery"): DeliveryPayload,
+    ("poultry.feed_usage", "record"): FeedPayload,
+    ("poultry.treatment", "record"): TreatmentPayload,
+    ("poultry.weight_sample", "record"): WeightPayload,
+    ("poultry.adjustment_proposal", "propose"): ProposalPayload,
+    ("poultry.adjustment_proposal", "approve"): ReviewPayload,
+    ("poultry.adjustment_proposal", "reject"): ReviewPayload,
+    ("poultry.batch", "recalculate_feed"): RecalculatePayload,
+}
+
+
+class PoultryOperationSerializer(MortalityOperationSerializer):
+    entity_type = serializers.ChoiceField(choices=sorted({key[0] for key in PAYLOAD_SERIALIZERS}))
+    action = serializers.ChoiceField(choices=sorted({key[1] for key in PAYLOAD_SERIALIZERS}))
+    payload = serializers.JSONField()
+
+    def validate(self, attrs):
+        from .commands.registry import REGISTRY
+        key = (attrs["entity_type"], attrs["action"])
+        serializer_class = PAYLOAD_SERIALIZERS.get(key)
+        if serializer_class is None:
+            raise serializers.ValidationError({"action": "Typed command is unavailable."})
+        serializer = serializer_class(data=attrs["payload"])
+        serializer.is_valid(raise_exception=True)
+        attrs["payload"] = serializer.validated_data
+        spec = REGISTRY[(*key, 1)]
+        revision = attrs["base_version"]
+        if spec.mutates_existing:
+            if revision is None and not attrs["depends_on"] or revision is not None and (
+                    not isinstance(revision, str) or not re.fullmatch(r"[1-9][0-9]{0,39}", revision)):
+                raise serializers.ValidationError({"base_version": "Expected revision string or an explicit offline-parent dependency required."})
+        elif revision is not None:
+            raise serializers.ValidationError({"base_version": "Append requires null."})
+        if len(attrs["depends_on"]) != len(set(attrs["depends_on"])):
+            raise serializers.ValidationError({"depends_on": "Duplicate dependencies."})
+        return attrs
+
+
+class PoultryPushSerializer(PushSerializer):
+    operations = PoultryOperationSerializer(many=True, min_length=1, max_length=50)
+
+
 # Explicit output annotations: operational payload shapes are specified in the
 # schema artifact/runbook; financial fields never enter these serializers.
 @extend_schema_field(PROJECTION)

@@ -1,9 +1,10 @@
 from django.urls import path
 from .views import (DeviceView, RevokeDeviceView, CapabilitiesView, BootstrapView,
-                    BootstrapPageView, ChangesView, PushView, OperationView)
+                    BootstrapPageView, ChangesView, PushView, OperationView, OnlinePoultryView)
 
 app_name = "mobile_sync"
 urlpatterns = [
+    path("poultry-online", OnlinePoultryView.as_view(), name="poultry-online"),
     path("devices", DeviceView.as_view(), name="devices"),
     path("devices/<uuid:device_id>/revoke", RevokeDeviceView.as_view(), name="revoke"),
     path("capabilities", CapabilitiesView.as_view(), name="capabilities"),

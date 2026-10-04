@@ -85,7 +85,7 @@ def calculate_bird_balance(batch: Batch | int) -> BirdBalance:
         ).aggregate(total=Sum("quantity_change"))["total"]
         or 0
     )
-    initial = batch_obj.actual_quantity_received or batch_obj.quantity
+    initial = batch_obj.actual_quantity_received if batch_obj.actual_quantity_received is not None else batch_obj.quantity
     remaining = initial + adjustments - sold - mortality
 
     return BirdBalance(
@@ -193,6 +193,11 @@ def assert_batch_accepts_cost(
 @sync_atomic
 def create_sale_with_lifecycle(*, batch_id: int, created_by, **data) -> Sales:
     with transaction.atomic():
+        from .operations import lock_periods, validate_population_history
+        # Preserve the existing service's accepted ISO-string call sites.
+        data['sale_date']=Sales._meta.get_field('sale_date').to_python(data['sale_date'])
+        if timezone.is_naive(data['sale_date']):data['sale_date']=timezone.make_aware(data['sale_date'])
+        lock_periods(data['sale_date'])
         batch = Batch.objects.select_for_update().get(pk=batch_id)
         assert_batch_in_production(batch)
         selling_cost_rows = data.pop("selling_costs", [])
@@ -206,6 +211,9 @@ def create_sale_with_lifecycle(*, batch_id: int, created_by, **data) -> Sales:
             sale.receivable_follow_up_name = (sale.sold_by_name or "").strip()
         sale.full_clean()
         sale.save()
+        # Existing web sales must not invalidate later mobile observations.
+        # Cancelled and non-bird sales are excluded by this shared calculation.
+        validate_population_history(batch, field='quantity_sold')
         for cost_data in selling_cost_rows:
             selling_cost = SaleSellingCost(
                 sale=sale,

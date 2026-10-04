@@ -17,13 +17,16 @@ from .commands.service import execute, order_operations, outcome
 from .errors import SyncError
 from .models import MobileDevice, MobileDeviceAudit, MobileSession, SyncOperationReceipt
 from .policy import READERS, OPERATORS, permits, scope_revision
-from .projections import CURRENT_PACK, json_value
+from .projections import CURRENT_PACK, POULTRY_PACK, TYPES, json_value
 from .serializers import (BootstrapSerializer, RegisterDeviceSerializer, RevokeDeviceSerializer,
-                          PushSerializer, PushResponseSerializer, ResultSerializer)
+                          PushSerializer, PoultryPushSerializer, PoultryOperationSerializer)
 from .transport import (bootstrap_manifest, bootstrap_page, create_bootstrap, owned_snapshot, pull_changes, stream_ready)
 from .writers import sync_boundary
 from .authentication import check_binding
 from . import schema
+from . import schema_poultry as poultry_schema
+
+POULTRY_HEADER=OpenApiParameter('X-Mobile-Poultry-Version',int,location=OpenApiParameter.HEADER,enum=[1,2],description='Default1 is frozen legacy. Opt-in2 requires MOBILE_SYNC_POULTRY_V2.')
 
 
 def validated(serializer_class, data):
@@ -88,6 +91,12 @@ class SyncAPIView(APIView):
             raise SyncError("device_required", "Bound mobile session required.", 403)
         self.request.mobile_session = session
 
+    def poultry_version(self):
+        value = self.request.headers.get("X-Mobile-Poultry-Version", "1")
+        if value not in {"1", "2"} or value == "2" and not settings.MOBILE_SYNC_POULTRY_V2:
+            raise SyncError("unsupported_protocol", "Requested poultry projection is unavailable.", 409)
+        return int(value)
+
 
 class DeviceView(SyncAPIView):
     requires_device = False
@@ -150,13 +159,14 @@ class RevokeDeviceView(SyncAPIView):
 
 
 class CapabilitiesView(SyncAPIView):
-    @extend_schema(responses=schema.responses(schema.CAPABILITIES))
+    @extend_schema(parameters=[POULTRY_HEADER],responses=schema.responses({'anyOf':[schema.CAPABILITIES,poultry_schema.capabilities_schema()]}))
     def get(self, request):
         stream = stream_ready()
         capture = permits(request.user, OPERATORS)
-        return Response({"protocol_version": 1, "schema_version": 1, "policy_version": 1, "projection_version": 1,
+        version = self.poultry_version()
+        response = {"protocol_version": 1, "schema_version": version, "policy_version": 1, "projection_version": version,
             "deployment_id": str(stream.deployment_id), "stream_epoch": str(stream.epoch), "device_id": str(self.device.pk),
-            "server_time": json_value(timezone.now()), "scope_revision": scope_revision(request.user),
+            "server_time": json_value(timezone.now()), "scope_revision": scope_revision(request.user, version),
             "entities": ["poultry.batch", "poultry.mortality", "poultry.feed_usage"],
             "commands": {"poultry.mortality.record": {"available": capture, "payload_version": 1, "capability": "poultry.capture"},
                          "finance": {"available": False, "reason": "later_phase"}},
@@ -167,7 +177,21 @@ class CapabilitiesView(SyncAPIView):
                        "snapshot_rows": settings.MOBILE_SYNC_SNAPSHOT_ROWS, "snapshot_bytes": settings.MOBILE_SYNC_SNAPSHOT_BYTES,
                        "active_snapshots_per_user": settings.MOBILE_SYNC_ACTIVE_SNAPSHOTS_PER_USER,
                        "entity_bytes": settings.MOBILE_SYNC_ENTITY_BYTES, "scan_rows": settings.MOBILE_SYNC_SCAN_ROWS},
-            "retention": {"snapshot_hours": 24, "change_days": 90, "deduplication": "indefinite", "minimum_sequence": str(stream.minimum_sequence)}})
+            "retention": {"snapshot_hours": 24, "change_days": 90, "deduplication": "indefinite", "minimum_sequence": str(stream.minimum_sequence)}}
+        if version == 2:
+            from .commands.registry import REGISTRY
+            from apps.poultry.models import BirdType, BroilerStrain, ChicksSource, FeedType, FeedSource, UnitMeasurement, DrugCategory, DrugVaccinationType
+            response.update(entities=sorted(TYPES.values()), packs=[POULTRY_PACK, "batch-v2:<uuid>"],
+                commands={f"{kind}.{action}": {"available": permits(request.user, spec.roles), "payload_version": 1,
+                    "capability": spec.capability, "mode": spec.mode} for (kind, action, _), spec in REGISTRY.items()})
+            response["commands"]["finance"] = {"available": False, "reason": "later_phase"}
+            response["lookups"] = {"version": 1, "choices": {key: [{"value": value, "label": label} for value, label in choice.choices]
+                for key, choice in {"bird_type": BirdType, "broiler_strain": BroilerStrain, "source": ChicksSource,
+                    "feed_type": FeedType, "feed_source": FeedSource, "unit_of_measurement": UnitMeasurement,
+                    "drug_category": DrugCategory, "drug_vaccination_type": DrugVaccinationType}.items()},
+                "treatment_quantity_unit": "recorded unit (legacy model; record actual unit in description)",
+                "stock_linked_capture": False, "mortality_threshold_percent": str(settings.FINANCE_WARNING_THRESHOLDS["high_mortality_rate"])}
+        return Response(response)
 
 
 class BootstrapView(SyncAPIView):
@@ -187,22 +211,23 @@ class BootstrapView(SyncAPIView):
 
 
 class BootstrapPageView(SyncAPIView):
-    @extend_schema(parameters=[OpenApiParameter("cursor", str, required=True)], responses=schema.responses(schema.PAGE))
+    @extend_schema(parameters=[OpenApiParameter("cursor", str, required=True)], responses=schema.responses({'anyOf':[schema.PAGE,poultry_schema.PAGE]}))
     def get(self, request, snapshot_id):
         snapshot, stream = owned_snapshot(snapshot_id, request.user, self.device)
         return Response(bootstrap_page(snapshot, stream, request.user, self.device, request.query_params.get("cursor")))
 
 
 class ChangesView(SyncAPIView):
-    @extend_schema(parameters=[OpenApiParameter("cursor", str, required=True), OpenApiParameter("limit", int)], responses=schema.responses(schema.CHANGES))
+    @extend_schema(parameters=[OpenApiParameter("cursor", str, required=True), OpenApiParameter("limit", int)], responses=schema.responses({'anyOf':[schema.CHANGES,poultry_schema.CHANGES]}))
     def get(self, request):
         return Response(pull_changes(request.user, self.device, request.query_params.get("cursor"), page_limit(request.query_params.get("limit"))))
 
 
 class PushView(SyncAPIView):
-    @extend_schema(request=PushSerializer, responses=schema.responses(PushResponseSerializer))
+    @extend_schema(parameters=[POULTRY_HEADER],request={'application/json':poultry_schema.push_schema()},responses=schema.responses(poultry_schema.PUSH_RESPONSE))
     def post(self, request):
-        data = validated(PushSerializer, request.data)
+        version = self.poultry_version()
+        data = validated(PoultryPushSerializer if version == 2 else PushSerializer, request.data)
         if str(self.device.pk) != str(data["device_id"]):
             raise SyncError("foreign_device", "Body device does not match signed JWT.", 403)
         started, results = time.monotonic(), []
@@ -211,16 +236,26 @@ class PushView(SyncAPIView):
                 result = outcome(command, "retry_later", "request_budget_exceeded", "Retain this operation and retry it unchanged.")
                 result["recovery_action"] = "retry_unchanged"
             else:
-                result = execute(command, request.user, request.mobile_session, request.auth)
+                result = execute(command, request.user, request.mobile_session, request.auth, version=version)
             results.append(result)
         return Response({"protocol_version": 1, "deployment_id": str(stream_ready().deployment_id),
                          "device_id": str(self.device.pk), "server_time": json_value(timezone.now()), "results": results})
 
 
 class OperationView(SyncAPIView):
-    @extend_schema(responses=schema.responses(ResultSerializer))
+    @extend_schema(responses=schema.responses(poultry_schema.RESULT))
     def get(self, request, operation_id):
         receipt = SyncOperationReceipt.objects.filter(stream=stream_ready(), actor=request.user, device=self.device, operation_id=operation_id).first()
         if receipt is None:
             raise SyncError("operation_not_found", "No owned receipt found; retain original operation ID.", 404)
         return Response(receipt.result)
+
+
+class OnlinePoultryView(SyncAPIView):
+    """Foreground-only action. Never selected by the automatic upload worker."""
+    @extend_schema(parameters=[POULTRY_HEADER],request={'application/json':poultry_schema.operation_schema()},responses=schema.responses(poultry_schema.RESULT))
+    def post(self, request):
+        if self.poultry_version() != 2:
+            raise SyncError("unsupported_protocol", "Poultry projection 2 required.", 409)
+        command = validated(PoultryOperationSerializer, request.data)
+        return Response(execute(command, request.user, request.mobile_session, request.auth, mode="online", version=2))

@@ -70,7 +70,7 @@ export class AuthClient {
   }
   async request(path: string, body?: unknown): Promise<unknown> {
     if (this.locked) throw new ApiError(401, 'session_locked');
-    if (!['/auth/me', '/mobile-sync/capabilities','/mobile-sync/bootstrap','/mobile-sync/push'].includes(path) &&
+    if (!['/auth/me', '/mobile-sync/capabilities','/mobile-sync/bootstrap','/mobile-sync/push','/mobile-sync/poultry-online'].includes(path) &&
       !/^\/mobile-sync\/(?:bootstrap\/[0-9a-f-]{36}\/pages\?cursor=[A-Za-z0-9%_.~-]+|changes\?cursor=[A-Za-z0-9%_.~-]+&limit=\d+|operations\/[0-9a-f-]{36})$/.test(path)) throw new ApiError(403, 'route_unavailable');
     if (path.length > 50000) throw new ApiError(400,'invalid_cursor');
     const generation = this.generation;
@@ -103,13 +103,14 @@ export class AuthClient {
   }
 }
 
-export function httpTransport(base: string): Transport {
+export function httpTransport(base: string, poultryVersion: 1|2 = 1): Transport {
   return async (path, body, access) => {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 30_000);
     try {
       const response = await fetch(`${base}${path}`, { method: body === undefined ? 'GET' : 'POST',
-        signal: controller.signal, redirect: 'error', headers: { 'Content-Type': 'application/json', ...(access ? { Authorization: `Bearer ${access}` } : {}) },
+        signal: controller.signal, redirect: 'error', headers: { 'Content-Type': 'application/json',
+          ...(poultryVersion === 2 ? { 'X-Mobile-Poultry-Version': '2' } : {}), ...(access ? { Authorization: `Bearer ${access}` } : {}) },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
       if (!response.ok) {
         // Deliberately do not echo arbitrary server error text, request bodies or JWTs.

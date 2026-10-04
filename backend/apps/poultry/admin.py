@@ -78,7 +78,7 @@ class FeedUsageAdmin(PublishedReadOnlyAdmin):
 
 
 @admin.register(DrugsVaccination)
-class DrugsVaccinationAdmin(admin.ModelAdmin):
+class DrugsVaccinationAdmin(PublishedReadOnlyAdmin):
     list_display = ("batch", "drug_category", "drug_vaccination_type", "vaccination_date")
     list_filter = ("drug_category", "drug_vaccination_type")
     search_fields = ("batch__batch_id", "other_drug_vaccination")
@@ -86,7 +86,7 @@ class DrugsVaccinationAdmin(admin.ModelAdmin):
 
 
 @admin.register(BatchWeightSample)
-class BatchWeightSampleAdmin(admin.ModelAdmin):
+class BatchWeightSampleAdmin(PublishedReadOnlyAdmin):
     list_display = ("batch", "age_in_days", "average_weight_g", "sample_size", "sampled_at")
     list_filter = ("age_in_days",)
     search_fields = ("batch__batch_id",)

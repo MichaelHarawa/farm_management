@@ -15,8 +15,8 @@ export function Notice({ message }: { message: string | null }) {
 export function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return <View style={styles.card}><Text accessibilityRole="header" style={styles.heading}>{title}</Text>{children}</View>;
 }
-export function Button({ title, onPress, disabled = false, accessibilityLabel=title }: { title: string; onPress: () => void; disabled?: boolean; accessibilityLabel?:string }) {
-  return <Pressable accessibilityRole="button" accessibilityLabel={accessibilityLabel} accessibilityState={{ disabled }} disabled={disabled} onPress={onPress}
+export function Button({ title, onPress, disabled = false, accessibilityLabel=title, selected }: { title: string; onPress: () => void; disabled?: boolean; accessibilityLabel?:string; selected?:boolean }) {
+  return <Pressable accessibilityRole="button" accessibilityLabel={accessibilityLabel} accessibilityState={{ disabled, ...(selected === undefined?{}:{selected}) }} disabled={disabled} onPress={onPress}
     style={({ pressed }) => [styles.button, (disabled || pressed) && { opacity: 0.65 }]}><Text style={styles.buttonText}>{title}</Text></Pressable>;
 }
 export function Field({ label, ...props }: TextInputProps & { label: string }) {

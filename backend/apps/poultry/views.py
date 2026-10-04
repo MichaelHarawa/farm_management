@@ -7,7 +7,7 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from apps.mobile_sync.policy import PoultryPermission, SUPERVISORS, permits
-from apps.mobile_sync.projections import project
+from apps.mobile_sync.projections import project, public_payload
 from rest_framework import serializers
 from rest_framework.response import Response
 from django.utils import timezone
@@ -39,6 +39,8 @@ from apps.poultry.services.growth import (
     latest_growth_status,
 )
 from apps.poultry.services.dashboard import poultry_dashboard
+from apps.poultry.services.operations import (register_batch, mark_delivered as mark_batch_delivered,
+    confirm_delivery as confirm_batch_delivery, record_treatment, record_weight)
 
 from .models import(
     Batch,
@@ -68,7 +70,16 @@ from .serializers import(
 
 class OperationalBatchSerializer(serializers.BaseSerializer):
     def to_representation(self, instance):
-        return project(instance, None)
+        return public_payload("poultry.batch", project(instance, None))
+
+
+def operational_write(service, **kwargs):
+    try:
+        return service(**kwargs)
+    except DjangoValidationError as error:
+        raise ValidationError(getattr(error, "message_dict", None) or {"detail": error.messages}) from error
+    except ValueError as error:
+        raise ValidationError({"batch": str(error)}) from error
 
 
 class BatchViewset(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
@@ -83,8 +94,7 @@ class BatchViewset(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retrie
         return Response(poultry_dashboard(request.query_params))
 
     def perform_create(self, serializer):
-        batch = serializer.save(created_by=self.request.user)
-        recalculate_batch_status(batch)
+        serializer.instance = operational_write(register_batch, created_by=self.request.user, **serializer.validated_data)
 
     def save_with_current_user(self, serializer, **kwargs):
         return serializer.save(
@@ -150,9 +160,7 @@ class BatchViewset(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retrie
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        poultry_batch.status = BatchStatus.DELIVERED
-        poultry_batch.delivery_confirmed_at = timezone.now()
-        poultry_batch.save(update_fields=["status", "delivery_confirmed_at", "updated_at"])
+        poultry_batch = operational_write(mark_batch_delivered, batch_id=poultry_batch.pk)
 
         return Response(
             BatchSerializer(poultry_batch, context=self.get_serializer_context()).data,
@@ -179,35 +187,7 @@ class BatchViewset(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retrie
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
-        entry_date = data["entry_date"]
-
-        poultry_batch.entry_date = entry_date
-        poultry_batch.expected_maturity_date = data.get(
-            "expected_maturity_date",
-            entry_date + timedelta(days=46),
-        )
-        poultry_batch.quantity = data.get("quantity", poultry_batch.quantity)
-        poultry_batch.actual_quantity_received = poultry_batch.quantity
-        poultry_batch.expected_quantity = (
-            poultry_batch.expected_quantity or poultry_batch.quantity
-        )
-        poultry_batch.delivery_confirmed_at = (
-            poultry_batch.delivery_confirmed_at or timezone.now()
-        )
-        poultry_batch.status = BatchStatus.PLANNED
-        poultry_batch.save(
-            update_fields=[
-                "entry_date",
-                "expected_maturity_date",
-                "quantity",
-                "actual_quantity_received",
-                "expected_quantity",
-                "delivery_confirmed_at",
-                "status",
-                "updated_at",
-            ]
-        )
-        recalculate_batch_status(poultry_batch)
+        poultry_batch = operational_write(confirm_batch_delivery, batch_id=poultry_batch.pk, **data)
 
         return Response(
             BatchSerializer(poultry_batch, context=self.get_serializer_context()).data,
@@ -272,7 +252,7 @@ class BatchViewset(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retrie
         serializer.is_valid(raise_exception=True)
 
         try:
-            sale = create_sale_with_lifecycle(
+            sale = operational_write(create_sale_with_lifecycle,
                 batch_id=poultry_batch.pk,
                 created_by=request.user,
                 **serializer.validated_data,
@@ -376,7 +356,7 @@ class BatchViewset(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retrie
             return Response({"detail": str(error)}, status=status.HTTP_400_BAD_REQUEST)
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        adjustment = create_flock_adjustment(
+        adjustment = operational_write(create_flock_adjustment,
             batch_id=batch.pk,
             approved_by=request.user,
             **serializer.validated_data,
@@ -406,10 +386,8 @@ class BatchViewset(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retrie
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        vaccination = self.save_with_current_user(
-            serializer,
-            batch=poultry_batch,
-        )
+        vaccination = operational_write(record_treatment, batch_id=poultry_batch.pk,
+            created_by=request.user, **serializer.validated_data)
 
         return Response(
             self.get_serializer(vaccination).data,
@@ -443,10 +421,8 @@ class BatchViewset(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retrie
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        sample = self.save_with_current_user(
-            serializer,
-            batch=poultry_batch,
-        )
+        sample = operational_write(record_weight, batch_id=poultry_batch.pk,
+            created_by=request.user, **serializer.validated_data)
 
         return Response(
             self.get_serializer(sample).data,

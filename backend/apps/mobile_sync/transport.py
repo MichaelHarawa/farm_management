@@ -9,7 +9,8 @@ from django.utils import timezone
 from .errors import SyncError
 from .models import SyncBootstrap, SyncBootstrapPage, SyncChange, SyncEntity, SyncStreamState
 from .policy import scope_revision
-from .projections import CURRENT_PACK, canonical, checksum, json_value, wire_entity
+from .projections import (CURRENT_PACK, POULTRY_PACK, LEGACY_TYPES, pack_version, public_payload,
+                          canonical, checksum, json_value, wire_entity)
 from .writers import sync_boundary
 
 CURSOR_SALT = "farm-mobile-sync-v1"
@@ -24,7 +25,7 @@ def stream_ready():
 
 def cursor_base(stream, user, device, packs):
     return {"deployment": str(stream.deployment_id), "epoch": str(stream.epoch), "actor": str(user.pk),
-            "device": str(device.pk), "scope": scope_revision(user), "packs": packs, "protocol": 1}
+            "device": str(device.pk), "scope": scope_revision(user, pack_version(packs)), "packs": packs, "protocol": 1}
 
 
 def encode(value):
@@ -41,6 +42,8 @@ def decode(value, stream, user, device):
     except signing.BadSignature as error:
         raise SyncError("invalid_cursor", "Invalid cursor.") from error
     expected = cursor_base(stream, user, device, data.get("packs"))
+    if pack_version(data.get("packs")) == 2 and not settings.MOBILE_SYNC_POULTRY_V2:
+        raise SyncError("unsupported_protocol", "Poultry projection 2 is not enabled.", 409)
     if any(data.get(key) != expected[key] for key in expected):
         raise SyncError("scope_reset_required", "Deployment, epoch or access scope changed.", 409)
     return data
@@ -50,21 +53,26 @@ def validate_packs(packs, stream):
     if len(packs) != len(set(packs)):
         raise SyncError("invalid_pack", "Packs must be unique.")
     for pack in packs:
-        if pack == CURRENT_PACK:
+        if (pack == POULTRY_PACK or pack.startswith("batch-v2:")) and not settings.MOBILE_SYNC_POULTRY_V2:
+            raise SyncError("invalid_pack", "Poultry projection 2 is not enabled.")
+        if pack in {CURRENT_PACK, POULTRY_PACK}:
             continue
-        if not pack.startswith("batch:"):
+        prefix = "batch-v2:" if pack.startswith("batch-v2:") else "batch:"
+        if not pack.startswith(prefix):
             raise SyncError("invalid_pack", "Pack is unavailable.")
         try:
-            entity_uuid = uuid.UUID(pack[6:])
+            entity_uuid = uuid.UUID(pack[len(prefix):])
         except ValueError as error:
             raise SyncError("invalid_pack", "Invalid batch pack identity.") from error
-        if pack[6:] != str(entity_uuid) or not SyncEntity.objects.filter(stream=stream, entity_type="poultry.batch", entity_uuid=entity_uuid, deleted=False).exists():
+        if pack[len(prefix):] != str(entity_uuid) or not SyncEntity.objects.filter(stream=stream, entity_type="poultry.batch", entity_uuid=entity_uuid, deleted=False).exists():
             raise SyncError("invalid_pack", "Batch pack is unavailable.")
     return sorted(packs)
 
 
 def included(entity, packs, batch_uuid):
-    return (CURRENT_PACK in packs and entity.in_current_pack) or f"batch:{batch_uuid}" in packs
+    legacy = entity.entity_type in LEGACY_TYPES
+    return ((POULTRY_PACK in packs or CURRENT_PACK in packs and legacy) and entity.in_current_pack) or (
+        f"batch-v2:{batch_uuid}" in packs or f"batch:{batch_uuid}" in packs and legacy)
 
 
 def create_bootstrap(user, device, packs):
@@ -85,7 +93,7 @@ def create_bootstrap(user, device, packs):
                 raise SyncError("snapshot_budget_exceeded", "Snapshot scan exceeds supported request budget.", 413)
             if not included(entity, packs, batch_ids[entity.batch_pk]):
                 continue
-            item = wire_entity(entity)
+            item = wire_entity(entity) if pack_version(packs) == 1 else wire_entity(entity, 2)
             size = len(canonical(item).encode())
             total_bytes += size + 2
             if total_bytes > settings.MOBILE_SYNC_SNAPSHOT_BYTES:
@@ -101,7 +109,7 @@ def create_bootstrap(user, device, packs):
         pages.append(page)  # Empty farm has one genuine empty page.
         manifest = [{"page": number, "row_count": len(rows), "sha256": checksum(rows)} for number, rows in enumerate(pages)]
         snapshot = SyncBootstrap.objects.create(stream=stream, actor=user, device=device, epoch=stream.epoch,
-            scope_revision=scope_revision(user), packs=packs, watermark=stream.sequence, row_count=row_count,
+            scope_revision=scope_revision(user, pack_version(packs)), packs=packs, watermark=stream.sequence, row_count=row_count,
             manifest=manifest, expires_at=timezone.now() + timedelta(hours=24))
         SyncBootstrapPage.objects.bulk_create([SyncBootstrapPage(snapshot=snapshot, number=number, payload=rows, checksum=manifest[number]["sha256"])
                                                for number, rows in enumerate(pages)])
@@ -115,7 +123,7 @@ def owned_snapshot(snapshot_id, user, device):
         raise SyncError("snapshot_not_found", "Snapshot is unavailable.", 404)
     if snapshot.expires_at <= timezone.now():
         raise SyncError("resync_required", "Snapshot expired; restart staging without removing pending work.", 410)
-    if snapshot.epoch != stream.epoch or snapshot.scope_revision != scope_revision(user):
+    if snapshot.epoch != stream.epoch or snapshot.scope_revision != scope_revision(user, pack_version(snapshot.packs)):
         raise SyncError("scope_reset_required", "Snapshot scope or epoch changed.", 409)
     return snapshot, stream
 
@@ -160,16 +168,19 @@ def pull_changes(user, device, cursor, limit):
     for row in rows:
         inspected = True
         group = str(row.transaction_id)
-        archive = f"batch:{row.batch_uuid}" in data["packs"]
-        current = CURRENT_PACK in data["packs"] and (row.in_current_pack or row.kind == "evict_from_pack")
+        legacy = row.entity_type in LEGACY_TYPES
+        archive_packs = [p for p in data["packs"] if p == f"batch-v2:{row.batch_uuid}" or legacy and p == f"batch:{row.batch_uuid}"]
+        current_packs = [p for p in data["packs"] if p == POULTRY_PACK or legacy and p == CURRENT_PACK]
+        archive = bool(archive_packs)
+        current = bool(current_packs) and (row.in_current_pack or row.kind == "evict_from_pack")
         visible = (archive and row.kind != "evict_from_pack") or current
         fragment_index = data["fragment"] if data["group"] == group else 0
         entry = {"sequence": str(row.sequence), "transaction_id": group, "fragment_index": fragment_index,
                  "fragment_final": False, "entity_type": row.entity_type, "entity_uuid": str(row.entity_uuid),
                  "revision": str(row.revision), "kind": row.kind,
-                 "pack_ids": ([CURRENT_PACK] if current else []) + ([f"batch:{row.batch_uuid}"] if archive and row.kind != "evict_from_pack" else [])}
+                 "pack_ids": (current_packs if current else []) + (archive_packs if archive and row.kind != "evict_from_pack" else [])}
         if row.kind == "upsert":
-            entry["payload"] = row.payload
+            entry["payload"] = public_payload(row.entity_type, row.payload, pack_version(data["packs"]))
         if row.origin_operation_id:
             entry["origin_operation_id"] = str(row.origin_operation_id)
         entry_size = len(canonical(entry).encode())
