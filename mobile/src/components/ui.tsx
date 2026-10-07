@@ -22,16 +22,16 @@ export function Button({ title, onPress, disabled = false, accessibilityLabel=ti
 export function Field({ label, ...props }: TextInputProps & { label: string }) {
   return <View style={styles.field}><Text style={styles.body}>{label}</Text><TextInput accessibilityLabel={label} placeholderTextColor={colors.muted} style={styles.input} {...props} /></View>;
 }
-export function ErrorMessage({ message, announcementKey }: { message: string | null; announcementKey?: number }) {
+export function ErrorMessage({ message, announcementKey, announce=true }: { message: string | null; announcementKey?: number; announce?:boolean }) {
   const previous = useRef<ErrorAnnouncement | null>(null);
   useEffect(() => {
-    previous.current = announceErrorChange(previous.current, { message, attempt: announcementKey }, text => {
+    previous.current = announceErrorChange(previous.current, { message:announce?message:null, attempt: announcementKey }, text => {
       if (Platform.OS === 'android') AccessibilityInfo.announceForAccessibility(text);
     });
-  }, [message, announcementKey]);
+  }, [message, announcementKey, announce]);
   // Explicit Android announcements work without moving focus to an off-screen
   // error. Avoid a second live-region announcement of the same native event.
-  return message ? <Text accessible accessibilityRole="alert" accessibilityLiveRegion={Platform.OS === 'android' ? 'none' : 'polite'} style={styles.error}>{message}</Text> : null;
+  return message ? <Text accessible accessibilityRole="alert" accessibilityLiveRegion={!announce||Platform.OS === 'android'?'none':'polite'} style={styles.error}>{message}</Text> : null;
 }
 export function Loading({ label = 'Opening local records…' }: { label?: string }) {
   return <View accessible accessibilityRole="progressbar" accessibilityLabel={label} style={styles.card}><ActivityIndicator importantForAccessibility="no" color={colors.navy} /><Body>{label}</Body></View>;

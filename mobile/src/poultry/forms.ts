@@ -49,6 +49,14 @@ export function formDefaults(workflow:Workflow, now=new Date().toISOString()):Re
       const date=farmEventFields(instant);values[`${field.name}:day`]=date.event_day;values[`${field.name}:time`]=date.event_time;}}
   return values;
 }
+export function formErrorSummary(workflow:Workflow, errors:Record<string,string>):string|null {
+  const messages=Object.entries(errors).filter(([,message])=>message.trim()).map(([name,message])=>{
+    const label=name==='form'?null:name==='batch_uuid'?'Batch':
+      workflows[workflow].fields.find(field=>field.name===name)?.label??name.replaceAll('_',' ');
+    return label?`${label}: ${message}`:message;
+  });
+  return messages.length?messages.join(' '):null;
+}
 export function buildFormCommand(workflow:Workflow,values:Record<string,string>,caps:Capabilities,envelope:{
   operation_id:string; entity_uuid:string; captured_at:string; depends_on:string[]; base_version:string|null; supersedes_operation_id?:string;
 }): {command:PoultryCommand|null; errors:Record<string,string>} {

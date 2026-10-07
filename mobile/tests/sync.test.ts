@@ -145,6 +145,113 @@ test('multi-page bootstrap resumes after close; last replica only activates on f
   assert.equal((await state.repo.batches()).length,2);assert.equal(await state.store.snapshot(),null);
  }finally{await state.repo.db.close();rmSync(dir,{recursive:true});}
 });
+test('renewed opaque bootstrap cursor resumes after process death without rewinding verified pages or drafts',async()=>{
+ const dir=mkdtempSync(join(tmpdir(),'farm-owned-cursor-resume-')),path=join(dir,'sync.db');let state=await setup(path);
+ try {
+  const initial=await snapshot(state.store);await state.store.stageSnapshotPage(initial.page,'snapshot_cursor',at);
+  await state.repo.saveDraftAndEnqueue(command,hash);
+  const original=await state.store.operationDetails(command.operation_id);
+  const second={...batch,entity_uuid:randomUUID()},digest=await hash(canonical([second]));
+  const staged=await snapshot(state.store,[{...batch,revision:'2'}]);
+  const manifest={...staged.manifest,row_count:2,manifest:[staged.manifest.manifest[0],{page:1,row_count:1,sha256:digest}]};
+  await state.store.restartStaging();await state.store.beginSnapshot(manifest,epoch,scope);
+  await state.store.stageSnapshotPage({...staged.page,page_complete:false,next_page_cursor:'original_page_1',delta_cursor:undefined},'snapshot_cursor',at);
+  const before=await state.store.snapshot();await state.repo.db.close();state=await setup(path);
+  const paths:string[]=[];
+  const engine=new SyncEngine({store:state.store,owner:'renewed-cursor',uploadsEnabled:false,authorize:async()=>caps,now:()=>Date.parse(at),api:{async request(path,body){
+   paths.push(path);
+   if(path==='/mobile-sync/bootstrap') {
+    assert.deepEqual(body,{protocol_version:1,packs:[pack],resume_snapshot_id:manifest.snapshot_id});
+    return {...manifest,next_page_cursor:'new_signature_for_page_0'};
+   }
+   if(path.startsWith(`/mobile-sync/bootstrap/${manifest.snapshot_id}/pages?`)) {
+    assert.equal(new URL(path,'http://synthetic.invalid').searchParams.get('cursor'),'original_page_1');
+    assert.deepEqual(await state.store.snapshot(),before);
+    return {...staged.page,page:1,entities:[second],sha256:digest};
+   }
+   assert.ok(path.startsWith('/mobile-sync/changes?'));return delta([],[],'resumed_delta');
+  }}});
+  assert.equal((await engine.run()).status,'complete');
+  assert.equal(paths.filter(path=>path.includes('/pages?')).length,1);
+  assert.equal(await state.store.snapshot(),null);assert.equal((await state.repo.batches()).length,2);
+  assert.deepEqual(await state.store.operationDetails(command.operation_id),original);
+ }finally{await state.repo.db.close();rmSync(dir,{recursive:true});}
+});
+
+test('bootstrap cursor renewal never permits changed frozen content, identity, scope or expiry',async()=>{
+ const {repo,store}=await setup();
+ try {
+  const s=await snapshot(store),before=await store.snapshot();
+  for(const change of [
+   {watermark:'2'},{expires_at:'2026-10-04T10:00:00Z'},
+   {manifest:[{...s.manifest.manifest[0],sha256:'0'.repeat(64)}]},
+   {row_count:2,manifest:[{...s.manifest.manifest[0],row_count:2}]},
+   {packs:[pack,`batch:${batch.entity_uuid}`]},
+   {scope_revision:'foreign-scope'},{deployment_id:randomUUID()},{stream_epoch:randomUUID()},
+  ]) {
+   await assert.rejects(store.beginSnapshot({...s.manifest,next_page_cursor:'renewed_signature',...change},epoch,scope),/snapshot_changed|snapshot_identity_or_manifest/);
+   assert.deepEqual(await store.snapshot(),before);
+  }
+ }finally{await repo.db.close();}
+});
+
+test('malformed download JSON retains verified staging, last replica and exact draft across restart and retry',async()=>{
+ const dir=mkdtempSync(join(tmpdir(),'farm-owned-json-resume-')),path=join(dir,'sync.db');let state=await setup(path);
+ try {
+  const initial=await snapshot(state.store);await state.store.stageSnapshotPage(initial.page,'snapshot_cursor',at);
+  await state.repo.saveDraftAndEnqueue(command,hash);const original=await state.store.operationDetails(command.operation_id);
+  const second={...batch,entity_uuid:randomUUID()},digest=await hash(canonical([second]));
+  const next=await snapshot(state.store,[{...batch,revision:'2'}]);
+  const manifest={...next.manifest,row_count:2,manifest:[next.manifest.manifest[0],{page:1,row_count:1,sha256:digest}]};
+  await state.store.restartStaging();await state.store.beginSnapshot(manifest,epoch,scope);
+  await state.store.stageSnapshotPage({...next.page,page_complete:false,next_page_cursor:'verified_page_1',delta_cursor:undefined},'snapshot_cursor',at);
+  const before=await state.store.snapshot();let clock=Date.parse(at);const seen:string[]=[];
+  const api={async request(route:string,body?:unknown):Promise<unknown>{
+   seen.push(route);
+   if(route==='/mobile-sync/bootstrap') {
+    assert.deepEqual(body,{protocol_version:1,packs:[pack],resume_snapshot_id:manifest.snapshot_id});
+    return {...manifest,next_page_cursor:'renewed_page_zero'};
+   }
+   assert.equal(new URL(route,'http://synthetic.invalid').searchParams.get('cursor'),'verified_page_1');
+   return JSON.parse('{');
+  }};
+  const engine=new SyncEngine({store:state.store,owner:'malformed-read',uploadsEnabled:false,authorize:async()=>caps,now:()=>clock,random:()=>0,api});
+  await assert.rejects(engine.run(),SyntaxError);
+  assert.equal(seen.filter(route=>route.includes('/pages?')).length,1);
+  assert.deepEqual(await state.store.snapshot(),before);assert.equal(await state.store.cursor(),'cursor_1');
+  assert.equal((await state.store.batch(batch.entity_uuid))?.revision,'1');
+  assert.deepEqual(await state.store.operationDetails(command.operation_id),original);
+  assert.equal(await state.repo.db.first('SELECT owner FROM sync_lease'),null);
+  await state.repo.db.close();state=await setup(path);clock+=10000;
+  assert.deepEqual(await state.store.snapshot(),before);assert.deepEqual(await state.store.operationDetails(command.operation_id),original);
+  const retry=new SyncEngine({store:state.store,owner:'valid-read-retry',uploadsEnabled:false,authorize:async()=>caps,now:()=>clock,api:{async request(route,body){
+   if(route==='/mobile-sync/bootstrap') {
+    assert.deepEqual(body,{protocol_version:1,packs:[pack],resume_snapshot_id:manifest.snapshot_id});return manifest;
+   }
+   if(route.includes('/pages?')) {
+    assert.equal(new URL(route,'http://synthetic.invalid').searchParams.get('cursor'),'verified_page_1');
+    return {...next.page,page:1,entities:[second],sha256:digest};
+   }
+   assert.ok(route.startsWith('/mobile-sync/changes?'));return delta([],[],'recovered_json_delta');
+  }}});
+  assert.equal((await retry.run()).status,'complete');assert.equal(await state.store.snapshot(),null);
+  assert.equal((await state.store.batch(batch.entity_uuid))?.revision,'2');
+  assert.deepEqual(await state.store.operationDetails(command.operation_id),original);
+ }finally{await state.repo.db.close();rmSync(dir,{recursive:true});}
+});
+
+test('renewed page-zero cursor does not replace an unstarted snapshot or weaken its page checksum',async()=>{
+ const {repo,store}=await setup();
+ try {
+  const s=await snapshot(store),before=await store.snapshot();
+  await store.beginSnapshot({...s.manifest,next_page_cursor:'new_page_zero_signature'},epoch,scope);
+  assert.deepEqual(await store.snapshot(),before);
+  await assert.rejects(store.stageSnapshotPage({...s.page,sha256:'0'.repeat(64)},'snapshot_cursor',at),/snapshot_checksum_or_completion/);
+  assert.deepEqual(await store.snapshot(),before);
+  await store.stageSnapshotPage(s.page,'snapshot_cursor',at);assert.equal(await store.snapshot(),null);
+ }finally{await repo.db.close();}
+});
+
 test('large delta transaction is invisible until hidden-only final fragment; applied/download cursors stay distinct',async()=>{
  const {repo,store}=await setup(); const tx=randomUUID();
  try {

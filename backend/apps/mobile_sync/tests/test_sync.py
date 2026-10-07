@@ -452,13 +452,49 @@ class SyncAPITests(FixtureMixin, TestCase):
     def test_snapshot_storage_quota_and_post_lock_policy_recheck(self):
         body = {"protocol_version": 1, "packs": [CURRENT_PACK]}
         for _ in range(4):
+            # Different watermarks legitimately consume distinct frozen storage.
+            self.push(self.command())
             self.assertEqual(self.client.post(BASE + "bootstrap", body, format="json").status_code, 200)
+        self.push(self.command())
         limited = self.client.post(BASE + "bootstrap", body, format="json")
         self.assertEqual(limited.status_code, 429)
         self.assertEqual(limited.data["code"], "snapshot_limit")
         with patch("apps.mobile_sync.views.permits", side_effect=[True, False]):
             self.assertEqual(self.client.post(BASE + "bootstrap", body, format="json").status_code, 403)
         self.assertEqual(SyncBootstrap.objects.count(), 4)
+
+    @override_settings(MOBILE_SYNC_ACTIVE_SNAPSHOTS_PER_USER=1)
+    def test_unchanged_snapshot_is_reused_without_extending_expiry_or_quota(self):
+        first, rows, _ = self.snapshot()
+        for _ in range(5):
+            repeated, repeated_rows, _ = self.snapshot()
+            for field in ("snapshot_id", "watermark", "expires_at", "manifest", "packs", "scope_revision"):
+                self.assertEqual(repeated[field], first[field])
+            self.assertEqual(repeated_rows, rows)
+        self.assertEqual(SyncBootstrap.objects.count(), 1)
+        other, _ = self.register(self.worker)
+        self.assertEqual(other.post(BASE + "bootstrap", {"protocol_version": 1, "packs": [CURRENT_PACK]}, format="json").status_code, 429)
+        self.push(self.command())
+        self.assertEqual(self.client.post(BASE + "bootstrap", {"protocol_version": 1, "packs": [CURRENT_PACK]}, format="json").status_code, 429)
+
+    def test_snapshot_reuse_never_crosses_actor_packs_scope_epoch_or_expiry(self):
+        first, _, _ = self.snapshot()
+        selected, _, _ = self.snapshot(packs=[f"batch:{self.batch_uuid}"])
+        self.assertNotEqual(selected["snapshot_id"], first["snapshot_id"])
+        viewer, _ = self.register(self.users["stake_holder"])
+        foreign, _, _ = self.snapshot(client=viewer)
+        self.assertNotEqual(foreign["snapshot_id"], first["snapshot_id"])
+        self.worker.roles.set([Role.objects.get(slug="stake_holder")])
+        changed_scope, _, _ = self.snapshot()
+        self.assertNotEqual(changed_scope["snapshot_id"], first["snapshot_id"])
+        SyncBootstrap.objects.update(expires_at=timezone.now() - timedelta(seconds=1))
+        expired, _, _ = self.snapshot()
+        self.assertNotEqual(expired["snapshot_id"], changed_scope["snapshot_id"])
+        stream = SyncStreamState.objects.get(pk=1)
+        stream.epoch = uuid.uuid4()
+        stream.save(update_fields=["epoch"])
+        changed_epoch, _, _ = self.snapshot()
+        self.assertNotEqual(changed_epoch["snapshot_id"], expired["snapshot_id"])
 
     def test_active_refresh_preserves_binding_and_ordinary_verify_is_unchanged(self):
         public = APIClient()

@@ -3,7 +3,7 @@ import { Redirect, router } from 'expo-router';
 import { useForm, Controller } from 'react-hook-form';
 import { KeyboardAvoidingView } from 'react-native';
 import { useSession } from '../src/auth/session';
-import { developmentChecksEnabled,phase4Pilot } from '../src/build-mode.native';
+import { developmentChecksEnabled,phase4Pilot,phase5Pilot } from '../src/build-mode.native';
 import { Button, Card, Body, ErrorMessage, Field, Loading, Screen } from '../src/components/ui';
 export default function SignIn() {
   const { ready, session, busy, error, signIn, unlock, settings, testControls, switchTestBackend } = useSession();
@@ -11,8 +11,8 @@ export default function SignIn() {
   const { control, handleSubmit, resetField, formState: { errors } } = useForm({ defaultValues: { username: '', password: '' } });
   if (session) return <Redirect href="/(tabs)/today" />;
   return <KeyboardAvoidingView style={{ flex: 1 }} behavior="height"><Screen title="Your farm, in the field">
-    <Body>{settings.environment.toUpperCase()} • {phase4Pilot?'Phase4 synthetic operational pilot':'Android foundation'}</Body>
-    {phase4Pilot&&<Body>Separate test backend: {settings.apiBaseUrl}. No farm financial upload is enabled.</Body>}
+    <Body>{settings.environment.toUpperCase()} • {phase5Pilot?'Phase5 synthetic daily poultry pilot':phase4Pilot?'Phase4 synthetic operational pilot':'Android foundation'}</Body>
+    {(phase4Pilot||phase5Pilot)&&<Body>Separate test backend: {settings.apiBaseUrl}. No farm financial upload is enabled.</Body>}
     {testControls && <><Body>Test backend: {settings.apiBaseUrl}</Body>
       <Button disabled={!ready || busy} title="Switch synthetic test backend" onPress={() => { void switchTestBackend(); }} /></>}
     {developmentChecksEnabled && <Button disabled={busy} title="Development: native storage checks" onPress={() => router.push('/native-storage-check')} />}
@@ -30,7 +30,7 @@ export default function SignIn() {
       </Card>
       <Button disabled={busy} title="Unlock this user’s cached session" onPress={() => { void unlock(); }} />
       <ErrorMessage message={error} />
-      <Body>Offline access is time-limited and requires device unlock. {phase4Pilot?'Download batches online first, then retain mortality evidence offline until Django validates it.':'Native operational uploads are disabled in this build.'} No farm totals are inferred from an empty cache.</Body>
+      <Body>Offline access is time-limited and requires device unlock. {phase5Pilot?'Download batches online first, then retain permitted poultry work offline until Django validates it.':phase4Pilot?'Download batches online first, then retain mortality evidence offline until Django validates it.':'Native operational uploads are disabled in this build.'} No farm totals are inferred from an empty cache.</Body>
     </>}
   </Screen></KeyboardAvoidingView>;
 }

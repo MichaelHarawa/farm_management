@@ -3,11 +3,12 @@ import * as Crypto from 'expo-crypto';
 import { Alert } from 'react-native';
 import { useSession } from '../auth/session';
 import { useSync } from '../sync/context';
-import { buildFormCommand, formDefaults, formFromCommand, workflows, type Workflow } from '../poultry/forms';
+import { buildFormCommand, formDefaults, formErrorSummary, formFromCommand, workflows, type Workflow } from '../poultry/forms';
 import { Body, Button, Card, ErrorMessage, Field, Loading, Notice, Screen } from './ui';
 import { FarmDateInput } from './farm-date-input';
+import { leaveUnsubmittedForm } from '../poultry/form-navigation';
 
-export function PoultryForm({workflow,batchId,correctionId}:{workflow:Workflow;batchId?:string;correctionId?:string}) {
+export function PoultryForm({workflow,batchId,correctionId,onChooseWorkflow}:{workflow:Workflow;batchId?:string;correctionId?:string;onChooseWorkflow?:()=>void}) {
   const {session}=useSession(); const {store,enabled,revision,notify}=useSync();
   const key=correctionId?`correction:${correctionId}`:`poultry:${workflow}:${batchId??'new'}`;
   const [values,setValues]=useState<Record<string,string>>(()=>({...formDefaults(workflow),batch_uuid:batchId??''}));
@@ -68,8 +69,16 @@ export function PoultryForm({workflow,batchId,correctionId}:{workflow:Workflow;b
     }catch{setErrors({form:'Could not clear the unsubmitted form. The prior draft remains recoverable.'});}
     finally{setSaving(false);}
   }
+  async function chooseWorkflow() {
+    if(!ready||saving||!onChooseWorkflow)return;
+    setSaving(true);
+    try {await leaveUnsubmittedForm(writes.current,onChooseWorkflow);}
+    catch {setErrors({form:'Could not finish saving this form. Keep this screen open; original work is retained.'});}
+    finally {setSaving(false);}
+  }
   return <Screen title={definition.title}>
     {!ready?<Loading label="Recovering this user’s encrypted form…"/>:<>
+      {onChooseWorkflow&&<Button title="Choose another record workflow" disabled={saving} onPress={()=>{void chooseWorkflow();}}/>}
       <Card title="Local-first farm evidence"><Body>Farm dates use Africa/Blantyre. Capture time is separate. Saving does not confirm an event; Sync shows individual Django outcomes.</Body>
         {correctionId&&<Body>Correction of terminal operation {correctionId}. The original payload, hash and receipt stay unchanged; dependent children are not silently reparented. Review the original dates and field feedback before saving a new linked operation.</Body>}
         {!permitted&&<Body>This workflow requires the separate Phase 5 test build, current permission and downloaded reference data.</Body>}
@@ -82,14 +91,14 @@ export function PoultryForm({workflow,batchId,correctionId}:{workflow:Workflow;b
           title={`${batch.batch_id} • ${row.local_only?'provisional booking':batch.status}`} selected={values.batch_uuid===row.entity_uuid}
           disabled={!permitted||saving} onPress={()=>change({...values,batch_uuid:row.entity_uuid})}/>;})}
         {!rows.length&&<Body>No local batch on this page. Missing download does not mean an empty farm.</Body>}
-        <ErrorMessage message={errors.batch_uuid??null} announcementKey={attempt}/>
+        <ErrorMessage message={errors.batch_uuid?`Batch: ${errors.batch_uuid}`:null} announce={false}/>
         <Button title="Next 25 local batches" disabled={rows.length<25||saving} onPress={()=>setAfter(rows[rows.length-1]!.entity_uuid)}/>
         <Button title="First local batches" disabled={!after||saving} onPress={()=>setAfter('')}/>
       </Card>}
       <Card title="Record actual observations">
         {definition.fields.map(field=><ReactField key={field.name} field={field} values={values} disabled={!permitted||saving}
           choices={session?.capabilities.lookups?.choices[field.choices??'']??[]} onChange={change} error={errors[field.name]??null} attempt={attempt}/>)}
-        <ErrorMessage message={errors.form??null} announcementKey={attempt}/><Notice message={notice}/>
+        <ErrorMessage message={formErrorSummary(workflow,errors)} announcementKey={attempt}/><Notice message={notice}/>
         <Button title={saving?'Saving locally…':`Save ${definition.title.toLowerCase()} on this device`} disabled={!permitted||saving||!ready||corrected}
           onPress={()=>{if(correctionId)Alert.alert('Save new linked correction?','Original evidence is retained. This new operation requires its own Django validation.',
             [{text:'Review fields',style:'cancel'},{text:'Save correction',onPress:()=>{void save();}}]);else void save();}}/>
@@ -116,6 +125,6 @@ function ReactField({field,values,choices,onChange,error,disabled,attempt}:{fiel
       </>:<Field label={field.label} value={value} editable={!disabled} maxLength={field.max??4000}
         keyboardType={field.kind==='positive'?'number-pad':field.kind==='signed'?'numbers-and-punctuation':'default'}
         onChangeText={text=>onChange({...values,[field.name]:text})}/>}
-    <ErrorMessage message={error} announcementKey={attempt}/>
+    <ErrorMessage message={error?`${field.label}: ${error}`:null} announcementKey={attempt} announce={false}/>
   </>;
 }

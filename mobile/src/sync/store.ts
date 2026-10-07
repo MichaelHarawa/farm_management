@@ -5,6 +5,12 @@ import { poultryCommand, commandName, onlineOnly, normalizedPayload, type Poultr
 import { bootstrap, bootstrapPage, changesPage, result, newer, byteLength, type Bootstrap, type Change, type Entity } from './protocol';
 
 interface SnapshotState { manifest: Bootstrap; cursor: string; nextPage: number; bytes: number }
+function frozenSnapshot(manifest: Bootstrap) {
+  // Django re-signs this opaque page-zero token on resume. It is transport,
+  // not frozen content. Compare every other validated field, and keep the
+  // original durable page cursor/progress rather than rewinding to page zero.
+  return canonical({...manifest,next_page_cursor:null});
+}
 export interface Coverage { deployment: string; epoch: string; scope: string; packs: string[]; watermark: string; completedAt: string }
 export interface Delivery { operation_id: string; command_json: string; command_hash: string; status: string; reason: string | null; ever_sent: number; attempts: number; next_ms: number }
 type Digest = (text: string) => Promise<string>;
@@ -48,7 +54,7 @@ export class SyncStore {
       await this.fence(tx,lease);
       const old = await this.get<SnapshotState>('snapshot',tx);
       if (old?.manifest.snapshot_id === m.snapshot_id) {
-        if (canonical(old.manifest) !== canonical(m)) throw new Error('snapshot_changed');
+        if (frozenSnapshot(old.manifest) !== frozenSnapshot(m)) throw new Error('snapshot_changed');
         return;
       }
       await tx.run('DELETE FROM bootstrap_entities'); await tx.run('DELETE FROM bootstrap_pages');

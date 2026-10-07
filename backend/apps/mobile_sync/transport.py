@@ -80,6 +80,18 @@ def create_bootstrap(user, device, packs):
     with sync_boundary() as state:
         stream = stream_ready()
         packs = validate_packs(packs, stream)
+        scope = scope_revision(user, pack_version(packs))
+        # A completed or lost-response download can request the same immutable
+        # content again. Reuse only this actor/device's unexpired snapshot at
+        # the current epoch/scope/watermark and exact pack set. No TTL extension,
+        # stale-content reuse, cross-device access or quota increase.
+        existing = SyncBootstrap.objects.filter(
+            stream=stream, actor=user, device=device, epoch=stream.epoch,
+            scope_revision=scope, watermark=stream.sequence, packs=packs,
+            expires_at__gt=timezone.now(),
+        ).order_by("created_at", "pk").first()
+        if existing is not None:
+            return existing
         if SyncBootstrap.objects.filter(stream=stream, actor=user, expires_at__gt=timezone.now()).count() >= settings.MOBILE_SYNC_ACTIVE_SNAPSHOTS_PER_USER:
             raise SyncError("snapshot_limit", "Active snapshot quota reached; resume an existing snapshot or wait for expiry.", 429)
         batches = list(SyncEntity.objects.filter(stream=stream, entity_type="poultry.batch", deleted=False).values_list("source_pk", "entity_uuid")[:settings.MOBILE_SYNC_SNAPSHOT_ROWS + 1])
@@ -109,7 +121,7 @@ def create_bootstrap(user, device, packs):
         pages.append(page)  # Empty farm has one genuine empty page.
         manifest = [{"page": number, "row_count": len(rows), "sha256": checksum(rows)} for number, rows in enumerate(pages)]
         snapshot = SyncBootstrap.objects.create(stream=stream, actor=user, device=device, epoch=stream.epoch,
-            scope_revision=scope_revision(user, pack_version(packs)), packs=packs, watermark=stream.sequence, row_count=row_count,
+            scope_revision=scope, packs=packs, watermark=stream.sequence, row_count=row_count,
             manifest=manifest, expires_at=timezone.now() + timedelta(hours=24))
         SyncBootstrapPage.objects.bulk_create([SyncBootstrapPage(snapshot=snapshot, number=number, payload=rows, checksum=manifest[number]["sha256"])
                                                for number, rows in enumerate(pages)])

@@ -7,7 +7,7 @@ import { SyncStore } from '../src/sync/store';
 import { entity,type Entity } from '../src/sync/protocol';
 import { capabilitiesSchema,type Capabilities } from '../src/protocol';
 import { poultryCommand,normalizedPayload,type PoultryCommand } from '../src/poultry/commands';
-import { buildFormCommand,formDefaults,formFromCommand } from '../src/poultry/forms';
+import { buildFormCommand,formDefaults,formErrorSummary,formFromCommand } from '../src/poultry/forms';
 import { submitOnlinePoultry } from '../src/poultry/online';
 import { phase5PilotEnabled } from '../src/build-mode-policy';
 import { ApiError } from '../src/auth/client';
@@ -70,6 +70,16 @@ test('native form builder reports field errors, reference coverage and exact kg/
   assert.ok(buildFormCommand('feed',{...values,unit_of_measurement:'tonnes'},caps,envelope).errors.unit_of_measurement);
   assert.ok(buildFormCommand('feed',values,{...caps,lookups:undefined},envelope).errors.feed_type);
   assert.deepEqual(formFromCommand('feed',built.command),values);
+});
+test('poultry validation summary names missing fields and preserves date/unit/parent and recovery feedback',()=>{
+  assert.equal(formErrorSummary('feed',{}),null);
+  assert.equal(formErrorSummary('feed',{feed_type:'Required.',feed_source:'Required.',reported_by_name:'Required.'}),
+    'Feed type: Required. Feed source: Required. Observed reporter: Required.');
+  assert.equal(formErrorSummary('weight',{average_weight_g:'Enter a nonzero whole number.',sample_size:'Required.'}),
+    'Average live weight (grams): Enter a nonzero whole number. Number of birds weighed: Required.');
+  assert.equal(formErrorSummary('confirm_delivery',{batch_uuid:'Complete the preceding delivered step.',entry_date:'Choose a valid farm date and time.'}),
+    'Batch: Complete the preceding delivered step. Actual arrival: Choose a valid farm date and time.');
+  assert.equal(formErrorSummary('treatment',{form:'Original form/work is retained.',quantity:''}),'Original form/work is retained.');
 });
 test('schema2 to schema3 retains original UUID/payload/hash/quarantine and adds durable per-user forms',async()=>{
   const db=hostDatabase();await migrate(db,migrations.slice(0,2));const repo=new Repository(db,identity);await repo.bindIdentity();

@@ -3,12 +3,15 @@ import { AppState } from 'react-native';
 import * as Network from 'expo-network';
 import * as Crypto from 'expo-crypto';
 import { useSession } from '../auth/session';
+import {phase5Pilot,localAcceptance} from '../build-mode.native';
 import { sha256 } from '../db/native';
 import { SyncStore } from './store';
 import { SyncEngine } from './engine';
 import { nativeSyncPilotEnabled,nativeSyncGateReason } from './pilot-gate';
 import { ApiError } from '../auth/client';
 import { result as receiptSchema } from './protocol';
+import { canAttemptBackendSync } from './connectivity';
+import { syncErrorMessage } from './errors';
 
 interface SyncContextValue { store:SyncStore|null; revision:number; busy:boolean; message:string|null; error:string|null;
   enabled:boolean; notify():void; syncNow():Promise<void>; downloadBatch(id:string):Promise<void>; reviewQuarantined(id:string):Promise<void> }
@@ -26,15 +29,16 @@ export function SyncProvider({children}:{children:React.ReactNode}){
     if (!nativeSyncPilotEnabled || !engine) {setResult({engine,busy:false,message:nativeSyncGateReason,error:null});return;}
     try {
       if(automatic&&await store?.repository.metadata('native-phase4-manual'))return;
+      if(automatic&&phase5Pilot&&await store?.repository.metadata('native-phase5-manual'))return;
       setResult({engine,busy:true,message:null,error:null});
       const network=await Network.getNetworkStateAsync();
-      if (network.isConnected===false || network.isInternetReachable===false) {
+      if (!canAttemptBackendSync(network)) {
         setResult(s=>s?.engine===engine?{engine,busy:false,message:'Offline. Downloaded records and pending work remain on this device.',error:null}:s);return;
       }
       const outcome=await engine.run();
       setResult(s=>s?.engine===engine?{engine,busy:false,error:null,message:outcome.status==='complete'?'Server sync run completed. Check each retained record for acceptance or review.':outcome.status==='busy'?'Another worker owns the sync lease.':'Sync paused at its request budget or retry delay; downloaded work is retained.'}:s);
-      setRevision(v=>v+1);
-    }catch(e){setResult(s=>s?.engine===engine?{engine,busy:false,message:null,error:e instanceof ApiError&&[401,403].includes(e.status)?'Sign in again to validate access. Original local work is retained.':'Sync did not complete. Pending work and original operation IDs are retained.'}:s);}
+    }catch(e){setResult(s=>s?.engine===engine?{engine,busy:false,message:null,error:syncErrorMessage(e,'sync',localAcceptance)}:s);}
+    finally{setRevision(v=>v+1);}
   },[engine,store]);
   const downloadBatch=useCallback(async(id:string)=>{
     if (!nativeSyncPilotEnabled || !engine || !session) throw new Error('sync_disabled');
@@ -43,9 +47,9 @@ export function SyncProvider({children}:{children:React.ReactNode}){
       const pack=`${session.capabilities.projection_version===2?'batch-v2:':'batch:'}${id}`;
       const outcome=await engine.run([pack]);
       const downloaded=(await store?.coverage())?.packs.includes(pack)&&!(await store?.excludedBatches())?.some(b=>b.batch_uuid===id);
-      setRevision(v=>v+1);
       setResult({engine,busy:false,message:outcome.status==='complete'&&downloaded?'Batch pack downloaded and verified.':'Batch pack not yet complete. Retry this download after the current run; last good data and pending work retained.',error:null});
-    } catch {setResult({engine,busy:false,message:null,error:'Batch download did not complete. Existing data and work remain.'});}
+    } catch(e) {setResult({engine,busy:false,message:null,error:syncErrorMessage(e,'batch_download',localAcceptance)});}
+    finally{setRevision(v=>v+1);}
   },[engine,session,store]);
   const reviewQuarantined=useCallback(async(id:string)=>{
     if(!nativeSyncPilotEnabled || !store || !session || !engine)throw new Error('sync_disabled');
@@ -60,9 +64,9 @@ export function SyncProvider({children}:{children:React.ReactNode}){
         await store.allowReviewedRetry(id,caps,true,{owner,now:Date.now()});}
       if(receipt){const parsed=receiptSchema.parse(receipt);if(parsed.operation_id!==id)throw new Error('foreign_receipt');
         await store.reconcile(parsed,new Date().toISOString(),{owner,now:Date.now()});}
-      setRevision(v=>v+1);setResult({engine,busy:false,message:'Original server outcome checked. Original ID, payload and hash are retained; review the resulting status before sync.',error:null});
+      setResult({engine,busy:false,message:'Original server outcome checked. Original ID, payload and hash are retained; review the resulting status before sync.',error:null});
     }catch(e){setResult({engine,busy:false,message:null,error:'Review did not complete. Download current scope and validate access; original isolated evidence remains.'});throw e;}
-    finally{try{await store.repository.releaseLease(owner);}catch{/* Retain original evidence if session closed. */}}
+    finally{try{await store.repository.releaseLease(owner);}catch{/* Retain original evidence if session closed. */}setRevision(v=>v+1);}
   },[store,session,engine,authorizeSync]);
   useEffect(()=>{
     if(!engine)return;

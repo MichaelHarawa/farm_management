@@ -12,7 +12,7 @@ export default function Today() {
   return <Screen title="Today"><Card title={`Welcome, ${session?.user.full_name ?? ''}`}>
     <Body>Authorized at {session?.capabilities.server_time}. Farm display timezone: Africa/Blantyre.</Body>
     <Body>Offline session ends {session ? new Date(session.pointer.clock.validatedServerMs + session.pointer.clock.operationalDays * 86400_000).toISOString() : '—'}.</Body>
-  </Card><Card title="Download coverage"><Body>{coverage?`Downloaded ${coverage.packs.join(', ')} at ${coverage.completedAt}. Open Batches for confirmed and provisional counts.`:'No completed data download yet. No farm totals can be inferred.'}</Body><Body>Financial totals and growth indicators remain unavailable.</Body></Card>
+  </Card><Card title="Download coverage"><Body>{coverage?`Downloaded ${coverage.packs.join(', ')} at ${coverage.completedAt}. Open Batches for confirmed and provisional counts.`:'No completed data download yet. No farm totals can be inferred.'}</Body><Body>Financial totals are not available in this phase. Open a downloaded batch for dated feed, mortality and weight-sample indicators; missing history is not a healthy or zero result.</Body></Card>
     <Card title="Local work"><Body>{queued === null ? 'Queue count unavailable' : `${queued} retained operations (not confirmed farm totals)`}</Body><Body>{enabled?'Synthetic operational sync is enabled. Check each record in Sync for its own server outcome.':'Native uploads are disabled in this build. See Sync for details.'}</Body></Card>
   </Screen>;
 }

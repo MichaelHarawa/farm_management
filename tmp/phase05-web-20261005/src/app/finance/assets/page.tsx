@@ -1,0 +1,130 @@
+import {
+  getAccountingPeriods,
+  getAssetCategories,
+  getAssets,
+} from "@/features/finance/api/finance";
+import {
+  AssetCategoryDialog,
+  AssetDialog,
+  PeriodDepreciationButtons,
+} from "@/features/finance/components/FinanceForms";
+import {
+  EmptyState,
+  FinanceNav,
+  FinancePageShell,
+  Panel,
+} from "@/features/finance/components/FinanceUI";
+import {
+  formatCurrency,
+  formatDate,
+  formatLabel,
+} from "@/features/finance/utils/formatters";
+import Link from "next/link";
+import { MobileRecordList } from "@/components/ui/MobileRecordList";
+import { PaginatedTableBody } from "@/components/ui/PaginatedTableBody";
+
+export default async function FinanceAssetsPage() {
+  const [periods, categories, assets] = await Promise.all([
+    getAccountingPeriods("/finance/assets"),
+    getAssetCategories("/finance/assets"),
+    getAssets("/finance/assets"),
+  ]);
+  const latestPeriod = periods[0];
+
+  return (
+    <FinancePageShell
+      eyebrow="Finance / Assets"
+      title="Fixed asset register."
+      detail="Capitalize durable assets, run depreciation, and keep replacement funding separate from profit."
+      actions={<FinanceNav />}
+    >
+      <Panel title="Asset Actions">
+        <div className="flex flex-wrap items-center gap-3">
+          <AssetCategoryDialog />
+          {categories.length ? (
+            <AssetDialog categories={categories} />
+          ) : (
+            <p className="text-sm text-[var(--navy-muted)]">
+              Create an asset category before recording assets.
+            </p>
+          )}
+        </div>
+      </Panel>
+
+      {latestPeriod ? (
+        <Panel id="depreciation" title={`Depreciation: ${formatDate(latestPeriod.period_start)} to ${formatDate(latestPeriod.period_end)}`}>
+          <PeriodDepreciationButtons period={latestPeriod} />
+        </Panel>
+      ) : (
+        <Panel id="depreciation" title="Depreciation">
+          <EmptyState message="Create an accounting period before generating depreciation." />
+        </Panel>
+      )}
+
+      <Panel id="asset-register" title="Asset Register">
+        {assets.length ? (
+          <>
+          <MobileRecordList
+            pageSize={10}
+            emptyMessage="No fixed assets have been recorded."
+            records={assets.map((asset) => ({
+              key: asset.id,
+              title: asset.asset_code || asset.name,
+              subtitle: asset.name,
+              badge: <span className="rounded-full bg-[var(--gold-soft)] px-2 py-1 text-xs font-bold">{formatLabel(asset.status)}</span>,
+              fields: [
+                { label: "Available", value: asset.available_for_use_date ? formatDate(asset.available_for_use_date) : "-" },
+                { label: "Capitalized cost", value: formatCurrency(asset.total_capitalized_cost) },
+                { label: "USD reference", value: asset.usd_equivalent ? `$${asset.usd_equivalent}` : "-" },
+                { label: "Method", value: formatLabel(asset.depreciation_method) },
+              ],
+              actions: <Link href={`/finance/assets/${asset.id}`} className="w-full rounded-lg bg-[var(--navy)] px-4 py-3 text-center font-bold text-white">Open asset</Link>,
+            }))}
+          />
+          <div className="hidden overflow-x-auto md:block">
+            <table className="min-w-full border-collapse text-sm">
+              <thead>
+                <tr className="border-b border-[var(--line)] text-left text-[var(--navy-muted)]">
+                  <th className="py-3 pr-4">Asset</th>
+                  <th className="py-3 pr-4">Status</th>
+                  <th className="py-3 pr-4">Available</th>
+                  <th className="py-3 pr-4">Capitalized cost</th>
+                  <th className="py-3 pr-4">USD ref</th>
+                  <th className="py-3 pr-4">Method</th>
+                </tr>
+              </thead>
+              <PaginatedTableBody columnCount={6} itemLabel="assets">
+                {assets.map((asset) => (
+                  <tr key={asset.id} className="border-b border-[var(--line)]">
+                    <td className="py-4 pr-4">
+                      <Link href={`/finance/assets/${asset.id}`} className="font-extrabold text-[var(--navy)] underline">
+                        {asset.asset_code || asset.name}
+                      </Link>
+                      <p className="text-xs text-[var(--navy-muted)]">{asset.name}</p>
+                    </td>
+                    <td className="py-4 pr-4">{formatLabel(asset.status)}</td>
+                    <td className="py-4 pr-4">
+                      {asset.available_for_use_date
+                        ? formatDate(asset.available_for_use_date)
+                        : "-"}
+                    </td>
+                    <td className="py-4 pr-4">
+                      {formatCurrency(asset.total_capitalized_cost)}
+                    </td>
+                    <td className="py-4 pr-4">
+                      {asset.usd_equivalent ? `$${asset.usd_equivalent}` : "-"}
+                    </td>
+                    <td className="py-4 pr-4">{formatLabel(asset.depreciation_method)}</td>
+                  </tr>
+                ))}
+              </PaginatedTableBody>
+            </table>
+          </div>
+          </>
+        ) : (
+          <EmptyState message="No fixed assets have been recorded." />
+        )}
+      </Panel>
+    </FinancePageShell>
+  );
+}
