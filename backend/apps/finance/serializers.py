@@ -1250,6 +1250,10 @@ class ExpenditureSerializer(serializers.ModelSerializer):
             if not accounting_nature or accounting_nature == AccountingNature.OTHER:
                 attrs["accounting_nature"] = category.default_accounting_nature or AccountingNature.OTHER
 
+        if (attrs.get("accounting_nature") == AccountingNature.INVENTORY_PURCHASE or
+                getattr(self.instance, "accounting_nature", None) == AccountingNature.INVENTORY_PURCHASE):
+            raise serializers.ValidationError({"accounting_nature": "Managed inventory purchases are unavailable through generic expenditure editing."})
+
         if category and getattr(category, "name", "").lower() == "other":
             if not attrs.get("other_category_detail") and self.instance and self.instance.status == "posted":
                 raise serializers.ValidationError({"other_category_detail": "Details required when category is Other."})

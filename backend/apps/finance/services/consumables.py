@@ -3,6 +3,8 @@ from __future__ import annotations
 from decimal import Decimal
 
 from django.db import transaction
+from django.db.models import Q
+from rest_framework.exceptions import ValidationError
 
 from ..models import (
     AccountingPeriod,
@@ -35,6 +37,12 @@ def _location_for_lot(lot: SharedConsumableLot) -> InventoryLocation:
 
 @transaction.atomic
 def record_consumable_receipt(*, created_by=None, **data) -> SharedConsumableLot:
+    # Existing movement table is available before the additive Phase6 schema.
+    # Do not create parallel legacy stock after this item enters managed costing.
+    sku = "ITEM-" + "-".join(data["item"].upper().split())[:32]
+    if StockMovement.objects.filter(idempotency_key__startswith="inventory-receipt:").filter(
+            Q(item__name__iexact=data["item"]) | Q(item__sku=sku)).exists():
+        raise ValidationError({"inventory": "Managed stock requires the explicit inventory purchase workflow."})
     lot = SharedConsumableLot(**data, created_by=created_by)
     lot.full_clean(exclude=["unit_cost", "quantity_available"])
     lot.save()
@@ -74,6 +82,8 @@ def record_consumable_usage(*, recorded_by=None, **data) -> ConsumableUsage:
     lot = SharedConsumableLot.objects.select_for_update().get(
         pk=data["consumable_lot"].pk
     )
+    if lot.movements.filter(idempotency_key__startswith="inventory-receipt:").exists():
+        raise ValidationError({"inventory": "Managed stock requires the explicit valued inventory issue workflow."})
     quantity_used = Decimal(data["quantity_used"])
 
     if quantity_used > lot.quantity_available:

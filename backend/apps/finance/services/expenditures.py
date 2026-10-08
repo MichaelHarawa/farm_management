@@ -324,8 +324,11 @@ def post_expenditure(
     funding_rows=None,
     cost_rows=None,
     allow_unpaid: bool = False,
+    _inventory_purchase: bool = False,
 ) -> Expenditure:
     expenditure = Expenditure.objects.select_for_update().get(pk=expenditure_id)
+    if expenditure.accounting_nature == AccountingNature.INVENTORY_PURCHASE and not _inventory_purchase:
+        raise ValidationError({"inventory": "Inventory purchases require the explicit atomic lot/payable workflow."})
     if expenditure.status != ExpenditureStatus.DRAFT:
         raise ValidationError({"detail": "Only draft expenditures can be posted."})
 
@@ -421,6 +424,8 @@ def create_batch_cost_transaction(*, batch: Batch, data: dict, user) -> InputCos
     category = ExpenditureCategory.objects.filter(pk=category_id, is_active=True).first()
     if category is None:
         raise ValidationError({"category_id": "Select an active expenditure category."})
+    if category.default_accounting_nature == AccountingNature.INVENTORY_PURCHASE:
+        raise ValidationError({"category_id": "Stock purchases require the inventory workflow; do not charge the whole purchase directly to a batch."})
 
     total = (
         Decimal(data["quantity"]) * Decimal(data["unit"]) * money(data["unit_cost"])
@@ -501,6 +506,7 @@ def record_expenditure_payment(
     payment_group_key: str,
     user,
     payment_date=None,
+    _inventory_purchase: bool = False,
 ) -> Expenditure:
     payment_date = business_date(payment_date or timezone.localdate(), field="payment_date")
     if not isinstance(funding_rows, list) or not funding_rows:
@@ -524,6 +530,8 @@ def record_expenditure_payment(
             raise ValidationError({"idempotency_key": "This payment key is bound to different amount, date or funding splits."})
         return True
     expenditure = Expenditure.objects.get(pk=expenditure_id)
+    if expenditure.accounting_nature == AccountingNature.INVENTORY_PURCHASE and not _inventory_purchase:
+        raise ValidationError({"inventory": "Managed inventory payments require the explicit dated settlement workflow."})
     if replay(expenditure):
         return expenditure
     lock_financial_periods(payment_date, field="payment_date")
@@ -579,6 +587,8 @@ def record_expenditure_payment(
 @transaction.atomic
 def reverse_expenditure(*, expenditure_id: int, reason: str, user) -> Expenditure:
     expenditure = Expenditure.objects.select_for_update().get(pk=expenditure_id)
+    if expenditure.accounting_nature == AccountingNature.INVENTORY_PURCHASE:
+        raise ValidationError({"inventory": "A stock purchase cannot be voided independently of its stock; a verified correction workflow is required."})
     if expenditure.status != ExpenditureStatus.POSTED:
         raise ValidationError({"detail": "Only posted expenditures can be reversed."})
     reason = (reason or "").strip()

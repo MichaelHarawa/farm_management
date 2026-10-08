@@ -481,6 +481,7 @@ def _calculate_monthly_profitability_report(period: AccountingPeriod) -> dict:
                 AccountingNature.DIRECT_COST,
                 AccountingNature.INDIRECT_OPERATING_EXPENSE,
                 AccountingNature.OTHER,
+                AccountingNature.INVENTORY_PURCHASE,
             ]
         ).aggregate(total=Sum("amount"))["total"]
     ) + money(

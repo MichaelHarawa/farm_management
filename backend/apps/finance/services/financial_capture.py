@@ -291,6 +291,9 @@ def record_financial_expenditure(*, submission_id, user, currency, expenditure_d
 def record_financial_supplier_payment(*, submission_id, user, currency, expenditure_id, payment_date, funding_allocations):
     _currency(currency)
     expenditure_id = _identifier(expenditure_id, "expenditure_id")
+    payment_date = business_date(payment_date, field="payment_date")
+    if payment_date > timezone.localdate():
+        raise ValidationError({"payment_date": "Record the actual payment date, not a future event."})
     funding_allocations = _funding_rows(funding_allocations)
     def effect(actor):
         lock_financial_periods(payment_date, field="payment_date")
@@ -298,11 +301,20 @@ def record_financial_supplier_payment(*, submission_id, user, currency, expendit
         # Never create an orphan settlement for an unreconciled historical
         # payable. Other verified (labour/payroll) template settlement is Phase7.
         if expenditure.status != ExpenditureStatus.POSTED or not FinancialCommandReceipt.objects.filter(
-                command="finance.expenditure.create", completed_at__isnull=False,
+                command__in=["finance.expenditure.create", "inventory.receipt.record"], completed_at__isnull=False,
                 result__expenditure_id=str(expenditure_id)).exists():
             raise ValidationError({"expenditure": "Only verified Phase6 payables can use this settlement template; legacy reconciliation is required."})
-        record_expenditure_payment(expenditure_id=expenditure_id, payment_date=payment_date,
-            funding_rows=funding_allocations, payment_group_key=f"financial-payment:{submission_id}", user=actor)
+        if expenditure.accounting_nature == AccountingNature.INVENTORY_PURCHASE and business_date(payment_date) < expenditure.expenditure_date:
+            raise ValidationError({"payment_date": "Pre-purchase deposits require a separate verified workflow."})
+        expenditure = record_expenditure_payment(expenditure_id=expenditure_id, payment_date=payment_date,
+            funding_rows=funding_allocations, payment_group_key=f"financial-payment:{submission_id}", user=actor,
+            _inventory_purchase=expenditure.accounting_nature == AccountingNature.INVENTORY_PURCHASE)
+        if expenditure.accounting_nature == AccountingNature.INVENTORY_PURCHASE:
+            from .inventory_capture import _sync_lot_payment
+            from ..models import InventoryLotBinding, SharedConsumableLot
+            binding = InventoryLotBinding.objects.get(expenditure=expenditure)
+            lot = SharedConsumableLot.objects.select_for_update().get(pk=binding.lot_id)
+            _sync_lot_payment(lot, expenditure)
         return {"expenditure_id": str(expenditure_id)}
     result, created = _submission(submission_id=submission_id, command="finance.expenditure.pay", user=user,
         payload=dict(currency=currency, expenditure_id=str(expenditure_id), payment_date=payment_date,

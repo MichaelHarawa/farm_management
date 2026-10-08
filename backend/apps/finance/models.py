@@ -1100,9 +1100,18 @@ class ConsumableUsage(TimestampedModel):
             raise ValidationError(errors)
 
     def save(self, *args, **kwargs):
-        self.recognized_cost = (
-            self.quantity_used * self.consumable_lot.unit_cost
-        ).quantize(Decimal("0.01"))
+        # Only the tested server inventory boundary supplies this value. Ordinary
+        # serializers cannot pass save kwargs; legacy costing is unchanged.
+        valued_cost = kwargs.pop("_valued_cost", None)
+        if valued_cost is not None:
+            from .services.financial_values import exact_decimal
+            if not self._state.adding:
+                raise ValidationError("A valued stock issue cannot be rewritten.")
+            self.recognized_cost = exact_decimal(valued_cost, max_digits=16)
+        else:
+            self.recognized_cost = (
+                self.quantity_used * self.consumable_lot.unit_cost
+            ).quantize(Decimal("0.01"))
         super().save(*args, **kwargs)
 
 
@@ -2153,6 +2162,7 @@ class AccountingNature(models.TextChoices):
     DIRECT_COST = "direct_cost", "Direct Cost"
     INDIRECT_OPERATING_EXPENSE = "indirect_operating_expense", "Indirect Operating Expense"
     CAPITAL_EXPENDITURE = "capital_expenditure", "Capital Expenditure"
+    INVENTORY_PURCHASE = "inventory_purchase", "Inventory Purchase (cost recognized on issue)"
     LOAN_REPAYMENT = "loan_repayment", "Loan Repayment"
     OWNER_WITHDRAWAL = "owner_withdrawal", "Owner Withdrawal"
     TRANSFER = "transfer", "Transfer"
@@ -2813,6 +2823,11 @@ class Expenditure(DollarReferenceMixin, TimestampedModel):
             # Only enforce when trying to post
             if self.status == ExpenditureStatus.POSTED:
                 raise ValidationError({"other_nature_detail": "Provide details when nature is 'Other'."})
+        if not getattr(self, "_inventory_purchase", False):
+            managed_purchase = self.accounting_nature == AccountingNature.INVENTORY_PURCHASE or (
+                self.pk and Expenditure.objects.filter(pk=self.pk, accounting_nature=AccountingNature.INVENTORY_PURCHASE).exists())
+            if managed_purchase:
+                raise ValidationError({"accounting_nature": "Managed inventory purchases require the explicit atomic workflow, not generic editing."})
 
     def save(self, *args, **kwargs):
         self.set_usd_equivalent(self.amount)
@@ -3374,6 +3389,20 @@ class InventoryLocation(TimestampedModel):
         return self.name
 
 
+class StockMovementQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        raise ValidationError("Stock movements are immutable; post a correcting movement.")
+
+    def bulk_update(self, *args, **kwargs):
+        raise ValidationError("Stock movements are immutable; post a correcting movement.")
+
+    def bulk_create(self, *args, **kwargs):
+        raise ValidationError("Use an explicit stock movement boundary.")
+
+    def delete(self):
+        raise ValidationError("Stock movements are immutable; post a correcting movement.")
+
+
 class StockMovement(TimestampedModel):
     movement_type = models.CharField(max_length=20, choices=StockMovementType.choices, db_index=True)
     movement_date = models.DateField(db_index=True)
@@ -3403,6 +3432,7 @@ class StockMovement(TimestampedModel):
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
         related_name="created_stock_movements"
     )
+    objects = StockMovementQuerySet.as_manager()
 
     class Meta:
         ordering = ["-movement_date", "-pk"]
@@ -3412,11 +3442,59 @@ class StockMovement(TimestampedModel):
         ]
 
     def save(self, *args, **kwargs):
-        self.total_cost = (self.quantity * self.unit_cost).quantize(Decimal("0.01"))
+        if not self._state.adding or kwargs.get("force_update") or kwargs.get("update_fields") is not None:
+            raise ValidationError("Stock movements are immutable; post a correcting movement.")
+        valued_cost = kwargs.pop("_valued_cost", None)
+        if valued_cost is None:
+            self.total_cost = (self.quantity * self.unit_cost).quantize(Decimal("0.01"))
+        else:
+            from .services.financial_values import exact_decimal
+            self.total_cost = exact_decimal(valued_cost, max_digits=16)
+        kwargs["force_insert"] = True
         super().save(*args, **kwargs)
 
     def delete(self, *args, **kwargs):
         raise ValidationError("Stock movements are immutable; post a correcting movement.")
+
+
+class InventoryValuePool(TimestampedModel):
+    """Moving weighted-average value for explicitly managed, reconciled stock.
+
+    No automatic opening balance or historical lot import. Old lots keep their
+    previous behavior; a conflicting legacy SKU requires explicit reconciliation.
+    """
+    item = models.OneToOneField(ConsumableItem, on_delete=models.PROTECT, related_name="value_pool")
+    quantity = models.DecimalField(max_digits=14, decimal_places=4, default=Decimal("0.0000"))
+    carrying_value = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal("0.00"))
+    last_movement_date = models.DateField()
+    revision = models.PositiveBigIntegerField(default=1)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(condition=Q(quantity__gte=0), name="inventory_pool_quantity_nonnegative"),
+            models.CheckConstraint(condition=Q(carrying_value__gte=0), name="inventory_pool_value_nonnegative"),
+            models.CheckConstraint(condition=Q(quantity__gt=0) | Q(carrying_value=0), name="inventory_empty_pool_zero_value"),
+        ]
+
+
+class InventoryLotBinding(TimestampedModel):
+    """Explicit new lot -> item and one inventory purchase payable; no guessing."""
+    lot = models.OneToOneField(SharedConsumableLot, on_delete=models.PROTECT, related_name="inventory_binding")
+    item = models.ForeignKey(ConsumableItem, on_delete=models.PROTECT, related_name="inventory_lots")
+    expenditure = models.OneToOneField(Expenditure, on_delete=models.PROTECT, related_name="inventory_lot")
+    invoice_key = models.CharField(max_length=64, unique=True, null=True, blank=True, default=None)
+
+
+class InventoryLocationStock(TimestampedModel):
+    binding = models.ForeignKey(InventoryLotBinding, on_delete=models.PROTECT, related_name="location_stock")
+    location = models.ForeignKey(InventoryLocation, on_delete=models.PROTECT, related_name="lot_stock")
+    quantity = models.DecimalField(max_digits=14, decimal_places=4, default=Decimal("0.0000"))
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["binding", "location"], name="inventory_unique_lot_location"),
+            models.CheckConstraint(condition=Q(quantity__gte=0), name="inventory_location_quantity_nonnegative"),
+        ]
 
 
 class AssetEventType(models.TextChoices):
