@@ -8,6 +8,7 @@ import { Button, Card, Body, ErrorMessage, Field, Loading, Screen } from '../src
 export default function SignIn() {
   const { ready, session, busy, error, signIn, unlock, settings, testControls, switchTestBackend } = useSession();
   const [submitted, setSubmitted] = useState(false);
+  const [submissionAttempt, setSubmissionAttempt] = useState(0);
   const { control, handleSubmit, resetField, formState: { errors } } = useForm({ defaultValues: { username: '', password: '' } });
   if (session) return <Redirect href="/(tabs)/today" />;
   return <KeyboardAvoidingView style={{ flex: 1 }} behavior="height"><Screen title="Your farm, in the field">
@@ -23,9 +24,9 @@ export default function SignIn() {
           <Field label="Username" value={value} onChangeText={onChange} autoCapitalize="none" autoCorrect={false} autoComplete="username" editable={!busy} />} />
         <Controller control={control} name="password" rules={{ required: true }} render={({ field: { value, onChange } }) =>
           <Field label="Password" value={value} onChangeText={onChange} secureTextEntry autoCapitalize="none" autoComplete="current-password" editable={!busy} />} />
-        <ErrorMessage message={submitted && (errors.username || errors.password) ? 'Enter your username and password.' : null} />
+        <ErrorMessage message={submitted && (errors.username || errors.password) ? 'Enter your username and password.' : null} announcementKey={submissionAttempt} />
         <Button disabled={busy} title={busy ? 'Opening secure session…' : 'Sign in'} onPress={() => {
-          setSubmitted(true); void handleSubmit(async (values) => { try { await signIn(values.username.trim(), values.password); } finally { resetField('password'); } })();
+          setSubmitted(true); setSubmissionAttempt(attempt=>attempt+1); void handleSubmit(async (values) => { try { await signIn(values.username.trim(), values.password); } finally { resetField('password'); } })();
         }} />
       </Card>
       <Button disabled={busy} title="Unlock this user’s cached session" onPress={() => { void unlock(); }} />

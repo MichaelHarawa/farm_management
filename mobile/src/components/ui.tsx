@@ -1,7 +1,7 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type TextInputProps } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { announceErrorChange, type ErrorAnnouncement } from './error-announcement';
+import { announceErrorChange, androidErrorMode, deferLiveError, liveErrorAccessibility, liveErrorLabel, liveErrorText, semanticErrorRegionKey, type ErrorAnnouncement } from './error-announcement';
 export const colors = { cream: '#FAF6EB', navy: '#162D43', gold: '#BD922B', muted: '#45586A', border: '#D6CDB8', danger: '#992A27', white: '#FFFFFF' };
 export function Screen({ title, children }: { title: string; children: React.ReactNode }) {
   return <SafeAreaView style={styles.safe} edges={['left', 'right', 'bottom']}><ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.screen}>
@@ -24,13 +24,30 @@ export function Field({ label, ...props }: TextInputProps & { label: string }) {
 }
 export function ErrorMessage({ message, announcementKey, announce=true }: { message: string | null; announcementKey?: number; announce?:boolean }) {
   const previous = useRef<ErrorAnnouncement | null>(null);
+  const mode=androidErrorMode(Platform.OS,Platform.Version,announce);
+  const [delivered,setDelivered]=useState<ErrorAnnouncement|null>(null);
   useEffect(() => {
+    let cancel:(()=>void)|undefined;
     previous.current = announceErrorChange(previous.current, { message:announce?message:null, attempt: announcementKey }, text => {
-      if (Platform.OS === 'android') AccessibilityInfo.announceForAccessibility(text);
+      if(mode==='legacy')AccessibilityInfo.announceForAccessibility(text);
+      if(mode==='semantic')cancel=deferLiveError(text,value=>setDelivered({message:value,attempt:announcementKey}),work=>{
+        const timer=setTimeout(work,100);return()=>clearTimeout(timer);
+      });
     });
-  }, [message, announcementKey, announce]);
-  // Explicit Android announcements work without moving focus to an off-screen
-  // error. Avoid a second live-region announcement of the same native event.
+    return()=>cancel?.();
+  }, [message, announcementKey, announce, mode]);
+  // Android36 deprecates TYPE_ANNOUNCEMENT (used by RN's imperative API).
+  // One summary at a time: real submissions replace its native node, initially
+  // empty, then receive the full text. Redraws keep the same node. Quiet inline
+  // errors never announce; no focus movement or duplicate imperative event.
+  if(mode==='semantic') {
+    const current={message,attempt:announcementKey};
+    const text=liveErrorText(delivered,current);
+    return <Text key={semanticErrorRegionKey(announcementKey)} {...liveErrorAccessibility(text)}
+      accessibilityRole="alert" accessibilityLiveRegion="assertive"
+      accessibilityLabel={liveErrorLabel(delivered,current)} style={styles.error}>{text}</Text>;
+  }
+  // Preserve previously verified legacy Android and other-platform behavior.
   return message ? <Text accessible accessibilityRole="alert" accessibilityLiveRegion={!announce||Platform.OS === 'android'?'none':'polite'} style={styles.error}>{message}</Text> : null;
 }
 export function Loading({ label = 'Opening local records…' }: { label?: string }) {

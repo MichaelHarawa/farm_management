@@ -94,3 +94,11 @@
 {"at":"2026-10-06T14:24:29.396854+00:00","route_kind":"sign_in","http_status":200}
 {"at":"2026-10-06T14:28:28.359458+00:00","route_kind":"current_user","http_status":200}
 {"at":"2026-10-06T14:28:28.404660+00:00","route_kind":"capabilities","http_status":200}
+{"at":"2026-10-07T08:31:27.943824+00:00","route_kind":"refresh","http_status":200}
+{"at":"2026-10-07T08:31:28.481030+00:00","route_kind":"current_user","http_status":200}
+{"at":"2026-10-07T08:31:29.501221+00:00","route_kind":"capabilities","http_status":200}
+{"at":"2026-10-07T08:31:30.522740+00:00","route_kind":"changes","http_status":200}
+{"at":"2026-10-07T08:31:31.542920+00:00","route_kind":"changes","http_status":200}
+{"at":"2026-10-07T08:34:47.380522+00:00","route_kind":"sign_in","http_status":200}
+{"at":"2026-10-07T08:35:33.028426+00:00","route_kind":"current_user","http_status":200}
+{"at":"2026-10-07T08:35:34.052667+00:00","route_kind":"capabilities","http_status":200}
