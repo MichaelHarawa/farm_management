@@ -1,5 +1,6 @@
 from datetime import date, datetime, time
 from decimal import Decimal
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
@@ -305,9 +306,12 @@ class CustomerContributionTests(TestCase):
         self.assertFalse(created_again)
         self.assertEqual(first.pk, second.pk)
         self.assertEqual(Expenditure.objects.count(), before_expenditures)
-        reverse_customer_cost_attribution(
-            attribution_id=first.pk, reason="Estimate superseded", user=self.admin
-        )
+        # The assertion is as of September30. A reversal at the machine's
+        # current October date must NOT remove September historical support.
+        with patch("apps.finance.services.customer_contribution.timezone.now", return_value=aware(date(2026, 9, 20))):
+            reverse_customer_cost_attribution(
+                attribution_id=first.pk, reason="Estimate superseded", user=self.admin
+            )
         historical = customer_contribution_report(date_to=date(2026, 9, 11))
         self.assertEqual(
             historical["customers"][0]["support_cost"], Decimal("50.00")

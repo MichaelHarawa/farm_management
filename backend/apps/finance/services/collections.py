@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Sum
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
@@ -11,9 +11,16 @@ from apps.mobile_sync.writers import sync_atomic
 from apps.poultry.models import PaymentStatus, Sales
 
 from ..models import SalePayment, SalePaymentStatus
+from .financial_values import exact_decimal, lock_financial_periods
 
 
 ZERO = Decimal("0.00")
+
+
+def _assert_payment_replay(payment, requested):
+    if any(getattr(payment, field) != value for field, value in requested.items()):
+        raise ValidationError({"idempotency_key": "This receipt key is bound to different sale, amount, date or evidence."})
+    return payment, False
 
 
 def active_payment_total(sale: Sales) -> Decimal:
@@ -65,26 +72,31 @@ def record_sale_payment(
     notes: str = "",
 ) -> tuple[SalePayment, bool]:
     normalized_key = (idempotency_key or "").strip() or None
+    if normalized_key and len(normalized_key) > 120:
+        raise ValidationError({"idempotency_key": "Receipt submission key must not exceed 120 characters."})
+    amount = exact_decimal(amount, positive=True)
+    payment_date = SalePayment._meta.get_field("payment_date").to_python(payment_date)
+    if payment_date is None:
+        raise ValidationError({"payment_date": "An actual receipt date is required."})
+    if timezone.is_naive(payment_date):
+        raise ValidationError({"payment_date": "The receipt instant requires an explicit timezone."})
+    requested = {"sale_id": int(sale_id), "amount": amount, "payment_date": payment_date,
+                 "payment_method": payment_method, "external_reference": (external_reference or "").strip(),
+                 "received_by_name": (received_by_name or "").strip(), "notes": (notes or "").strip()}
     if normalized_key:
         existing = SalePayment.objects.filter(idempotency_key=normalized_key).first()
         if existing:
-            if existing.sale_id != sale_id:
-                raise ValidationError({"idempotency_key": "This key belongs to another sale."})
-            return existing, False
+            return _assert_payment_replay(existing, requested)
 
+    # Do not lock/reject the original sale's period for a current collection.
+    lock_financial_periods(payment_date, require=False, field="payment_date")
     sale = Sales.objects.select_for_update().select_related("batch").get(pk=sale_id)
     if normalized_key:
         existing = SalePayment.objects.filter(idempotency_key=normalized_key).first()
         if existing:
-            if existing.sale_id != sale_id:
-                raise ValidationError({"idempotency_key": "This key belongs to another sale."})
-            return existing, False
+            return _assert_payment_replay(existing, requested)
     if sale.payment_status == PaymentStatus.CANCELLED:
         raise ValidationError({"sale": "Cancelled sales cannot receive payments."})
-
-    amount = Decimal(amount).quantize(Decimal("0.01"))
-    if amount <= ZERO:
-        raise ValidationError({"amount": "Payment amount must be greater than zero."})
 
     paid = active_payment_total(sale)
     outstanding = (sale.sale_total - paid).quantize(Decimal("0.01"))
@@ -93,17 +105,14 @@ def record_sale_payment(
             {"amount": f"Payment exceeds the outstanding balance of {outstanding}."}
         )
 
-    payment = SalePayment.objects.create(
-        sale=sale,
-        amount=amount,
-        payment_date=payment_date,
-        payment_method=payment_method,
-        idempotency_key=normalized_key,
-        external_reference=(external_reference or "").strip(),
-        received_by_name=(received_by_name or "").strip(),
-        notes=(notes or "").strip(),
-        created_by=created_by,
-    )
+    try:
+        with transaction.atomic():
+            payment = SalePayment.objects.create(**requested, idempotency_key=normalized_key, created_by=created_by)
+    except IntegrityError:
+        existing = SalePayment.objects.filter(idempotency_key=normalized_key).first() if normalized_key else None
+        if existing is None:
+            raise
+        return _assert_payment_replay(existing, requested)
     sync_sale_payment_totals(sale)
 
     from .profitability import ensure_batch_funding_source
@@ -134,6 +143,10 @@ def record_initial_sale_payment(*, sale: Sales, amount: Decimal, created_by) -> 
 @sync_atomic
 @transaction.atomic
 def reverse_sale_payment(*, payment_id: int, reason: str, reversed_by) -> SalePayment:
+    # Match normal collection's sale -> receipt order, avoiding a reciprocal
+    # receipt/sale lock cycle when the sync stream is disabled on ordinary web.
+    sale_id = SalePayment.objects.values_list("sale_id", flat=True).get(pk=payment_id)
+    sale = Sales.objects.select_for_update().get(pk=sale_id)
     payment = (
         SalePayment.objects.select_for_update()
         .select_related("sale__batch")
@@ -148,13 +161,12 @@ def reverse_sale_payment(*, payment_id: int, reason: str, reversed_by) -> SalePa
     from ..models import FundingSource, FundingSourceType
     from .profitability import cash_used_from_batch
 
-    sale = Sales.objects.select_for_update().get(pk=payment.sale_id)
     # Serialize payment reversals with expenditure postings against this source.
     list(
         FundingSource.objects.select_for_update().filter(
             source_type=FundingSourceType.BATCH_COLLECTION,
             batch_id=sale.batch_id,
-        )
+        ).order_by("pk")
     )
     resulting_cash = active_payment_total(sale) - payment.amount
     other_batch_cash = (

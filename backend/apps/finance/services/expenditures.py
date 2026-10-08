@@ -30,6 +30,7 @@ from ..permissions import has_owner_capital_access
 from .profitability import available_funding_source_cash
 from .ledger import post_journal
 from .action_audit import record_finance_action
+from .financial_values import exact_decimal, business_date, lock_financial_periods
 
 
 ZERO = Decimal("0.00")
@@ -155,7 +156,7 @@ def _validate_payment_rows(
         # PostgreSQL cannot apply FOR UPDATE to the nullable side of the outer
         # join produced by select_related("batch"). Lock the cash-source rows
         # themselves; the batch label can be loaded lazily for error messages.
-        for source in FundingSource.objects.select_for_update().filter(pk__in=source_totals)
+        for source in FundingSource.objects.select_for_update().filter(pk__in=source_totals).order_by("pk")
     }
     missing = set(source_totals).difference(sources)
     if missing:
@@ -170,6 +171,10 @@ def _validate_payment_rows(
     }
     for row in normalized:
         source = sources[row["funding_source"]]
+        if not source.is_active:
+            raise ValidationError({"funding_allocations": "Select an active funding source."})
+        if row["classification"] not in FundingClassification.values:
+            raise ValidationError({"funding_allocations": "Select a supported funding classification."})
         if source.source_type == FundingSourceType.OWNER_CAPITAL:
             if not has_owner_capital_access(user):
                 raise PermissionDenied(
@@ -497,13 +502,35 @@ def record_expenditure_payment(
     user,
     payment_date=None,
 ) -> Expenditure:
+    payment_date = business_date(payment_date or timezone.localdate(), field="payment_date")
+    if not isinstance(funding_rows, list) or not funding_rows:
+        raise ValidationError({"funding_allocations": "Select at least one payment source."})
+    try:
+        requested = sorted((int(row["funding_source"]),
+                            exact_decimal(row["amount"], positive=True),
+                            row.get("classification") or FundingClassification.REINVESTMENT)
+                           for row in funding_rows)
+    except (KeyError, TypeError, ValueError):
+        raise ValidationError({"funding_allocations": "Each payment row requires a funding source and exact amount."})
+    payment_group_key = (payment_group_key or "").strip()
+    if not payment_group_key or len(payment_group_key) > 120:
+        raise ValidationError({"idempotency_key": "A payment submission key of at most 120 characters is required."})
+    def replay(expenditure):
+        rows = list(expenditure.funding_allocations.filter(payment_group_key=payment_group_key))
+        if not rows:
+            return False
+        actual = sorted((row.funding_source_id, row.amount, row.classification) for row in rows)
+        if actual != requested or any(row.allocation_date != payment_date for row in rows):
+            raise ValidationError({"idempotency_key": "This payment key is bound to different amount, date or funding splits."})
+        return True
+    expenditure = Expenditure.objects.get(pk=expenditure_id)
+    if replay(expenditure):
+        return expenditure
+    lock_financial_periods(payment_date, field="payment_date")
     expenditure = Expenditure.objects.select_for_update().get(pk=expenditure_id)
     if expenditure.status != ExpenditureStatus.POSTED:
         raise ValidationError({"detail": "Only posted expenditures can receive payments."})
-    payment_group_key = (payment_group_key or "").strip()
-    if not payment_group_key:
-        raise ValidationError({"idempotency_key": "A payment submission key is required."})
-    if expenditure.funding_allocations.filter(payment_group_key=payment_group_key).exists():
+    if replay(expenditure):
         return expenditure
     outstanding = money(expenditure.amount) - funded_total(expenditure)
     if outstanding <= ZERO:
@@ -511,17 +538,12 @@ def record_expenditure_payment(
     normalized = _validate_payment_rows(
         funding_rows, outstanding, allow_less=True, user=user
     )
-    if isinstance(payment_date, str):
-        try:
-            payment_date = date.fromisoformat(payment_date)
-        except ValueError:
-            raise ValidationError({"payment_date": "Enter a valid payment date."})
     _create_funding_rows(
         expenditure,
         normalized,
         user=user,
         payment_group_key=payment_group_key,
-        allocation_date=payment_date or timezone.localdate(),
+        allocation_date=payment_date,
     )
     new_allocations = expenditure.funding_allocations.filter(
         payment_group_key=payment_group_key

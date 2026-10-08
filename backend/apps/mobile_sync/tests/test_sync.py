@@ -36,8 +36,12 @@ class FixtureMixin:
     def make_fixture(self):
         self.arrival = timezone.now() - timedelta(days=4)
         self.users = {}
+        # A preceding TransactionTestCase may have flushed migration seeds.
+        # Fixtures own their stream/roles; never depend on suite ordering.
+        SyncStreamState.objects.get_or_create(pk=1)
         with sync_boundary():
             for slug in ["general_worker", "farm_supervisor", "farm_manager", "director", "stake_holder", "admin"]:
+                Role.objects.get_or_create(slug=slug, defaults={"name": slug})
                 user = get_user_model().objects.create_user(username=f"sync-{slug}", email=f"{slug}@example.invalid", password="mobile-password")
                 user.roles.add(Role.objects.get(slug=slug))
                 self.users[slug] = user

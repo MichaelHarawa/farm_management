@@ -76,6 +76,10 @@ def register_batch(*, created_by, **data):
     if data.get("booking_date"):
         if data.get("estimated_chick_arrival_date") and data["estimated_chick_arrival_date"] < data["booking_date"]:
             raise ValidationError({"estimated_chick_arrival_date": "Arrival cannot precede booking."})
+        # Older ordinary web callers used quantity for a booking. Preserve that
+        # input as EXPECTED chicks only; it must never establish a received flock.
+        if "expected_quantity" not in data:
+            data["expected_quantity"] = data.get("quantity")
         if not data.get("expected_quantity") or data["expected_quantity"] <= 0:
             raise ValidationError({"expected_quantity": "Expected quantity must be positive."})
         # A booking is not a received flock. Confirmation alone sets arrivals.

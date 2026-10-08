@@ -102,3 +102,15 @@
 {"at":"2026-10-07T08:34:47.380522+00:00","route_kind":"sign_in","http_status":200}
 {"at":"2026-10-07T08:35:33.028426+00:00","route_kind":"current_user","http_status":200}
 {"at":"2026-10-07T08:35:34.052667+00:00","route_kind":"capabilities","http_status":200}
+{"at":"2026-10-08T12:57:01.824384+00:00","route_kind":"refresh","http_status":200}
+{"at":"2026-10-08T12:57:01.915307+00:00","route_kind":"current_user","http_status":200}
+{"at":"2026-10-08T12:57:01.976629+00:00","route_kind":"capabilities","http_status":200}
+{"at":"2026-10-08T12:57:02.113095+00:00","route_kind":"changes","http_status":200}
+{"at":"2026-10-08T12:57:06.311890+00:00","route_kind":"current_user","http_status":200}
+{"at":"2026-10-08T12:57:07.342623+00:00","route_kind":"capabilities","http_status":200}
+{"at":"2026-10-08T12:57:08.365500+00:00","route_kind":"changes","http_status":200}
+{"at":"2026-10-08T12:57:09.396864+00:00","route_kind":"changes","http_status":200}
+{"at":"2026-10-08T12:57:10.405124+00:00","route_kind":"changes","http_status":200}
+{"at":"2026-10-08T12:57:11.419995+00:00","route_kind":"changes","http_status":200}
+{"at":"2026-10-08T12:57:12.432902+00:00","route_kind":"changes","http_status":200}
+{"at":"2026-10-08T12:57:13.453926+00:00","route_kind":"changes","http_status":200}

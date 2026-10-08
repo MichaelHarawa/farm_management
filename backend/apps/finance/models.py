@@ -3453,3 +3453,46 @@ class AssetLifecycleEvent(TimestampedModel):
 
     def delete(self, *args, **kwargs):
         raise ValidationError("Asset lifecycle events are immutable.")
+
+
+class FinancialReceiptQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        raise ValidationError("Financial deduplication receipts are immutable.")
+
+    def bulk_update(self, *args, **kwargs):
+        raise ValidationError("Financial deduplication receipts are immutable.")
+
+    def bulk_create(self, *args, **kwargs):
+        raise ValidationError("Use an explicit financial submission boundary.")
+
+    def delete(self):
+        raise ValidationError("Financial deduplication receipts cannot be deleted.")
+
+
+class FinancialCommandReceipt(TimestampedModel):
+    """Permanent accepted-effect deduplication; independent of sync retention.
+
+    Not a replicated entity or a public generic command API. Only explicit
+    financial service boundaries may create/complete these rows atomically.
+    """
+    submission_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    command = models.CharField(max_length=40)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+                              related_name="financial_command_receipts")
+    request_hash = models.CharField(max_length=64)
+    result = models.JSONField(default=dict)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    objects = FinancialReceiptQuerySet.as_manager()
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding or kwargs.get("force_update") or kwargs.get("update_fields") is not None:
+            raise ValidationError("Accepted financial receipts and their identity are immutable.")
+        if self.completed_at is None or not self.result:
+            raise ValidationError("Only completed atomic financial effects may create a receipt.")
+        # A newly constructed model with an existing UUID must never use
+        # Django's update fallback (including an explicit force_update).
+        kwargs["force_insert"] = True
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Financial deduplication receipts cannot be deleted.")

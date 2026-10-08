@@ -289,6 +289,9 @@ class AccountingPeriodViewSet(viewsets.ModelViewSet):
     @transaction.atomic
     def close(self, request, pk=None):
         period = self.get_object()
+        # Serialize close with dated source/payment/stock posting before reading
+        # allocations, not only when saving CLOSED after their calculation.
+        period = AccountingPeriod.objects.select_for_update().get(pk=period.pk)
         if period.status == PeriodStatus.CLOSED:
             return Response(self.get_serializer(period).data)
 
@@ -350,6 +353,7 @@ class AccountingPeriodViewSet(viewsets.ModelViewSet):
     @transaction.atomic
     def reopen(self, request, pk=None):
         period = self.get_object()
+        period = AccountingPeriod.objects.select_for_update().get(pk=period.pk)
         reason = str(request.data.get("reason", "")).strip()
         if not reason:
             return Response(

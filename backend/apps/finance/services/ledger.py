@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from decimal import Decimal
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Sum
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
@@ -16,6 +16,7 @@ from ..models import (
     JournalStatus,
     PeriodStatus,
 )
+from .financial_values import business_date, exact_decimal, lock_financial_periods
 
 
 ZERO = Decimal("0.00")
@@ -23,6 +24,26 @@ ZERO = Decimal("0.00")
 
 def money(value) -> Decimal:
     return Decimal(value or 0).quantize(Decimal("0.01"))
+
+
+def _line_content(line):
+    return (str(line["account"]), exact_decimal(line.get("debit", 0), max_digits=18, field="lines"),
+            exact_decimal(line.get("credit", 0), max_digits=18, field="lines"),
+            str(line["batch_id"]) if line.get("batch_id") is not None else "",
+            str(line["funding_source_id"]) if line.get("funding_source_id") is not None else "",
+            line.get("memo", ""))
+
+
+def _assert_replay(entry, *, posting_date, description, source_model, source_identifier, content):
+    actual = sorted((line.account.code, line.debit, line.credit,
+                     str(line.batch_id) if line.batch_id is not None else "",
+                     str(line.funding_source_id) if line.funding_source_id is not None else "", line.memo)
+                    for line in entry.lines.select_related("account").all())
+    if (entry.posting_date != posting_date or entry.description != description or
+            entry.source_model != source_model or entry.source_identifier != str(source_identifier) or
+            actual != sorted(content)):
+        raise ValidationError({"idempotency_key": "This journal key is bound to different posting content."})
+    return entry
 
 
 def period_for(posting_date):
@@ -43,28 +64,46 @@ def post_journal(
     user=None,
     allow_historical=False,
 ) -> JournalEntry:
+    posting_date = business_date(posting_date)
+    if not isinstance(idempotency_key, str) or not idempotency_key.strip() or len(idempotency_key) > 180:
+        raise ValidationError({"idempotency_key": "A non-blank journal submission key of at most 180 characters is required."})
+    if not isinstance(lines, list) or not lines:
+        raise ValidationError({"lines": "Provide balanced journal lines."})
+    content = [_line_content(line) for line in lines]
+    if any(not ((debit > 0 and credit == 0) or (credit > 0 and debit == 0)) for _, debit, credit, *_ in content):
+        raise ValidationError({"lines": "Each line requires exactly one positive debit or credit."})
+    replay = dict(posting_date=posting_date, description=description, source_model=source_model,
+                  source_identifier=source_identifier, content=content)
     existing = JournalEntry.objects.filter(idempotency_key=idempotency_key).first()
     if existing:
-        return existing
-    period = period_for(posting_date)
+        return _assert_replay(existing, **replay)
+    period = (period_for(posting_date) if allow_historical else
+              lock_financial_periods(posting_date)[posting_date])
     if period is None:
         raise ValidationError({"posting_date": "Create an accounting period covering this date."})
     if period.status == PeriodStatus.CLOSED and not allow_historical:
         raise ValidationError({"accounting_period": "Closed periods reject new postings; formally reopen it first."})
-    debit = sum((money(line.get("debit")) for line in lines), ZERO)
-    credit = sum((money(line.get("credit")) for line in lines), ZERO)
+    debit = sum((line[1] for line in content), ZERO)
+    credit = sum((line[2] for line in content), ZERO)
     if debit <= ZERO or debit != credit:
         raise ValidationError({"lines": f"Journal must balance exactly; debits={debit}, credits={credit}."})
-    entry = JournalEntry.objects.create(
-        reference=f"JRN-{posting_date:%Y%m%d}-{uuid.uuid4().hex[:10].upper()}",
-        posting_date=posting_date,
-        accounting_period=period,
-        description=description,
-        source_model=source_model,
-        source_identifier=str(source_identifier),
-        idempotency_key=idempotency_key,
-        created_by=user,
-    )
+    # Recheck after waiting on the dated lock. A concurrent identical key may
+    # have committed meanwhile, including a request using a different date.
+    existing = JournalEntry.objects.filter(idempotency_key=idempotency_key).first()
+    if existing:
+        return _assert_replay(existing, **replay)
+    try:
+        with transaction.atomic():
+            entry = JournalEntry.objects.create(
+                reference=f"JRN-{posting_date:%Y%m%d}-{uuid.uuid4().hex[:10].upper()}",
+                posting_date=posting_date, accounting_period=period, description=description,
+                source_model=source_model, source_identifier=str(source_identifier),
+                idempotency_key=idempotency_key, created_by=user)
+    except IntegrityError:
+        existing = JournalEntry.objects.filter(idempotency_key=idempotency_key).first()
+        if existing is None:
+            raise
+        return _assert_replay(existing, **replay)
     account_map = {
         account.code: account
         for account in ChartOfAccount.objects.filter(
@@ -136,7 +175,9 @@ def reverse_journal(entry: JournalEntry, *, posting_date, reason: str, user=None
 
 
 def trial_balance(*, cutoff=None) -> dict:
-    lines = JournalLine.objects.filter(journal_entry__status=JournalStatus.POSTED)
+    # A reversal is a new opposite posting, not deletion of the original effect.
+    # Excluding REVERSED originals counted only the opposite side of history.
+    lines = JournalLine.objects.filter(journal_entry__status__in=[JournalStatus.POSTED, JournalStatus.REVERSED])
     if cutoff:
         lines = lines.filter(journal_entry__posting_date__lte=cutoff)
     rows = lines.values("account__code", "account__name", "account__account_type").annotate(

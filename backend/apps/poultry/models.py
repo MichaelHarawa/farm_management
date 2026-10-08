@@ -430,7 +430,7 @@ class Sales(SyncTrackedModel):
         help_text="Person responsible for following up an outstanding sale balance.",
     )
     sold_by_name = models.CharField(max_length=200)
-    notes = models.TextField()
+    notes = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     created_by = models.ForeignKey(

@@ -4,6 +4,7 @@ from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.test import TestCase
 from django.http import QueryDict
 from django.utils import timezone
@@ -494,7 +495,7 @@ class FinanceServiceTests(TestCase):
     def test_overselling_is_rejected_transactionally(self):
         batch = self.batch(quantity=10)
 
-        with self.assertRaises(ValueError):
+        with self.assertRaises(DjangoValidationError):
             create_sale_with_lifecycle(
                 batch_id=batch.id,
                 created_by=self.user,
@@ -1441,6 +1442,7 @@ class FinanceServiceTests(TestCase):
             create_sale_with_lifecycle(
                 batch_id=batch.id,
                 created_by=self.user,
+                **self.sale_payload(),
             )
 
     def test_closed_period_cannot_be_recalculated(self):
