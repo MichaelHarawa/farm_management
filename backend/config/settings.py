@@ -249,6 +249,9 @@ FARM_CURRENCY_CODE = env("FARM_CURRENCY_CODE", "MWK")
 MOBILE_SYNC_CAPTURE = env_bool("MOBILE_SYNC_CAPTURE", False)
 MOBILE_SYNC_ENABLED = env_bool("MOBILE_SYNC_ENABLED", False)
 MOBILE_SYNC_POULTRY_V2 = env_bool("MOBILE_SYNC_POULTRY_V2", False)
+# Internal Phase6 domain foundation only; not a financial sync capability.
+# Apply additive migrations in an isolated deployment before opting in.
+FINANCE_POULTRY_STOCK_LINKAGE = env_bool("FINANCE_POULTRY_STOCK_LINKAGE", False)
 MOBILE_SYNC_ENTITY_BYTES = 16 * 1024
 MOBILE_SYNC_PAGE_BYTES = 1024 * 1024
 MOBILE_SYNC_PAGE_ROWS = 500

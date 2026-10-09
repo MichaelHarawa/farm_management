@@ -11,6 +11,7 @@ from django.db.models import F, Q
 from django.utils import timezone
 
 from apps.poultry.models import Batch
+from .services.poultry_stock_guards import PoultryProtectedQuerySet, stock_save_boundary
 
 
 MONEY_VALIDATOR = MinValueValidator(Decimal("0.00"))
@@ -988,6 +989,7 @@ class SharedConsumableLot(DollarReferenceMixin, TimestampedModel):
 
 
 class ConsumableUsage(TimestampedModel):
+    objects = PoultryProtectedQuerySet.as_manager()
     consumable_lot = models.ForeignKey(
         SharedConsumableLot,
         on_delete=models.PROTECT,
@@ -1113,6 +1115,10 @@ class ConsumableUsage(TimestampedModel):
                 self.quantity_used * self.consumable_lot.unit_cost
             ).quantize(Decimal("0.01"))
         super().save(*args, **kwargs)
+
+    def save_base(self, *args, **kwargs):
+        with stock_save_boundary(self, kwargs.get("update_fields")):
+            return super().save_base(*args, **kwargs)
 
 
 class ExpenseRecognitionSchedule(DollarReferenceMixin, TimestampedModel):
@@ -3342,6 +3348,7 @@ class StockMovementType(models.TextChoices):
 
 
 class ConsumableItem(TimestampedModel):
+    objects = PoultryProtectedQuerySet.as_manager()
     sku = models.CharField(max_length=40, unique=True)
     name = models.CharField(max_length=160)
     category = models.CharField(max_length=80)
@@ -3362,6 +3369,10 @@ class ConsumableItem(TimestampedModel):
 
     def __str__(self):
         return f"{self.sku} - {self.name}"
+
+    def save_base(self, *args, **kwargs):
+        with stock_save_boundary(self, kwargs.get("update_fields")):
+            return super().save_base(*args, **kwargs)
 
 
 class InventoryUnitConversion(TimestampedModel):
@@ -3555,6 +3566,100 @@ class InventoryMovementEvidence(TimestampedModel):
 
     def delete(self, *args, **kwargs):
         raise ValidationError("Inventory correction evidence is immutable.")
+
+
+class PoultryStockKind(models.TextChoices):
+    FEED = "feed", "Feed"
+    TREATMENT = "treatment", "Treatment / vaccination"
+
+
+class PoultryStockItemPolicy(TimestampedModel):
+    """Explicit classification and unit snapshot; never inferred from old names."""
+    item = models.OneToOneField(ConsumableItem, on_delete=models.PROTECT, related_name="poultry_policy")
+    kind = models.CharField(max_length=16, choices=PoultryStockKind.choices)
+    base_unit = models.CharField(max_length=40)
+    reason = models.CharField(max_length=255)
+    configured_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    objects = StockMovementQuerySet.as_manager()
+
+    def clean(self):
+        super().clean()
+        if self.base_unit != self.item.base_unit or not self.base_unit.strip():
+            raise ValidationError({"base_unit": "Use the item's explicit current base unit."})
+        if self.kind == PoultryStockKind.FEED and self.base_unit not in {"g", "kg"}:
+            raise ValidationError({"base_unit": "Stock-backed feed supports grams/kilograms only; bag conversions require verified evidence."})
+        if not self.reason.strip():
+            raise ValidationError({"reason": "Record the explicit item classification evidence."})
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding or kwargs.get("force_update") or kwargs.get("update_fields") is not None:
+            raise ValidationError("Poultry stock classification evidence is immutable.")
+        self.full_clean()
+        kwargs["force_insert"] = True
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Poultry stock classification evidence is immutable.")
+
+    def save_base(self, *args, **kwargs):
+        if not self._state.adding or kwargs.get("raw") or kwargs.get("force_update"):
+            raise ValidationError("Use validated append-only poultry stock classification.")
+        return super().save_base(*args, **kwargs)
+
+
+class PoultryStockConsumption(TimestampedModel):
+    """One original observation -> one valued consumption; no legacy auto-link."""
+    usage = models.OneToOneField(ConsumableUsage, on_delete=models.PROTECT, related_name="poultry_consumption")
+    policy = models.ForeignKey(PoultryStockItemPolicy, on_delete=models.PROTECT)
+    feed = models.OneToOneField("poultry.FeedUsage", on_delete=models.PROTECT, null=True, blank=True, related_name="stock_consumption")
+    treatment = models.OneToOneField("poultry.DrugsVaccination", on_delete=models.PROTECT, null=True, blank=True, related_name="stock_consumption")
+    quantity_unit = models.CharField(max_length=40)
+    objects = StockMovementQuerySet.as_manager()
+
+    class Meta:
+        constraints = [models.CheckConstraint(condition=(Q(feed__isnull=False, treatment__isnull=True)
+            | Q(feed__isnull=True, treatment__isnull=False)), name="poultry_stock_one_observation")]
+
+    def clean(self):
+        super().clean()
+        if bool(self.feed_id) == bool(self.treatment_id):
+            raise ValidationError("Link exactly one original feed or treatment observation.")
+        from .services.financial_values import business_date
+        record = self.feed if self.feed_id else self.treatment
+        usage = self.usage
+        kind = PoultryStockKind.FEED if self.feed_id else PoultryStockKind.TREATMENT
+        at = record.feeding_start_date if self.feed_id else record.vaccination_date
+        quantity = Decimal(record.quantity_given if self.feed_id else record.quantity)
+        if self.feed_id:
+            if self.quantity_unit != record.unit_of_measurement or self.quantity_unit not in {"g", "kg"}:
+                raise ValidationError("Original feed unit must be explicit grams/kilograms.")
+            if self.quantity_unit != self.policy.base_unit:
+                quantity *= Decimal("0.001") if self.quantity_unit == "g" else Decimal("1000")
+        elif self.quantity_unit != self.policy.base_unit:
+            raise ValidationError("Treatment unit must equal the explicitly classified item base unit.")
+        if (self.policy.kind != kind or usage.batch_id != record.batch_id or usage.usage_date != business_date(at)
+                or usage.usage_scope != ConsumableUsageScope.BATCH_DIRECT or usage.quantity_used != quantity
+                or not InventoryLotBinding.objects.filter(lot_id=usage.consumable_lot_id, item_id=self.policy.item_id).exists()):
+            raise ValidationError("Consumption must match the original observation's item, batch, date and exact quantity.")
+        if not StockMovement.objects.filter(usage=usage, movement_type=StockMovementType.ISSUE,
+                batch_id=usage.batch_id, lot_id=usage.consumable_lot_id, quantity=usage.quantity_used,
+                total_cost=usage.recognized_cost, movement_date=usage.usage_date).exists():
+            raise ValidationError("Consumption requires its exact immutable valued issue movement.")
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding or kwargs.get("force_update") or kwargs.get("update_fields") is not None:
+            raise ValidationError("Poultry stock consumption evidence is immutable.")
+        self.full_clean()
+        kwargs["force_insert"] = True
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Poultry stock consumption evidence is immutable.")
+
+    def save_base(self, *args, **kwargs):
+        if not self._state.adding or kwargs.get("raw") or kwargs.get("force_update"):
+            raise ValidationError("Use validated append-only poultry stock consumption.")
+        return super().save_base(*args, **kwargs)
 
 
 class AssetEventType(models.TextChoices):

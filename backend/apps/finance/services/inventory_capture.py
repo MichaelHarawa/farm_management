@@ -276,65 +276,75 @@ def record_inventory_issue(*, submission_id, user, lot_id, location_id, usage_da
         raise ValidationError({"batch": "Only direct issues select a beneficiary batch; administration must not."})
 
     def effect(actor):
-        period = lock_financial_periods(usage_date)[usage_date]
-        batch = None
-        if batch_id is not None:
-            batch = Batch.objects.select_for_update().filter(pk=batch_id).first()
-            if batch is None:
-                raise ValidationError({"batch": "Choose a received, open production batch."})
-            try:
-                assert_batch_in_production(batch)
-            except ValueError as error:
-                raise ValidationError({"batch": str(error)})
-            if batch.profitability_finalized_at or batch.profitability_snapshots.filter(final=True).exists():
-                raise ValidationError({"batch": "Finalized batch costs require a separate correction workflow."})
-            if usage_date < business_date(batch.entry_date):
-                raise ValidationError({"usage_date": "Stock usage cannot precede the actual batch arrival date."})
-        binding = InventoryLotBinding.objects.filter(lot_id=lot_id).first()
-        if binding is None:
-            raise ValidationError({"legacy_reconciliation": "Unlinked legacy lots are unavailable until explicitly reconciled."})
-        item = _item(binding.item_id)
-        pool = _pool(item, usage_date)
-        location = _location(location_id)
-        lot = SharedConsumableLot.objects.select_for_update().get(pk=lot_id)
-        if lot.purchase_date > usage_date or (lot.expiry_date and usage_date > lot.expiry_date):
-            raise ValidationError({"usage_date": "The original date precedes purchase or uses expired stock; review is required."})
-        stock = InventoryLocationStock.objects.select_for_update().filter(binding=binding, location=location).first()
-        if stock is None or quantity > stock.quantity or quantity > lot.quantity_available or quantity > pool.quantity:
-            raise ValidationError({"insufficient_stock": "Quantity exceeds last confirmed stock at this location."})
-        # Calculate from the unrounded pool, not rounded per-lot/display prices.
-        # The final issue consumes the remaining carrying cents exactly.
-        with localcontext() as context:
-            context.prec = 40
-            cost = pool.carrying_value if quantity == pool.quantity else (pool.carrying_value * quantity / pool.quantity).quantize(CENT, rounding=ROUND_HALF_EVEN)
-        usage = ConsumableUsage(consumable_lot=lot, accounting_period=period, usage_date=usage_date,
-            quantity_used=quantity, recognized_cost=cost, usage_scope=usage_scope, batch=batch,
-            allocation_driver=AllocationMethod.DIRECT if batch else AllocationMethod.NONE,
-            task_or_purpose=task_or_purpose, recorded_by=actor)
-        usage.full_clean()
-        usage.save(_valued_cost=cost)
-        movement = _movement(kind=StockMovementType.ISSUE, day=usage_date, item=item, lot=lot,
-            source=location, batch=batch, usage=usage, quantity=quantity, cost=cost,
-            key=f"inventory-issue:{submission_id}", user=actor, reason=task_or_purpose)
-        journal = None
-        if cost > ZERO:
-            journal = post_journal(posting_date=usage_date, description=f"Inventory issue {item.sku}",
-                source_model="finance.ConsumableUsage", source_identifier=usage.pk,
-                idempotency_key=f"inventory-issue:{submission_id}", user=actor,
-                lines=[{"account": "5000" if batch else "6100", "debit": cost, "batch_id": batch_id},
-                       {"account": "1200", "credit": cost, "batch_id": batch_id}])
-        lot.quantity_available -= quantity
-        lot.save(update_fields=["quantity_available", "updated_at"])
-        stock.quantity -= quantity
-        stock.save(update_fields=["quantity", "updated_at"])
-        pool.quantity -= quantity
-        pool.carrying_value -= cost
-        _advance(pool, usage_date)
-        return {"usage_id": str(usage.pk), "movement_id": str(movement.pk),
-                "journal_id": str(journal.pk) if journal else None, "recognized_cost": str(cost)}
+        return _issue_effect(actor=actor, submission_id=submission_id, lot_id=lot_id,
+            location_id=location_id, usage_date=usage_date, quantity=quantity,
+            task_or_purpose=task_or_purpose, batch_id=batch_id, usage_scope=usage_scope)
 
     result, created = _submission(submission_id=submission_id, command="inventory.issue.record", user=user,
         payload=dict(lot_id=str(lot_id), location_id=str(location_id), usage_date=usage_date,
             quantity=quantity, task_or_purpose=task_or_purpose, batch_id=str(batch_id) if batch_id else None,
             usage_scope=usage_scope), roles=FINANCE_WRITE_ROLES, effect=effect)
     return ConsumableUsage.objects.get(pk=result["usage_id"]), created
+
+
+def _issue_effect(*, actor, submission_id, lot_id, location_id, usage_date, quantity,
+                  task_or_purpose, batch_id, usage_scope):
+    """Validated issue effect; call only inside a permanent submission boundary.
+
+    Composites reuse this effect, not a second command/receipt or guessed cost.
+    All periods must be locked before domain rows when composing observations.
+    """
+    period = lock_financial_periods(usage_date)[usage_date]
+    batch = None
+    if batch_id is not None:
+        batch = Batch.objects.select_for_update().filter(pk=batch_id).first()
+        if batch is None:
+            raise ValidationError({"batch": "Choose a received, open production batch."})
+        try:
+            assert_batch_in_production(batch)
+        except ValueError as error:
+            raise ValidationError({"batch": str(error)})
+        if batch.profitability_finalized_at or batch.profitability_snapshots.filter(final=True).exists():
+            raise ValidationError({"batch": "Finalized batch costs require a separate correction workflow."})
+        if usage_date < business_date(batch.entry_date):
+            raise ValidationError({"usage_date": "Stock usage cannot precede the actual batch arrival date."})
+    binding = InventoryLotBinding.objects.filter(lot_id=lot_id).first()
+    if binding is None:
+        raise ValidationError({"legacy_reconciliation": "Unlinked legacy lots are unavailable until explicitly reconciled."})
+    item = _item(binding.item_id)
+    pool = _pool(item, usage_date)
+    location = _location(location_id)
+    lot = SharedConsumableLot.objects.select_for_update().get(pk=lot_id)
+    if lot.purchase_date > usage_date or (lot.expiry_date and usage_date > lot.expiry_date):
+        raise ValidationError({"usage_date": "The original date precedes purchase or uses expired stock; review is required."})
+    stock = InventoryLocationStock.objects.select_for_update().filter(binding=binding, location=location).first()
+    if stock is None or quantity > stock.quantity or quantity > lot.quantity_available or quantity > pool.quantity:
+        raise ValidationError({"insufficient_stock": "Quantity exceeds last confirmed stock at this location."})
+    with localcontext() as context:
+        context.prec = 40
+        cost = pool.carrying_value if quantity == pool.quantity else (pool.carrying_value * quantity / pool.quantity).quantize(CENT, rounding=ROUND_HALF_EVEN)
+    usage = ConsumableUsage(consumable_lot=lot, accounting_period=period, usage_date=usage_date,
+        quantity_used=quantity, recognized_cost=cost, usage_scope=usage_scope, batch=batch,
+        allocation_driver=AllocationMethod.DIRECT if batch else AllocationMethod.NONE,
+        task_or_purpose=task_or_purpose, recorded_by=actor)
+    usage.full_clean()
+    usage.save(_valued_cost=cost)
+    movement = _movement(kind=StockMovementType.ISSUE, day=usage_date, item=item, lot=lot,
+        source=location, batch=batch, usage=usage, quantity=quantity, cost=cost,
+        key=f"inventory-issue:{submission_id}", user=actor, reason=task_or_purpose)
+    journal = None
+    if cost > ZERO:
+        journal = post_journal(posting_date=usage_date, description=f"Inventory issue {item.sku}",
+            source_model="finance.ConsumableUsage", source_identifier=usage.pk,
+            idempotency_key=f"inventory-issue:{submission_id}", user=actor,
+            lines=[{"account": "5000" if batch else "6100", "debit": cost, "batch_id": batch_id},
+                   {"account": "1200", "credit": cost, "batch_id": batch_id}])
+    lot.quantity_available -= quantity
+    lot.save(update_fields=["quantity_available", "updated_at"])
+    stock.quantity -= quantity
+    stock.save(update_fields=["quantity", "updated_at"])
+    pool.quantity -= quantity
+    pool.carrying_value -= cost
+    _advance(pool, usage_date)
+    return {"usage_id": str(usage.pk), "movement_id": str(movement.pk),
+            "journal_id": str(journal.pk) if journal else None, "recognized_cost": str(cost)}

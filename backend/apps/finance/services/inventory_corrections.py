@@ -80,6 +80,11 @@ def record_inventory_return(*, submission_id, user, original_issue_id, location_
             movement_type=StockMovementType.ISSUE, idempotency_key__startswith="inventory-issue:").first()
         if original is None or original.usage_id is None:
             raise ValidationError({"original_issue": "Select the original verified inventory issue."})
+        from django.conf import settings
+        if settings.FINANCE_POULTRY_STOCK_LINKAGE:
+            from ..models import PoultryStockConsumption
+            if PoultryStockConsumption.objects.filter(usage_id=original.usage_id).exists():
+                raise ValidationError({"original_issue": "Recorded feed/treatment is consumed stock, not unused stock; a controlled linked correction is required."})
         if movement_date < original.movement_date:
             raise ValidationError({"movement_date": "Return cannot precede its original issue."})
         if original.batch_id:

@@ -87,11 +87,15 @@ def touch(instance):
 
 class TrackedQuerySet(models.QuerySet):
     def _raw_delete(self, using):
+        from apps.finance.services.poultry_stock_guards import guard_queryset
+        guard_queryset(self, deleting=True)
         if capture_enabled() and current_writer() is None:
             raise UnsafeSyncWrite("Unscoped raw deletion of a registered model is unsupported.")
         return super()._raw_delete(using)
 
     def update(self, **kwargs):
+        from apps.finance.services.poultry_stock_guards import guard_queryset
+        guard_queryset(self, kwargs)
         if not capture_enabled():
             return super().update(**kwargs)
         with model_boundary():
@@ -106,6 +110,8 @@ class TrackedQuerySet(models.QuerySet):
             return result
 
     def delete(self):
+        from apps.finance.services.poultry_stock_guards import guard_queryset
+        guard_queryset(self, deleting=True)
         if not capture_enabled():
             return super().delete()
         with model_boundary():
@@ -122,6 +128,16 @@ class TrackedQuerySet(models.QuerySet):
         return super().bulk_create(*args, **kwargs)
 
     def bulk_update(self, *args, **kwargs):
+        if settings.FINANCE_POULTRY_STOCK_LINKAGE:
+            # Bound the check to submitted objects rather than the whole table.
+            from apps.finance.services.poultry_stock_guards import guard_queryset
+            objs = tuple(args[0] if args else kwargs["objs"])
+            fields = args[1] if len(args) > 1 else kwargs["fields"]
+            guard_queryset(self.filter(pk__in=[obj.pk for obj in objs]), fields)
+            if args:
+                args = (objs, *args[1:])
+            else:
+                kwargs["objs"] = objs
         if capture_enabled():
             raise UnsafeSyncWrite("bulk_update is unsupported for registered models; use guarded update/save.")
         return super().bulk_update(*args, **kwargs)
@@ -150,6 +166,8 @@ class SyncTrackedModel(models.Model):
 
     def save_base(self, *args, **kwargs):
         with model_boundary():
-            result = super().save_base(*args, **kwargs)
-            touch(self)
-            return result
+            from apps.finance.services.poultry_stock_guards import stock_save_boundary
+            with stock_save_boundary(self, kwargs.get("update_fields")):
+                result = super().save_base(*args, **kwargs)
+                touch(self)
+                return result
