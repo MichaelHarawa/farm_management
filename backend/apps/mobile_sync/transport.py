@@ -9,6 +9,7 @@ from django.utils import timezone
 from .errors import SyncError
 from .models import SyncBootstrap, SyncBootstrapPage, SyncChange, SyncEntity, SyncStreamState
 from .policy import scope_revision
+from .profiles import operational_profile
 from .projections import (CURRENT_PACK, POULTRY_PACK, LEGACY_TYPES, pack_version, public_payload,
                           canonical, checksum, json_value, wire_entity)
 from .writers import sync_boundary
@@ -70,6 +71,8 @@ def validate_packs(packs, stream):
 
 
 def included(entity, packs, batch_uuid):
+    if entity.entity_type not in operational_profile(pack_version(packs)).entities:
+        return False
     legacy = entity.entity_type in LEGACY_TYPES
     return ((POULTRY_PACK in packs or CURRENT_PACK in packs and legacy) and entity.in_current_pack) or (
         f"batch-v2:{batch_uuid}" in packs or f"batch:{batch_uuid}" in packs and legacy)
@@ -103,7 +106,7 @@ def create_bootstrap(user, device, packs):
         for scanned, entity in enumerate(SyncEntity.objects.filter(stream=stream, deleted=False).order_by("entity_type", "pk").iterator(chunk_size=500), 1):
             if scanned > settings.MOBILE_SYNC_SNAPSHOT_ROWS or time.monotonic() - started > 20:
                 raise SyncError("snapshot_budget_exceeded", "Snapshot scan exceeds supported request budget.", 413)
-            if not included(entity, packs, batch_ids[entity.batch_pk]):
+            if not included(entity, packs, batch_ids.get(entity.batch_pk)):
                 continue
             item = wire_entity(entity) if pack_version(packs) == 1 else wire_entity(entity, 2)
             size = len(canonical(item).encode())
@@ -155,6 +158,15 @@ def bootstrap_page(snapshot, stream, user, device, cursor):
     page = snapshot.pages.filter(number=data["page"]).first()
     if page is None:
         raise SyncError("invalid_cursor", "Page is unavailable.")
+    # Never silently rewrite a frozen page/checksum. Refuse a malformed or
+    # wider-contract snapshot, leaving the client's replica/outbox intact.
+    profile = operational_profile(pack_version(snapshot.packs))
+    for item in page.payload:
+        if item.get("entity_type") not in profile.entities or item != {
+                "entity_type": item.get("entity_type"), "entity_uuid": item.get("entity_uuid"),
+                "revision": item.get("revision"),
+                "payload": public_payload(item["entity_type"], item.get("payload"), profile.version)}:
+            raise SyncError("invalid_projection", "Frozen snapshot is outside its projection profile; retain pending work and restart staging.", 503)
     final = page.number == len(snapshot.manifest) - 1
     base = cursor_base(stream, user, device, snapshot.packs)
     response = {"snapshot_id": str(snapshot.pk), "page": page.number, "entities": page.payload, "sha256": page.checksum,
@@ -177,6 +189,7 @@ def pull_changes(user, device, cursor, limit):
     size = 0
     rows = SyncChange.objects.filter(stream=stream, sequence__gt=position, sequence__lte=upper)[:settings.MOBILE_SYNC_SCAN_ROWS].iterator(chunk_size=500)
     inspected = False
+    profile = operational_profile(pack_version(data["packs"]))
     for row in rows:
         inspected = True
         group = str(row.transaction_id)
@@ -185,17 +198,17 @@ def pull_changes(user, device, cursor, limit):
         current_packs = [p for p in data["packs"] if p == POULTRY_PACK or legacy and p == CURRENT_PACK]
         archive = bool(archive_packs)
         current = bool(current_packs) and (row.in_current_pack or row.kind == "evict_from_pack")
-        visible = (archive and row.kind != "evict_from_pack") or current
+        visible = row.entity_type in profile.entities and ((archive and row.kind != "evict_from_pack") or current)
         fragment_index = data["fragment"] if data["group"] == group else 0
         entry = {"sequence": str(row.sequence), "transaction_id": group, "fragment_index": fragment_index,
                  "fragment_final": False, "entity_type": row.entity_type, "entity_uuid": str(row.entity_uuid),
                  "revision": str(row.revision), "kind": row.kind,
                  "pack_ids": (current_packs if current else []) + (archive_packs if archive and row.kind != "evict_from_pack" else [])}
-        if row.kind == "upsert":
+        if visible and row.kind == "upsert":
             entry["payload"] = public_payload(row.entity_type, row.payload, pack_version(data["packs"]))
         if row.origin_operation_id:
             entry["origin_operation_id"] = str(row.origin_operation_id)
-        entry_size = len(canonical(entry).encode())
+        entry_size = len(canonical(entry).encode()) if visible else 0
         new_descriptor = group not in descriptors
         descriptor_size = 160 if new_descriptor else 0
         if (visible and len(changes) >= limit) or (

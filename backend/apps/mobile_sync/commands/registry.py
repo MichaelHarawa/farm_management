@@ -1,5 +1,6 @@
 """Frozen v1 mortality and opt-in v2 poultry commands; never arbitrary model CRUD."""
 from dataclasses import dataclass
+from apps.mobile_sync.profiles import operational_profile
 
 from apps.mobile_sync.policy import OPERATORS, SUPERVISORS
 
@@ -121,3 +122,8 @@ REGISTRY.update({
     ("poultry.adjustment_proposal", "reject", 1): CommandSpec("poultry.correct", frozenset(SUPERVISORS), "online", review, ("poultry.adjustment_proposal",), True),
     ("poultry.batch", "recalculate_feed", 1): CommandSpec("poultry.correct", frozenset(SUPERVISORS), "online", recalculate, ("poultry.batch", "poultry.feed_usage"), True),
 })
+
+
+def registry_for_version(version):
+    """New registry entries never expand an already shipped wire contract."""
+    return {key: REGISTRY[key] for key in operational_profile(version).commands}

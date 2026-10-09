@@ -2,6 +2,7 @@
 import re
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
+from .profiles import V2_COMMANDS
 from .schema import PROJECTION
 
 
@@ -202,20 +203,20 @@ PAYLOAD_SERIALIZERS = {
 
 
 class PoultryOperationSerializer(MortalityOperationSerializer):
-    entity_type = serializers.ChoiceField(choices=sorted({key[0] for key in PAYLOAD_SERIALIZERS}))
-    action = serializers.ChoiceField(choices=sorted({key[1] for key in PAYLOAD_SERIALIZERS}))
+    entity_type = serializers.ChoiceField(choices=sorted({key[0] for key in V2_COMMANDS}))
+    action = serializers.ChoiceField(choices=sorted({key[1] for key in V2_COMMANDS}))
     payload = serializers.JSONField()
 
     def validate(self, attrs):
-        from .commands.registry import REGISTRY
+        from .commands.registry import registry_for_version
         key = (attrs["entity_type"], attrs["action"])
+        spec = registry_for_version(2).get((*key, 1))
         serializer_class = PAYLOAD_SERIALIZERS.get(key)
-        if serializer_class is None:
+        if serializer_class is None or spec is None:
             raise serializers.ValidationError({"action": "Typed command is unavailable."})
         serializer = serializer_class(data=attrs["payload"])
         serializer.is_valid(raise_exception=True)
         attrs["payload"] = serializer.validated_data
-        spec = REGISTRY[(*key, 1)]
         revision = attrs["base_version"]
         if spec.mutates_existing:
             if revision is None and not attrs["depends_on"] or revision is not None and (

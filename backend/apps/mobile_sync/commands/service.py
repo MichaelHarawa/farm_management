@@ -12,9 +12,10 @@ from apps.mobile_sync.authentication import check_binding
 from apps.mobile_sync.errors import SyncError
 from apps.mobile_sync.models import SyncEntity, SyncOperationReceipt
 from apps.mobile_sync.policy import permits
+from apps.mobile_sync.profiles import command_key, operational_result, require_receipt_profile
 from apps.mobile_sync.projections import checksum, json_value, publish_batches, wire_entity
 from apps.mobile_sync.writers import sync_boundary
-from .registry import REGISTRY
+from .registry import registry_for_version
 
 
 def normalized(value):
@@ -63,6 +64,9 @@ def execute(command, actor, session, token, *, mode="queued", version=1):
         session = check_binding(token, actor.pk)
         if session is None:
             raise SyncError("device_required", "Bound mobile session required.", 403)
+        spec = registry_for_version(version).get(command_key(command))
+        if spec is None or type(command.get("payload_version")) is not int:
+            return outcome(command, "validation_failed", "command_unavailable", "Command is unavailable in this projection profile.")
         stream = state["stream"]
         immutable = normalized(command)
         immutable["depends_on"] = sorted(immutable["depends_on"])
@@ -76,13 +80,11 @@ def execute(command, actor, session, token, *, mode="queued", version=1):
                 result = outcome(command, "conflict", "idempotency_mismatch", "Operation ID is bound to different content.")
                 result["recovery_action"] = "query_original_operation"
                 return result
-            result = deepcopy(existing.result)
+            require_receipt_profile(existing.command, version)
+            result = operational_result(deepcopy(existing.result), version)
             if existing.outcome == "accepted":
                 result["outcome"] = "replayed"
             return result
-        spec = REGISTRY.get((command["entity_type"], command["action"], command["payload_version"]))
-        if spec is None:
-            return outcome(command, "validation_failed", "command_unavailable", "Command is unavailable.")
         if spec.mode != mode:
             return outcome(command, "validation_failed", "online_confirmation_required", "This action requires an explicit foreground online confirmation.")
         dependencies = list(SyncOperationReceipt.objects.filter(stream=stream, actor=actor, device=session.device,

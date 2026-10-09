@@ -6,6 +6,7 @@ No caller-controlled model name, cost or unrestricted CRUD is documented.
 from copy import deepcopy
 from rest_framework import serializers as drf
 from . import schema as v1
+from .profiles import V2_COMMANDS
 
 TEXT,UUID,INSTANT,COUNTER,INTEGER,BOOL=v1.TEXT,v1.UUID,v1.INSTANT,v1.COUNTER,v1.INTEGER,v1.BOOL
 obj,array=v1.obj,v1.array
@@ -59,7 +60,8 @@ def input_field(field):
 def operation_schema():
     from .serializers import PAYLOAD_SERIALIZERS
     variants=[]
-    for (kind,action),serializer in PAYLOAD_SERIALIZERS.items():
+    for kind,action,_ in V2_COMMANDS:
+        serializer=PAYLOAD_SERIALIZERS[(kind,action)]
         fields=serializer().fields
         payload=obj({key:input_field(field) for key,field in fields.items()},optional=[key for key,field in fields.items() if not field.required])
         if action=='propose':payload['properties']['quantity_change']['not']={'enum':[0]}
@@ -72,11 +74,11 @@ def operation_schema():
 def push_schema():return obj({'protocol_version':{'type':'integer','enum':[1]},'device_id':UUID,'operations':{'type':'array','items':operation_schema(),'minItems':1,'maxItems':50}})
 
 def capabilities_schema():
-    from .commands.registry import REGISTRY
+    from .commands.registry import registry_for_version
     result=deepcopy(v1.CAPABILITIES)
     for key in ['schema_version','projection_version']:result['properties'][key]={'type':'integer','enum':[2]}
     result['properties']['commands']=obj({**{f'{kind}.{action}':obj({'available':BOOL,'payload_version':INTEGER,'capability':TEXT,
-        'mode':{'type':'string','enum':[spec.mode]}}) for (kind,action,_),spec in REGISTRY.items()},'finance':obj({'available':BOOL,'reason':TEXT})})
+        'mode':{'type':'string','enum':[spec.mode]}}) for (kind,action,_),spec in registry_for_version(2).items()},'finance':obj({'available':BOOL,'reason':TEXT})})
     result['properties']['lookups']=obj({'version':INTEGER,'choices':{'type':'object','additionalProperties':array(obj({'value':TEXT,'label':TEXT}))},
         'treatment_quantity_unit':TEXT,'stock_linked_capture':{'type':'boolean','enum':[False]},'mortality_threshold_percent':DECIMAL})
     result['required'].append('lookups')

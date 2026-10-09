@@ -1,6 +1,7 @@
 from rest_framework.permissions import BasePermission, SAFE_METHODS
 
 from .projections import checksum
+from .profiles import operational_profile
 
 OPERATORS = {"general_worker", "farm_supervisor", "farm_manager", "director", "admin"}
 SUPERVISORS = OPERATORS - {"general_worker"}
@@ -12,16 +13,14 @@ def permits(user, roles):
 
 
 def scope_revision(user, version=1):
+    profile = operational_profile(version)
     # Re-fetch through M2M; prefetched role summaries cannot grant stale access.
     roles = sorted(user.roles.values_list("slug", flat=True))
     value = {"policy": 1, "projections": 1, "roles": roles, "active": user.is_active,
-             "superuser": user.is_superuser, "entities": ["poultry.batch", "poultry.mortality", "poultry.feed_usage"],
-             "commands": ["poultry.mortality.record"]}
+             "superuser": user.is_superuser, "entities": list(profile.entities),
+             "commands": [f"{kind}.{action}" for kind, action, _ in profile.commands]}
     if version == 2:
-        from .projections import TYPES
-        from .commands.registry import REGISTRY
-        value.update(projections=2, entities=sorted(TYPES.values()),
-                     commands=sorted(f"{kind}.{action}" for kind, action, _ in REGISTRY))
+        value.update(projections=2, commands=sorted(value["commands"]))
     return checksum(value)
 
 

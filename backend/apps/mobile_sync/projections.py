@@ -7,6 +7,7 @@ from django.conf import settings
 
 from .errors import SyncError
 from .models import SyncChange, SyncEntity
+from .profiles import operational_payload
 
 TYPES = {"Batch": "poultry.batch", "Mortality": "poultry.mortality", "FeedUsage": "poultry.feed_usage",
          "DrugsVaccination": "poultry.treatment", "BatchWeightSample": "poultry.weight_sample",
@@ -21,10 +22,7 @@ def pack_version(packs):
 
 
 def public_payload(entity_type, payload, version=1):
-    if version == 1 and entity_type == "poultry.batch":
-        return {key: value for key, value in payload.items() if key not in {
-            "supplier_name", "booking_reference", "operational_summary"}}
-    return payload
+    return operational_payload(entity_type, payload, version)
 
 
 def operational_summary(batch):

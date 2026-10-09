@@ -17,7 +17,8 @@ from .commands.service import execute, order_operations, outcome
 from .errors import SyncError
 from .models import MobileDevice, MobileDeviceAudit, MobileSession, SyncOperationReceipt
 from .policy import READERS, OPERATORS, permits, scope_revision
-from .projections import CURRENT_PACK, POULTRY_PACK, TYPES, json_value
+from .profiles import operational_profile, operational_result, require_receipt_profile
+from .projections import CURRENT_PACK, POULTRY_PACK, json_value
 from .serializers import (BootstrapSerializer, RegisterDeviceSerializer, RevokeDeviceSerializer,
                           PushSerializer, PoultryPushSerializer, PoultryOperationSerializer)
 from .transport import (bootstrap_manifest, bootstrap_page, create_bootstrap, owned_snapshot, pull_changes, stream_ready)
@@ -164,10 +165,11 @@ class CapabilitiesView(SyncAPIView):
         stream = stream_ready()
         capture = permits(request.user, OPERATORS)
         version = self.poultry_version()
+        profile = operational_profile(version)
         response = {"protocol_version": 1, "schema_version": version, "policy_version": 1, "projection_version": version,
             "deployment_id": str(stream.deployment_id), "stream_epoch": str(stream.epoch), "device_id": str(self.device.pk),
             "server_time": json_value(timezone.now()), "scope_revision": scope_revision(request.user, version),
-            "entities": ["poultry.batch", "poultry.mortality", "poultry.feed_usage"],
+            "entities": list(profile.entities),
             "commands": {"poultry.mortality.record": {"available": capture, "payload_version": 1, "capability": "poultry.capture"},
                          "finance": {"available": False, "reason": "later_phase"}},
             "packs": [CURRENT_PACK, "batch:<uuid>"], "offline": {"operational_days": 7, "sensitive_hours": 24},
@@ -179,11 +181,11 @@ class CapabilitiesView(SyncAPIView):
                        "entity_bytes": settings.MOBILE_SYNC_ENTITY_BYTES, "scan_rows": settings.MOBILE_SYNC_SCAN_ROWS},
             "retention": {"snapshot_hours": 24, "change_days": 90, "deduplication": "indefinite", "minimum_sequence": str(stream.minimum_sequence)}}
         if version == 2:
-            from .commands.registry import REGISTRY
+            from .commands.registry import registry_for_version
             from apps.poultry.models import BirdType, BroilerStrain, ChicksSource, FeedType, FeedSource, UnitMeasurement, DrugCategory, DrugVaccinationType
-            response.update(entities=sorted(TYPES.values()), packs=[POULTRY_PACK, "batch-v2:<uuid>"],
+            response.update(packs=[POULTRY_PACK, "batch-v2:<uuid>"],
                 commands={f"{kind}.{action}": {"available": permits(request.user, spec.roles), "payload_version": 1,
-                    "capability": spec.capability, "mode": spec.mode} for (kind, action, _), spec in REGISTRY.items()})
+                    "capability": spec.capability, "mode": spec.mode} for (kind, action, _), spec in registry_for_version(version).items()})
             response["commands"]["finance"] = {"available": False, "reason": "later_phase"}
             response["lookups"] = {"version": 1, "choices": {key: [{"value": value, "label": label} for value, label in choice.choices]
                 for key, choice in {"bird_type": BirdType, "broiler_strain": BroilerStrain, "source": ChicksSource,
@@ -243,12 +245,14 @@ class PushView(SyncAPIView):
 
 
 class OperationView(SyncAPIView):
-    @extend_schema(responses=schema.responses(poultry_schema.RESULT))
+    @extend_schema(parameters=[POULTRY_HEADER], responses=schema.responses(poultry_schema.RESULT))
     def get(self, request, operation_id):
+        version = self.poultry_version()
         receipt = SyncOperationReceipt.objects.filter(stream=stream_ready(), actor=request.user, device=self.device, operation_id=operation_id).first()
         if receipt is None:
             raise SyncError("operation_not_found", "No owned receipt found; retain original operation ID.", 404)
-        return Response(receipt.result)
+        require_receipt_profile(receipt.command, version)
+        return Response(operational_result(receipt.result, version))
 
 
 class OnlinePoultryView(SyncAPIView):
