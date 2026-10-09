@@ -6,9 +6,11 @@ from typing import Iterable
 from rest_framework.exceptions import ValidationError
 
 
-from django.db.models import DecimalField, ExpressionWrapper, F, Q, Sum
+from django.db.models import DecimalField, ExpressionWrapper, F, OuterRef, Q, Subquery, Sum
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 from apps.mobile_sync.writers import sync_atomic
+from .inventory_reporting import stock_returns, stock_losses, movement_cost
 
 from apps.poultry.models import (
     Batch,
@@ -201,7 +203,31 @@ def direct_consumable_usage_total(batch: Batch) -> Decimal:
             batch=batch,
             usage_scope=ConsumableUsageScope.BATCH_DIRECT,
         ).aggregate(total=Sum("recognized_cost"))["total"]
-    )
+    ) - movement_cost(stock_returns().filter(batch=batch))
+
+
+def production_allocation_filter(*, include_direct=False):
+    """Shared source classification for portfolio and monthly WIP.
+
+    Payment/register mirrors, selling/admin allocations and inventory purchases
+    are not production cost. Direct expenditure shares are included only when
+    building WIP, not again in the portfolio's allocated-production component.
+    """
+    natures = [AccountingNature.INDIRECT_OPERATING_EXPENSE]
+    if include_direct:
+        natures.append(AccountingNature.DIRECT_COST)
+    return (Q(source_type=AllocationSourceType.PAYROLL)
+        | Q(source_type=AllocationSourceType.AD_HOC_LABOUR,
+            ad_hoc_labour_payment__cost_scope=CostScope.SHARED_PRODUCTION)
+        | Q(source_type=AllocationSourceType.SHARED_EXPENSE,
+            shared_expense__scope=SharedExpenseScope.SHARED_PRODUCTION,
+            shared_expense__directly_assigned_batch__isnull=True)
+        | Q(source_type=AllocationSourceType.CONSUMABLE_USAGE,
+            consumable_usage__usage_scope=ConsumableUsageScope.SHARED_PRODUCTION)
+        | Q(source_type=AllocationSourceType.DEPRECIATION)
+        | Q(source_type=AllocationSourceType.EXPENDITURE, expenditure__status=ExpenditureStatus.POSTED,
+            expenditure__accounting_nature__in=natures, expenditure__payroll_entry__isnull=True,
+            expenditure__legacy_shared_expense__isnull=True))
 
 
 def allocated_production_total(batch: Batch) -> Decimal:
@@ -616,6 +642,7 @@ def _management_overhead_by_batch(batches: list[Batch]) -> dict[int, dict]:
             "administration_payroll": ZERO,
             "administration_labour": ZERO,
             "administration_consumables": ZERO,
+            "inventory_losses": ZERO,
             "administration_overhead": ZERO,
             "administration_asset_depreciation": ZERO,
             "finance_cost": ZERO,
@@ -658,7 +685,10 @@ def _management_overhead_by_batch(batches: list[Batch]) -> dict[int, dict]:
                     accounting_period=period,
                     usage_scope=ConsumableUsageScope.ADMINISTRATION,
                 ).aggregate(total=Sum("recognized_cost"))["total"]
-            ),
+            ) - movement_cost(stock_returns().filter(batch__isnull=True,
+                movement_date__range=(period.period_start, period.period_end))),
+            "inventory_losses": movement_cost(stock_losses().filter(
+                movement_date__range=(period.period_start, period.period_end))),
             "administration_overhead": money(
                 SharedExpense.objects.filter(
                     accounting_period=period,
@@ -815,6 +845,7 @@ def _attach_management_costs(rows: list[dict], batches: list[Batch]) -> list[dic
                         "administration_payroll",
                         "administration_labour",
                         "administration_consumables",
+                        "inventory_losses",
                         "administration_overhead",
                         "administration_asset_depreciation",
                     ]
@@ -966,6 +997,7 @@ def _attach_management_costs(rows: list[dict], batches: list[Batch]) -> list[dic
                             {"label": "Administration payroll (salary expenditure recognized once)", "amount": attributed.get("administration_payroll", ZERO)},
                             {"label": "Administration labour", "amount": attributed.get("administration_labour", ZERO)},
                             {"label": "Administration consumables", "amount": attributed.get("administration_consumables", ZERO)},
+                            {"label": "Inventory waste, expiry and count losses", "amount": attributed.get("inventory_losses", ZERO)},
                             {"label": "General overhead", "amount": attributed.get("administration_overhead", ZERO)},
                             {"label": "Administration asset depreciation", "amount": attributed.get("administration_asset_depreciation", ZERO)},
                         ],
@@ -1137,6 +1169,8 @@ def _portfolio_profitability_rows(batches: list[Batch]) -> list[dict]:
         "directly_assigned_batch_id",
         "amount",
     )
+    returns_by_batch = stock_returns().filter(batch_id=OuterRef("batch_id")).order_by().values("batch_id").annotate(
+        total=Sum("total_cost")).values("total")
     consumable_rows = ConsumableUsage.objects.filter(
         batch_id__in=batch_ids,
         usage_scope__in=[
@@ -1144,10 +1178,11 @@ def _portfolio_profitability_rows(batches: list[Batch]) -> list[dict]:
             ConsumableUsageScope.SELLING_AND_DISTRIBUTION,
         ],
     ).values("batch_id").annotate(
-        direct_total=Sum(
+        direct_total=Coalesce(Sum(
             "recognized_cost",
             filter=Q(usage_scope=ConsumableUsageScope.BATCH_DIRECT),
-        ),
+        ), ZERO, output_field=DecimalField(max_digits=20, decimal_places=2)) - Coalesce(
+            Subquery(returns_by_batch[:1]), ZERO, output_field=DecimalField(max_digits=20, decimal_places=2)),
         selling_total=Sum(
             "recognized_cost",
             filter=Q(
@@ -1164,30 +1199,7 @@ def _portfolio_profitability_rows(batches: list[Batch]) -> list[dict]:
         for row in consumable_rows
     }
 
-    production_allocation_scope = (
-        Q(source_type=AllocationSourceType.PAYROLL)
-        | Q(
-            source_type=AllocationSourceType.AD_HOC_LABOUR,
-            ad_hoc_labour_payment__cost_scope=CostScope.SHARED_PRODUCTION,
-        )
-        | Q(
-            source_type=AllocationSourceType.SHARED_EXPENSE,
-            shared_expense__scope=SharedExpenseScope.SHARED_PRODUCTION,
-            shared_expense__directly_assigned_batch__isnull=True,
-        )
-        | Q(
-            source_type=AllocationSourceType.CONSUMABLE_USAGE,
-            consumable_usage__usage_scope=ConsumableUsageScope.SHARED_PRODUCTION,
-        )
-        | Q(source_type=AllocationSourceType.DEPRECIATION)
-        | Q(
-            source_type=AllocationSourceType.EXPENDITURE,
-            expenditure__status=ExpenditureStatus.POSTED,
-            expenditure__accounting_nature=AccountingNature.INDIRECT_OPERATING_EXPENSE,
-            expenditure__payroll_entry__isnull=True,
-            expenditure__legacy_shared_expense__isnull=True,
-        )
-    )
+    production_allocation_scope = production_allocation_filter()
     allocated_production = _money_by_group(
         CostAllocation.objects.filter(batch_id__in=batch_ids).filter(
             production_allocation_scope

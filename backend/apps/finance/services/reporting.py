@@ -12,6 +12,8 @@ from apps.poultry.models import (
     Batch,
     BatchStatus,
     FeedUsage,
+    FlockAdjustment,
+    FlockAdjustmentStatus,
     InputCosts,
     Mortality,
     PaymentStatus,
@@ -62,8 +64,10 @@ from .profitability import (
     money,
     percent,
     portfolio_expenditure_funding_mix,
+    production_allocation_filter,
 )
 from .warnings import finance_warning
+from .inventory_reporting import stock_returns, stock_losses, movement_cost
 
 
 ZERO = Decimal("0.00")
@@ -251,7 +255,8 @@ def _calculate_monthly_profitability_report(period: AccountingPeriod) -> dict:
             accounting_period=period,
             usage_scope=ConsumableUsageScope.BATCH_DIRECT,
         ).aggregate(total=Sum("recognized_cost"))["total"]
-    )
+    ) - movement_cost(stock_returns().filter(batch__isnull=False,
+        movement_date__range=(period.period_start, period.period_end)))
     shared_consumable_allocations = money(
         CostAllocation.objects.filter(
             accounting_period=period,
@@ -295,23 +300,36 @@ def _calculate_monthly_profitability_report(period: AccountingPeriod) -> dict:
             ).aggregate(total=Sum("quantity_dead"))["total"]
             or 0
         )
-        remaining_to_cutoff = max(batch.quantity - sold_to_cutoff - mortality_to_cutoff, 0)
+        adjustments_to_cutoff = FlockAdjustment.objects.filter(batch=batch,
+            effective_at__date__lte=period.period_end, status=FlockAdjustmentStatus.APPROVED
+        ).aggregate(total=Sum("quantity_change"))["total"] or 0
+        remaining_to_cutoff = max(batch.quantity + adjustments_to_cutoff - sold_to_cutoff - mortality_to_cutoff, 0)
         if not remaining_to_cutoff:
             continue
         allocated_to_cutoff = money(
             CostAllocation.objects.filter(
                 batch=batch, accounting_period__period_end__lte=period.period_end
-            ).aggregate(total=Sum("allocated_amount"))["total"]
+            ).filter(production_allocation_filter(include_direct=True)).aggregate(total=Sum("allocated_amount"))["total"]
         )
         legacy_to_cutoff = money(
             InputCosts.objects.filter(
                 batch=batch, expenditure__isnull=True, purchase_date__date__lte=period.period_end
             ).aggregate(total=Sum(_input_cost_expression()))["total"]
         )
+        direct_sources_to_cutoff = money(ConsumableUsage.objects.filter(batch=batch,
+            usage_scope=ConsumableUsageScope.BATCH_DIRECT, usage_date__lte=period.period_end
+        ).aggregate(total=Sum("recognized_cost"))["total"]) - movement_cost(
+            stock_returns().filter(batch=batch, movement_date__lte=period.period_end))
+        direct_sources_to_cutoff += money(AdHocLabourPayment.objects.filter(batch=batch,
+            cost_scope=CostScope.BATCH_DIRECT, work_date__lte=period.period_end
+        ).aggregate(total=Sum("payment_amount"))["total"])
+        direct_sources_to_cutoff += money(SharedExpense.objects.filter(directly_assigned_batch=batch,
+            scope=SharedExpenseScope.SHARED_PRODUCTION, expense_date__lte=period.period_end
+        ).aggregate(total=Sum("amount"))["total"])
         total_units = remaining_to_cutoff + sold_to_cutoff
         if total_units:
             active_batch_work_in_progress += money(
-                (allocated_to_cutoff + legacy_to_cutoff)
+                (allocated_to_cutoff + legacy_to_cutoff + direct_sources_to_cutoff)
                 * Decimal(remaining_to_cutoff)
                 / Decimal(total_units)
             )
@@ -345,7 +363,10 @@ def _calculate_monthly_profitability_report(period: AccountingPeriod) -> dict:
             accounting_period=period,
             usage_scope=ConsumableUsageScope.ADMINISTRATION,
         ).aggregate(total=Sum("recognized_cost"))["total"]
-    )
+    ) - movement_cost(stock_returns().filter(batch__isnull=True,
+        movement_date__range=(period.period_start, period.period_end)))
+    inventory_losses = movement_cost(stock_losses().filter(
+        movement_date__range=(period.period_start, period.period_end)))
     general_operating_expenses = money(
         SharedExpense.objects.filter(
             accounting_period=period,
@@ -425,6 +446,7 @@ def _calculate_monthly_profitability_report(period: AccountingPeriod) -> dict:
         - administration_payroll
         - administration_ad_hoc_labour
         - administration_consumables
+        - inventory_losses
         - general_operating_expenses
         - administration_depreciation
         - selling_distribution_costs
@@ -566,7 +588,7 @@ def _calculate_monthly_profitability_report(period: AccountingPeriod) -> dict:
         ConsumableUsage.objects.filter(
             accounting_period=period,
         ).aggregate(total=Sum("recognized_cost"))["total"]
-    )
+    ) - movement_cost(stock_returns().filter(movement_date__range=(period.period_start, period.period_end)))
     closing_consumable_inventory = max(
         money(
             SharedConsumableLot.objects.filter(purchase_date__lte=period.period_end).aggregate(
@@ -577,7 +599,8 @@ def _calculate_monthly_profitability_report(period: AccountingPeriod) -> dict:
             ConsumableUsage.objects.filter(usage_date__lte=period.period_end).aggregate(
                 total=Sum("recognized_cost")
             )["total"]
-        ),
+        ) + movement_cost(stock_returns().filter(movement_date__lte=period.period_end))
+        - movement_cost(stock_losses().filter(movement_date__lte=period.period_end)),
         Decimal("0.00"),
     )
     prepaid_recognized = money(
@@ -808,6 +831,7 @@ def _calculate_monthly_profitability_report(period: AccountingPeriod) -> dict:
             "administration_payroll": administration_payroll,
             "administration_ad_hoc_labour": administration_ad_hoc_labour,
             "administration_consumables": administration_consumables,
+            "inventory_losses": inventory_losses,
             "general_operating_expenses": general_operating_expenses,
             "administration_depreciation": administration_depreciation,
             "selling_ad_hoc_labour": selling_ad_hoc_labour,
@@ -854,6 +878,7 @@ def _calculate_monthly_profitability_report(period: AccountingPeriod) -> dict:
         "deferred_balances": {
             "consumables_purchased": consumables_purchased,
             "consumables_consumed": consumables_consumed,
+            "inventory_losses": inventory_losses,
             "closing_consumable_inventory": closing_consumable_inventory,
             "prepaid_expense_opening_balance": None,
             "prepaid_expense_recognized": prepaid_recognized,

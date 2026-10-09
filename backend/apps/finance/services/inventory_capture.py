@@ -19,7 +19,7 @@ from apps.poultry.services.batch_lifecycle import assert_batch_in_production
 from ..models import (AccountingNature, AllocationMethod, ConsumableItem,
     ConsumableUsage, ConsumableUsageScope, Expenditure, ExpenditureCategory,
     ExpenditurePaymentStatus, FinancePaymentStatus, InventoryCostingMethod,
-    InventoryLocation, InventoryLocationStock, InventoryLotBinding, InventoryValuePool,
+    InventoryLocation, InventoryLocationStock, InventoryLotBinding, InventoryValuePool, InventoryMovementEvidence,
     SharedConsumableLot, StockMovement, StockMovementType)
 from ..permissions import FINANCE_WRITE_ROLES
 from .expenditures import post_expenditure, record_expenditure_payment
@@ -85,17 +85,41 @@ def _pool(item, day, *, create=False):
 
 def _check_pool(pool):
     links = InventoryLotBinding.objects.filter(item_id=pool.item_id)
-    quantities = list(links.values_list("pk", "lot__quantity_available"))
-    location_rows = InventoryLocationStock.objects.filter(binding__in=links).values("binding_id").annotate(total=Sum("quantity"))
-    locations = {row["binding_id"]: row["total"] for row in location_rows}
-    if any(locations.get(pk, ZERO) != quantity for pk, quantity in quantities) or sum((q for _, q in quantities), ZERO) != pool.quantity:
+    quantities = list(links.values_list("pk", "lot_id", "lot__quantity_available"))
+    location_rows = list(InventoryLocationStock.objects.filter(binding__in=links).values(
+        "binding_id", "binding__lot_id", "location_id", "quantity"))
+    locations = {}
+    for row in location_rows:
+        locations[row["binding_id"]] = locations.get(row["binding_id"], ZERO) + row["quantity"]
+    if any(locations.get(pk, ZERO) != quantity for pk, _, quantity in quantities) or sum((q for _, _, q in quantities), ZERO) != pool.quantity:
         raise ValidationError({"inventory_reconciliation": "Lot, location and valuation quantities disagree; preserve evidence for review."})
     if pool.carrying_value < ZERO or pool.quantity < ZERO or (pool.quantity == ZERO and pool.carrying_value != ZERO):
         raise ValidationError({"inventory_reconciliation": "Invalid inventory carrying balance requires review."})
     movements = StockMovement.objects.filter(lot_id__in=links.values('lot_id'))
+    outgoing = [StockMovementType.ISSUE, StockMovementType.WASTE, StockMovementType.EXPIRY, StockMovementType.ADJUSTMENT]
+    expected_locations = {}
+    for direction, kinds, sign in [('to_location_id', [StockMovementType.RECEIPT, StockMovementType.RETURN, StockMovementType.TRANSFER], 1),
+                                  ('from_location_id', outgoing + [StockMovementType.TRANSFER], -1)]:
+        for row in movements.filter(movement_type__in=kinds).values('lot_id', direction).annotate(total=Sum('quantity')):
+            key = (row['lot_id'], row[direction])
+            expected_locations[key] = expected_locations.get(key, ZERO) + sign * row['total']
+    actual_locations = {(row['binding__lot_id'], row['location_id']): row['quantity'] for row in location_rows}
+    if any(actual_locations.get(key, ZERO) != expected_locations.get(key, ZERO)
+            for key in actual_locations.keys() | expected_locations.keys()):
+        raise ValidationError({"inventory_reconciliation": "Location balances differ from immutable stock movements; review is required."})
+    physical_rows = movements.values('lot_id').annotate(
+        received=Sum('quantity', filter=Q(movement_type__in=[StockMovementType.RECEIPT, StockMovementType.RETURN])),
+        removed=Sum('quantity', filter=Q(movement_type__in=outgoing)))
+    physical = {row['lot_id']: (row['received'] or ZERO) - (row['removed'] or ZERO) for row in physical_rows}
+    if any(physical.get(lot_id, ZERO) != quantity for _, lot_id, quantity in quantities):
+        raise ValidationError({"inventory_reconciliation": "Physical stock differs from immutable movement quantities; review is required."})
     values = movements.aggregate(receipts=Sum('total_cost', filter=Q(movement_type=StockMovementType.RECEIPT)),
-        issues=Sum('total_cost', filter=Q(movement_type=StockMovementType.ISSUE)))
-    if ((values['receipts'] or ZERO) - (values['issues'] or ZERO) != pool.carrying_value or
+        returns=Sum('total_cost', filter=Q(movement_type=StockMovementType.RETURN)),
+        issues=Sum('total_cost', filter=Q(movement_type__in=outgoing)))
+    corrections = movements.exclude(movement_type__in=[StockMovementType.RECEIPT, StockMovementType.ISSUE])
+    if ((values['receipts'] or ZERO) + (values['returns'] or ZERO) - (values['issues'] or ZERO) != pool.carrying_value or
+            corrections.filter(inventory_evidence__isnull=True).exists() or
+            movements.filter(usage__isnull=False).exclude(usage__quantity_used=F('quantity')).exists() or
             movements.filter(usage__isnull=False).exclude(usage__recognized_cost=F('total_cost')).exists()):
         raise ValidationError({"inventory_reconciliation": "Movement, recognized-cost and carrying-value evidence disagree; review is required."})
 

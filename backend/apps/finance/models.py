@@ -7,7 +7,7 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import models
-from django.db.models import Q
+from django.db.models import F, Q
 from django.utils import timezone
 
 from apps.poultry.models import Batch
@@ -3495,6 +3495,66 @@ class InventoryLocationStock(TimestampedModel):
             models.UniqueConstraint(fields=["binding", "location"], name="inventory_unique_lot_location"),
             models.CheckConstraint(condition=Q(quantity__gte=0), name="inventory_location_quantity_nonnegative"),
         ]
+
+
+class InventoryMovementEvidence(TimestampedModel):
+    """Append-only original issue/count evidence for managed corrections.
+
+    Additive table: old movements/lots are not rewritten or auto-imported.
+    Count corrections record both the locked expected quantity and actual count;
+    they cannot invent a positively valued opening balance.
+    """
+    movement = models.OneToOneField(StockMovement, on_delete=models.PROTECT, related_name="inventory_evidence")
+    original_issue = models.ForeignKey(StockMovement, on_delete=models.PROTECT,
+        related_name="stock_returns", null=True, blank=True)
+    expected_quantity = models.DecimalField(max_digits=14, decimal_places=4, null=True, blank=True)
+    counted_quantity = models.DecimalField(max_digits=14, decimal_places=4, null=True, blank=True)
+    objects = StockMovementQuerySet.as_manager()
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(condition=Q(expected_quantity__isnull=True) | Q(expected_quantity__gte=0),
+                name="inventory_evidence_expected_nonnegative"),
+            models.CheckConstraint(condition=Q(counted_quantity__isnull=True) | Q(counted_quantity__gte=0),
+                name="inventory_evidence_counted_nonnegative"),
+            models.CheckConstraint(condition=Q(expected_quantity__isnull=True, counted_quantity__isnull=True)
+                | Q(expected_quantity__isnull=False, counted_quantity__isnull=False),
+                name="inventory_evidence_count_pair"),
+            models.CheckConstraint(condition=Q(expected_quantity__isnull=True)
+                | Q(expected_quantity__gt=F("counted_quantity")), name="inventory_evidence_count_loss_only"),
+        ]
+
+    def clean(self):
+        super().clean()
+        if not self.movement_id:
+            raise ValidationError("Correction evidence requires its committed movement in the same transaction.")
+        movement = self.movement
+        if movement.movement_type not in {StockMovementType.RETURN, StockMovementType.TRANSFER,
+                StockMovementType.WASTE, StockMovementType.EXPIRY, StockMovementType.ADJUSTMENT}:
+            raise ValidationError("Only a correcting stock movement has this evidence.")
+        if (movement.movement_type == StockMovementType.RETURN) != bool(self.original_issue_id):
+            raise ValidationError("Only a return requires the original issue.")
+        if self.original_issue_id:
+            original = self.original_issue
+            if (original.movement_type != StockMovementType.ISSUE or original.usage_id is None
+                    or (original.item_id, original.lot_id, original.batch_id) !=
+                       (movement.item_id, movement.lot_id, movement.batch_id)):
+                raise ValidationError("Return item, lot and cost beneficiary must match the original issue.")
+        if (movement.movement_type == StockMovementType.ADJUSTMENT) != (self.expected_quantity is not None):
+            raise ValidationError("Only a count adjustment requires expected and counted quantities.")
+        if self.expected_quantity is not None and (self.counted_quantity is None
+                or self.expected_quantity - self.counted_quantity != movement.quantity):
+            raise ValidationError("Count loss must equal the locked expected quantity less the observed count.")
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding or kwargs.get("force_update") or kwargs.get("update_fields") is not None:
+            raise ValidationError("Inventory correction evidence is immutable.")
+        self.full_clean()
+        kwargs["force_insert"] = True
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Inventory correction evidence is immutable.")
 
 
 class AssetEventType(models.TextChoices):
