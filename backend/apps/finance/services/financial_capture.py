@@ -23,7 +23,7 @@ from apps.mobile_sync.writers import sync_atomic
 from apps.poultry.models import PaymentMethod, PaymentStatus, Sales, SaleSellingCostCategory
 from apps.poultry.services.batch_lifecycle import create_sale_with_lifecycle
 from ..models import (AccountingNature, Expenditure, ExpenditureCategory, ExpenditureStatus,
-                      FinancialCommandReceipt, FundingReceipt, SalePayment)
+                      FinancialCommandReceipt, FundingClassification, FundingReceipt, JournalEntry, JournalStatus, SalePayment)
 from ..permissions import FINANCE_WRITE_ROLES, OWNER_CAPITAL_ROLES
 from .collections import record_sale_payment
 from .expenditures import post_expenditure, record_expenditure_payment, validate_cost_allocations
@@ -89,9 +89,22 @@ def _funding_rows(value):
     normalized = []
     for row in _rows(value, "funding_allocations"):
         _fields(row, {"funding_source", "amount", "classification"}, "funding_allocations")
+        # Preserve historical omitted/null/blank defaults and their original
+        # receipt hashes; reject arbitrary JSON before the older set checks.
+        if "classification" in row and row["classification"] not in (None, "", *FundingClassification.values):
+            raise ValidationError({"funding_allocations": "Select a supported explicit funding classification."})
         normalized.append({**row, "funding_source": _identifier(row.get("funding_source"), "funding_source"),
                            "amount": exact_decimal(row.get("amount"), positive=True)})
     return normalized
+
+
+def _cost_rows(value):
+    costs = []
+    for row in _rows(value, "cost_allocations"):
+        _fields(row, {"batch", "amount"}, "cost_allocations")
+        costs.append({"batch": _identifier(row.get("batch"), "batch"),
+                      "amount": exact_decimal(row.get("amount"), positive=True)})
+    return costs
 
 
 @sync_atomic
@@ -232,10 +245,7 @@ def record_financial_expenditure(*, submission_id, user, currency, expenditure_d
     amount = exact_decimal(amount, positive=True)
     if accounting_nature not in {AccountingNature.DIRECT_COST, AccountingNature.INDIRECT_OPERATING_EXPENSE}:
         raise ValidationError({"accounting_nature": "Capital, loan repayment, owner outflow and transfer need their own verified templates."})
-    costs = []
-    for row in _rows(cost_allocations, "cost_allocations"):
-        _fields(row, {"batch", "amount"}, "cost_allocations")
-        costs.append({"batch": _identifier(row.get("batch"), "batch"), "amount": exact_decimal(row.get("amount"), positive=True)})
+    costs = _cost_rows(cost_allocations)
     funding_allocations = _funding_rows(funding_allocations)
     category_id = _identifier(category_id, "category_id")
     if accounting_nature == AccountingNature.DIRECT_COST and not costs:
@@ -268,17 +278,11 @@ def record_financial_expenditure(*, submission_id, user, currency, expenditure_d
             validate_cost_allocations(expenditure, costs)
         expenditure.save()
         if not post:
-            return {"expenditure_id": str(expenditure.pk), "journal_id": None}
-        expenditure = post_expenditure(expenditure_id=expenditure.pk, user=actor, cost_rows=costs, funding_rows=[], allow_unpaid=True)
-        debit = ([{"account": "5000", "debit": row["amount"], "batch_id": row["batch"]} for row in costs]
-                 if costs else [{"account": "6100", "debit": amount}])
-        journal = post_journal(posting_date=day, description=f"Expenditure {expenditure.expenditure_reference}",
-            source_model="finance.Expenditure", source_identifier=expenditure.pk,
-            idempotency_key=f"financial-expenditure:{expenditure.pk}", user=actor,
-            lines=debit + [{"account": "2000", "credit": amount}])
-        if funding_allocations:
-            record_expenditure_payment(expenditure_id=expenditure.pk, funding_rows=funding_allocations,
-                payment_group_key=f"financial-initial:{submission_id}", payment_date=payment_date, user=actor)
+            from .expenditure_drafts import expenditure_draft_version
+            return {"expenditure_id": str(expenditure.pk), "journal_id": None,
+                    "draft_version": expenditure_draft_version(expenditure)}
+        journal = _post_expenditure_effect(expenditure=expenditure, actor=actor, costs=costs,
+            funding_allocations=funding_allocations, payment_date=payment_date, submission_id=submission_id)
         return {"expenditure_id": str(expenditure.pk), "journal_id": str(journal.pk)}
     result, created = _submission(submission_id=submission_id, command="finance.expenditure.create", user=user,
         payload=dict(currency=currency, expenditure_date=expenditure_date, amount=amount, category_id=str(category_id),
@@ -286,6 +290,58 @@ def record_financial_expenditure(*, submission_id, user, currency, expenditure_d
             notes=notes, cost_allocations=costs, funding_allocations=funding_allocations or [], payment_date=payment_date, post=post),
         roles=FINANCE_WRITE_ROLES, effect=effect)
     return Expenditure.objects.get(pk=result["expenditure_id"]), created
+
+
+def _post_expenditure_effect(*, expenditure, actor, costs, funding_allocations, payment_date, submission_id):
+    """Shared source/payable/payment effect; caller holds dated/domain locks.
+
+    Draft posting reuses the original expenditure and its one journal identity,
+    not another create command or a duplicate batch-cost mirror.
+    """
+    if expenditure.expenditure_date > timezone.localdate():
+        raise ValidationError({"expenditure_date": "Record the actual expense date, not a future event."})
+    if funding_allocations:
+        payment_date = business_date(payment_date, field="payment_date")
+        if payment_date > timezone.localdate() or payment_date < expenditure.expenditure_date:
+            raise ValidationError({"payment_date": "Record an actual payment date; pre-expense deposits require a separate verified workflow."})
+    # Existing post_expenditure saves posted state without full_clean. Validate
+    # the intended posted state before it creates allocation/payment sources.
+    expenditure.status = ExpenditureStatus.POSTED
+    expenditure.full_clean()
+    expenditure.status = ExpenditureStatus.DRAFT
+    expenditure = post_expenditure(expenditure_id=expenditure.pk, user=actor, cost_rows=costs, funding_rows=[], allow_unpaid=True)
+    debit = ([{"account": "5000", "debit": row["amount"], "batch_id": row["batch"]} for row in costs]
+             if costs else [{"account": "6100", "debit": expenditure.amount}])
+    journal = post_journal(posting_date=expenditure.expenditure_date,
+        description=f"Expenditure {expenditure.expenditure_reference}",
+        source_model="finance.Expenditure", source_identifier=expenditure.pk,
+        idempotency_key=f"financial-expenditure:{expenditure.pk}", user=actor,
+        lines=debit + [{"account": "2000", "credit": expenditure.amount}])
+    if funding_allocations:
+        record_expenditure_payment(expenditure_id=expenditure.pk, funding_rows=funding_allocations,
+            payment_group_key=f"financial-initial:{submission_id}", payment_date=payment_date, user=actor)
+    return journal
+
+
+def _verified_payable(expenditure):
+    """An accepted draft-create alone does not prove a posted liability.
+
+    Match permanent posting evidence to the actual unreversed control-account
+    journal. Never backfill or manufacture a missing historical payable.
+    """
+    key = (f"inventory-purchase:{expenditure.pk}" if expenditure.accounting_nature == AccountingNature.INVENTORY_PURCHASE
+           else f"financial-expenditure:{expenditure.pk}")
+    results = FinancialCommandReceipt.objects.filter(
+        command__in=["finance.expenditure.create", "finance.expenditure.post", "inventory.receipt.record"],
+        completed_at__isnull=False, result__expenditure_id=str(expenditure.pk)).values_list("result", flat=True)
+    for result in results:
+        journal_id = result.get("journal_id")
+        if journal_id and JournalEntry.objects.filter(pk=journal_id, status=JournalStatus.POSTED,
+                source_model="finance.Expenditure", source_identifier=str(expenditure.pk),
+                idempotency_key=key, posting_date=expenditure.expenditure_date,
+                lines__account__code="2000", lines__credit=expenditure.amount, lines__debit=Decimal("0.00")).exists():
+            return True
+    return False
 
 
 def record_financial_supplier_payment(*, submission_id, user, currency, expenditure_id, payment_date, funding_allocations):
@@ -297,15 +353,13 @@ def record_financial_supplier_payment(*, submission_id, user, currency, expendit
     funding_allocations = _funding_rows(funding_allocations)
     def effect(actor):
         lock_financial_periods(payment_date, field="payment_date")
-        expenditure = Expenditure.objects.get(pk=expenditure_id)
+        expenditure = Expenditure.objects.select_for_update().get(pk=expenditure_id)
         # Never create an orphan settlement for an unreconciled historical
         # payable. Other verified (labour/payroll) template settlement is Phase7.
-        if expenditure.status != ExpenditureStatus.POSTED or not FinancialCommandReceipt.objects.filter(
-                command__in=["finance.expenditure.create", "inventory.receipt.record"], completed_at__isnull=False,
-                result__expenditure_id=str(expenditure_id)).exists():
+        if expenditure.status != ExpenditureStatus.POSTED or not _verified_payable(expenditure):
             raise ValidationError({"expenditure": "Only verified Phase6 payables can use this settlement template; legacy reconciliation is required."})
-        if expenditure.accounting_nature == AccountingNature.INVENTORY_PURCHASE and business_date(payment_date) < expenditure.expenditure_date:
-            raise ValidationError({"payment_date": "Pre-purchase deposits require a separate verified workflow."})
+        if payment_date < expenditure.expenditure_date:
+            raise ValidationError({"payment_date": "Pre-expense deposits require a separate verified workflow."})
         expenditure = record_expenditure_payment(expenditure_id=expenditure_id, payment_date=payment_date,
             funding_rows=funding_allocations, payment_group_key=f"financial-payment:{submission_id}", user=actor,
             _inventory_purchase=expenditure.accounting_nature == AccountingNature.INVENTORY_PURCHASE)
