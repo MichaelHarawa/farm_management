@@ -3875,3 +3875,49 @@ class FundingReceiptReversal(TimestampedModel):
 
     def delete(self, *args, **kwargs):
         raise ValidationError("Funding reversal evidence cannot be deleted.")
+
+
+class SaleCostPaymentReversal(TimestampedModel):
+    """One immutable full refunded split; all original group splits commit together."""
+    payment = models.OneToOneField(SaleCostPayment, on_delete=models.PROTECT, related_name="refund")
+    funding_source = models.ForeignKey(FundingSource, on_delete=models.PROTECT, related_name="sale_cost_refunds")
+    original_journal = models.OneToOneField(JournalEntry, on_delete=models.PROTECT, related_name="sale_cost_refund_source")
+    reversal_journal = models.OneToOneField(JournalEntry, on_delete=models.PROTECT, related_name="sale_cost_refund_effect")
+    submission_id = models.UUIDField(db_index=True)
+    split_index = models.PositiveSmallIntegerField()
+    source_version = models.CharField(max_length=64)
+    amount = models.DecimalField(max_digits=14, decimal_places=2, validators=[MinValueValidator(Decimal("0.01"))])
+    refund_date = models.DateField(db_index=True)
+    refund_method = models.CharField(max_length=20, choices=[("cash", "Cash"),
+        ("mobile_money", "Mobile Money"), ("bank_transfer", "Bank Transfer")])
+    external_reference = models.CharField(max_length=120)
+    reason = models.CharField(max_length=2000)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="created_sale_cost_refunds")
+    objects = FundingReversalQuerySet.as_manager()
+
+    class Meta:
+        ordering = ["refund_date", "split_index", "pk"]
+        constraints = [
+            models.UniqueConstraint(fields=["submission_id", "split_index"], name="sale_cost_refund_split_unique"),
+            models.CheckConstraint(condition=Q(amount__gt=0), name="sale_cost_refund_positive"),
+            models.CheckConstraint(condition=Q(split_index__lt=50), name="sale_cost_refund_bounded_split"),
+        ]
+
+    def save(self, *args, **kwargs):
+        from .services.sale_cost_reversal_guards import sale_cost_reversal_allowed
+        if (not sale_cost_reversal_allowed(self.original_journal_id) or not self._state.adding
+                or kwargs.get("force_update") or kwargs.get("update_fields") is not None):
+            raise ValidationError("Use the atomic append-only sale-cost refund service.")
+        self.full_clean()
+        kwargs["force_insert"] = True
+        return super().save(*args, **kwargs)
+
+    def save_base(self, *args, **kwargs):
+        from .services.sale_cost_reversal_guards import sale_cost_reversal_allowed
+        if (not sale_cost_reversal_allowed(self.original_journal_id) or not self._state.adding
+                or kwargs.get("raw") or kwargs.get("force_update")):
+            raise ValidationError("Sale-cost refund evidence is immutable.")
+        return super().save_base(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Sale-cost refund evidence cannot be deleted.")

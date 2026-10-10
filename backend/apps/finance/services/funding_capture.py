@@ -30,6 +30,17 @@ def funding_source_version(source):
         "owner_id": str(source.owner_id) if source.owner_id else None})
 
 
+def lock_funding_reference(reference):
+    """Incoming cash evidence shares a normalized, cross-source intent mutex."""
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT lower(trim(%s::text))", [reference])
+        normalized = cursor.fetchone()[0]
+        key = int.from_bytes(hashlib.sha256(
+            ("farm-funding-reference-v1:" + normalized).encode()).digest()[:8], "big", signed=True)
+        cursor.execute("SELECT pg_advisory_xact_lock(%s)", [key])
+    return normalized
+
+
 def record_financial_funding_receipt(*, submission_id, user, currency, funding_source_id,
         source_version, amount, receipt_date, counterparty, payment_method, reference, notes=""):
     if not getattr(settings, "FINANCE_FUNDING_RECEIPTS", False):
@@ -57,12 +68,12 @@ def record_financial_funding_receipt(*, submission_id, user, currency, funding_s
         # Serialize reference checks across sources AND accounting periods. This
         # is an intent mutex (not a row lock), before period/source locks. The DB
         # normalizes Unicode identically to the duplicate query below.
-        with connection.cursor() as cursor:
-            cursor.execute("SELECT lower(trim(%s::text))", [reference])
-            normalized_reference = cursor.fetchone()[0]
-            reference_lock = int.from_bytes(hashlib.sha256(
-                ("farm-funding-reference-v1:" + normalized_reference).encode()).digest()[:8], "big", signed=True)
-            cursor.execute("SELECT pg_advisory_xact_lock(%s)", [reference_lock])
+        normalized_reference = lock_funding_reference(reference)
+        if getattr(settings, "FINANCE_SALE_COST_REVERSALS", False):
+            from ..models import SaleCostPaymentReversal
+            if SaleCostPaymentReversal.objects.annotate(normalized_reference=Lower(Trim("external_reference"))).filter(
+                    normalized_reference=normalized_reference).exists():
+                raise ValidationError({"possible_duplicate": "That incoming-cash reference already identifies a sale-cost refund; retain evidence for review."})
         lock_financial_periods(receipt_date)
         source = FundingSource.objects.select_for_update().filter(pk=funding_source_id).first()
         if source is None or not source.is_active:

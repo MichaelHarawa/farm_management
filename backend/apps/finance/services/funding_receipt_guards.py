@@ -52,6 +52,11 @@ def guard_funding_queryset(queryset, fields=(), *, deleting=False):
             return
         from ..models import FundingReceipt
         protected = _managed(FundingReceipt.objects.filter(funding_source_id__in=queryset.values("pk"))).exists()
+        if not protected:
+            from ..models import JournalLine
+            protected = JournalLine.objects.filter(funding_source_id__in=queryset.values("pk"),
+                journal_entry__source_model="finance.SaleCostPayment",
+                journal_entry__idempotency_key__startswith="sale-cost-payment:").exists()
     if protected:
         raise ValidationError("Posted funding evidence/source binding is immutable; a controlled source-linked correction is required.")
 

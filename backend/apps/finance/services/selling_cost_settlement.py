@@ -23,6 +23,41 @@ from .ledger import post_journal
 ZERO = Decimal("0.00")
 
 
+def sale_cost_reads_enabled():
+    return (getattr(settings, "FINANCE_SALE_COST_SETTLEMENT", False)
+            or getattr(settings, "FINANCE_SALE_COST_REVERSALS", False))
+
+
+def sale_cost_payment_version(payment):
+    from .funding_capture import funding_source_version
+    return checksum(_canonical({"basis": "phase6-sale-cost-payment-v1",
+        "payment": {field.attname: getattr(payment, field.attname) for field in payment._meta.concrete_fields},
+        "source_binding": funding_source_version(payment.funding_source)}))
+
+
+def sale_cost_cash_total(filters, *, cutoff=None):
+    rows = SaleCostPayment.objects.filter(**filters)
+    if cutoff is not None:
+        rows = rows.filter(payment_date__lte=cutoff)
+    total = rows.aggregate(total=Sum("amount"))["total"] or ZERO
+    if getattr(settings, "FINANCE_SALE_COST_REVERSALS", False):
+        from ..models import SaleCostPaymentReversal
+        refunds = SaleCostPaymentReversal.objects.filter(**{"payment__" + key: value for key, value in filters.items()})
+        if cutoff is not None:
+            refunds = refunds.filter(refund_date__lte=cutoff)
+        total -= refunds.aggregate(total=Sum("amount"))["total"] or ZERO
+    return total
+
+
+def net_sale_cost_payment_rows(rows):
+    rows = list(rows)
+    refunds = {}
+    if getattr(settings, "FINANCE_SALE_COST_REVERSALS", False):
+        from ..models import SaleCostPaymentReversal
+        refunds = dict(SaleCostPaymentReversal.objects.filter(payment_id__in=[row.pk for row in rows]).values_list("payment_id", "amount"))
+    return [(row, row.amount - refunds.get(row.pk, ZERO)) for row in rows]
+
+
 def selling_cost_version(cost):
     """Whole original cost + sale economics, excluding derived collection state."""
     sale = cost.sale
@@ -34,10 +69,7 @@ def selling_cost_version(cost):
 
 
 def sale_cost_payment_total(cost, *, cutoff=None):
-    rows = SaleCostPayment.objects.filter(selling_cost=cost)
-    if cutoff is not None:
-        rows = rows.filter(payment_date__lte=cutoff)
-    return rows.aggregate(total=Sum("amount"))["total"] or ZERO
+    return sale_cost_cash_total({"selling_cost": cost}, cutoff=cutoff)
 
 
 def sale_cost_payable_summary(cutoff):
@@ -57,6 +89,12 @@ def sale_cost_payable_summary(cutoff):
         source_model="poultry.SaleSellingCost", posting_date__lte=cutoff).prefetch_related("lines__account")
     payments = {row["selling_cost_id"]: row["total"] for row in SaleCostPayment.objects.filter(
         payment_date__lte=cutoff).values("selling_cost_id").annotate(total=Sum("amount"))}
+    if getattr(settings, "FINANCE_SALE_COST_REVERSALS", False):
+        from ..models import SaleCostPaymentReversal
+        for row in SaleCostPaymentReversal.objects.filter(refund_date__lte=cutoff).values(
+                "payment__selling_cost_id").annotate(total=Sum("amount")):
+            pk = row["payment__selling_cost_id"]
+            payments[pk] = payments.get(pk, ZERO) - row["total"]
     costs = {str(cost.pk): cost for cost in SaleSellingCost.objects.filter(
         pk__in=[row["selling_cost_id"] for row in anchors.values()]).select_related("sale")}
     for journal in journals:
@@ -116,6 +154,9 @@ def _dated_source_cash(source, day):
     expense = FundingAllocation.objects.filter(**scope, expenditure__status=ExpenditureStatus.POSTED).aggregate(total=Sum("amount"))["total"] or ZERO
     payroll = PayrollPaymentFunding.objects.filter(**scope, payment__status=PayrollPaymentStatus.POSTED).aggregate(total=Sum("amount"))["total"] or ZERO
     costs = SaleCostPayment.objects.filter(**scope).aggregate(total=Sum("amount"))["total"] or ZERO
+    if getattr(settings, "FINANCE_SALE_COST_REVERSALS", False):
+        from ..models import SaleCostPaymentReversal
+        costs -= SaleCostPaymentReversal.objects.filter(**scope, refund_date__lte=day).aggregate(total=Sum("amount"))["total"] or ZERO
     reversed_funding = ZERO
     if getattr(settings, "FINANCE_FUNDING_REVERSALS", False):
         from ..models import FundingReceiptReversal
@@ -149,6 +190,9 @@ def record_sale_cost_payment(*, submission_id, user, currency, selling_cost_id,
                 FundingClassification.COST_RECOVERY):
             raise ValidationError({"funding_allocations": "Selling-cost settlement is operating cash use, not owner distribution or debt service."})
     exact_decimal(sum((row["amount"] for row in funding), ZERO), positive=True)
+    payload = dict(currency=currency, selling_cost_id=str(selling_cost_id), payment_date=day,
+        funding_allocations=funding, payee=payee, payment_method=payment_method,
+        external_reference=external_reference, notes=notes)
 
     def effect(actor):
         lock_financial_periods(day, field="payment_date")
@@ -182,7 +226,15 @@ def record_sale_cost_payment(*, submission_id, user, currency, selling_cost_id,
                 raise ValidationError({"funding_allocations": "Cash-source binding changed; review is required."})
             if source.source_type == FundingSourceType.OWNER_CAPITAL:
                 raise ValidationError({"funding_allocations": "Owner-cash selling-cost settlement is not enabled; use controlled owner review."})
-        outstanding = cost.amount - sale_cost_payment_total(cost)
+        # Reserve every committed payment, but reopen this dated payable only
+        # for refunds actually received by this payment date. A future refund
+        # must not allow a backdated overpayment even when source cash is ample.
+        reserved_paid = SaleCostPayment.objects.filter(selling_cost=cost).aggregate(total=Sum("amount"))["total"] or ZERO
+        if getattr(settings, "FINANCE_SALE_COST_REVERSALS", False):
+            from ..models import SaleCostPaymentReversal
+            reserved_paid -= SaleCostPaymentReversal.objects.filter(payment__selling_cost=cost,
+                refund_date__lte=day).aggregate(total=Sum("amount"))["total"] or ZERO
+        outstanding = cost.amount - reserved_paid
         normalized = _validate_payment_rows(funding, outstanding, allow_less=True, user=actor)
         totals = defaultdict(lambda: ZERO)
         for row in normalized:
@@ -199,7 +251,7 @@ def record_sale_cost_payment(*, submission_id, user, currency, selling_cost_id,
         for pool, amount in pool_totals.items():
             if amount > _dated_source_cash(pool_sources[pool], day):
                 raise ValidationError({"funding_allocations": "Confirmed dated cash is insufficient; later receipts cannot fund this event."})
-        ids, journals = [], []
+        ids, journals, versions = [], [], []
         for index, row in enumerate(normalized):
             payment = SaleCostPayment(selling_cost=cost, funding_source_id=row["funding_source"],
                 payable_journal=journal, source_version=version, submission_id=submission_id, split_index=index,
@@ -215,15 +267,14 @@ def record_sale_cost_payment(*, submission_id, user, currency, selling_cost_id,
                        {"account": "1000", "credit": payment.amount, "funding_source_id": payment.funding_source_id}])
             ids.append(str(payment.pk))
             journals.append(str(entry.pk))
+            versions.append(sale_cost_payment_version(payment))
         record_finance_action(actor=actor, action="sale_selling_cost_paid",
             entity_type="poultry.SaleSellingCost", entity_id=cost.pk,
             after_data={"submission_id": str(submission_id), "source_version": version,
                         "payment_ids": ids, "payment_date": day, "payee": payee})
         return {"selling_cost_id": str(cost.pk), "payment_ids": ids, "journal_ids": journals,
-                "source_version": version}
+                "source_version": version, "original_request": _canonical(payload), "payment_versions": versions}
 
     result, created = _submission(submission_id=submission_id, command="finance.sale_cost.pay", user=user,
-        payload=dict(currency=currency, selling_cost_id=str(selling_cost_id), payment_date=day,
-            funding_allocations=funding, payee=payee, payment_method=payment_method,
-            external_reference=external_reference, notes=notes), roles=FINANCE_WRITE_ROLES, effect=effect)
+        payload=payload, roles=FINANCE_WRITE_ROLES, effect=effect)
     return list(SaleCostPayment.objects.filter(pk__in=result["payment_ids"]).order_by("split_index")), created

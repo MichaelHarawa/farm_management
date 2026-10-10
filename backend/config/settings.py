@@ -259,6 +259,8 @@ FINANCE_SALE_COST_SETTLEMENT = env_bool("FINANCE_SALE_COST_SETTLEMENT", False)
 FINANCE_FUNDING_RECEIPTS = env_bool("FINANCE_FUNDING_RECEIPTS", False)
 # Internal dated reversal/read foundation. Migrate first; never disable after effects.
 FINANCE_FUNDING_REVERSALS = env_bool("FINANCE_FUNDING_REVERSALS", False)
+# Internal actual-refund/read foundation; migrate first, keep on after effects.
+FINANCE_SALE_COST_REVERSALS = env_bool("FINANCE_SALE_COST_REVERSALS", False)
 MOBILE_SYNC_ENTITY_BYTES = 16 * 1024
 MOBILE_SYNC_PAGE_BYTES = 1024 * 1024
 MOBILE_SYNC_PAGE_ROWS = 500

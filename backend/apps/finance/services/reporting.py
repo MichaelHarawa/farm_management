@@ -466,8 +466,9 @@ def _calculate_monthly_profitability_report(period: AccountingPeriod) -> dict:
     )
     net_profit_before_tax = operating_profit - finance_costs
     sale_cost_paid = Decimal("0.00")
+    sale_cost_refunded = Decimal("0.00")
     sale_cost_payables = None
-    if getattr(settings, "FINANCE_SALE_COST_SETTLEMENT", False):
+    if getattr(settings, "FINANCE_SALE_COST_SETTLEMENT", False) or getattr(settings, "FINANCE_SALE_COST_REVERSALS", False):
         from apps.poultry.models import SaleSellingCost
         from ..models import SaleCostPayment
         from .selling_cost_settlement import sale_cost_payable_summary
@@ -483,6 +484,10 @@ def _calculate_monthly_profitability_report(period: AccountingPeriod) -> dict:
         sale_cost_paid = money(SaleCostPayment.objects.filter(
             payment_date__gte=period.period_start, payment_date__lte=period.period_end).aggregate(total=Sum("amount"))["total"])
         sale_cost_payables = sale_cost_payable_summary(period.period_end)
+        if getattr(settings, "FINANCE_SALE_COST_REVERSALS", False):
+            from ..models import SaleCostPaymentReversal
+            sale_cost_refunded = money(SaleCostPaymentReversal.objects.filter(
+                refund_date__gte=period.period_start, refund_date__lte=period.period_end).aggregate(total=Sum("amount"))["total"])
     net_profit_after_recorded_tax = net_profit_before_tax - tax_expenses
 
     dated_payments = FundingAllocation.objects.filter(
@@ -556,7 +561,7 @@ def _calculate_monthly_profitability_report(period: AccountingPeriod) -> dict:
         receipt_date__date__lte=period.period_end,
         status=FundingReceiptStatus.POSTED,
     )
-    operating_cash_in = cash_received + money(
+    operating_cash_in = cash_received + sale_cost_refunded + money(
         non_sales_receipts.filter(
             funding_source__source_type__in=[FundingSourceType.OTHER_INCOME, FundingSourceType.GRANT]
         ).aggregate(total=Sum("amount"))["total"]
@@ -588,11 +593,15 @@ def _calculate_monthly_profitability_report(period: AccountingPeriod) -> dict:
             status=PayrollPaymentStatus.POSTED, payment_date__lt=period.period_start
         ).aggregate(total=Sum("amount"))["total"]
     )
-    if getattr(settings, "FINANCE_SALE_COST_SETTLEMENT", False):
+    if getattr(settings, "FINANCE_SALE_COST_SETTLEMENT", False) or getattr(settings, "FINANCE_SALE_COST_REVERSALS", False):
         from ..models import SaleCostPayment
         opening_cash_payments += money(SaleCostPayment.objects.filter(
             payment_date__lt=period.period_start).aggregate(total=Sum("amount"))["total"])
     opening_cash = money(opening_cash_receipts - opening_cash_payments)
+    if getattr(settings, "FINANCE_SALE_COST_REVERSALS", False):
+        from ..models import SaleCostPaymentReversal
+        opening_cash += money(SaleCostPaymentReversal.objects.filter(
+            refund_date__lt=period.period_start).aggregate(total=Sum("amount"))["total"])
     if funding_reversals is not None:
         opening_cash -= money(funding_reversals.filter(reversal_date__lt=period.period_start).aggregate(total=Sum("amount"))["total"])
     closing_cash = money(opening_cash + net_cash_movement)
@@ -821,6 +830,7 @@ def _calculate_monthly_profitability_report(period: AccountingPeriod) -> dict:
         "reporting_basis": "MTD / provisional" if period.status == PeriodStatus.OPEN else "closed snapshot",
         "as_of": period.period_end,
         **({"sale_cost_settlement": {"cash_paid_in_period": sale_cost_paid,
+            **({"cash_refunded_in_period": sale_cost_refunded} if getattr(settings, "FINANCE_SALE_COST_REVERSALS", False) else {}),
             "verified_payables": sale_cost_payables["total"],
             "review_required": sale_cost_payables["review_required"],
             "basis": "Original versioned payable journals and dated settlements; not legacy adoption."}}

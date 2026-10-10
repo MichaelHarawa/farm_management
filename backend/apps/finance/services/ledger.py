@@ -141,7 +141,10 @@ def reverse_journal(entry: JournalEntry, *, posting_date, reason: str, user=None
     from .funding_receipt_guards import linked_funding_reversal_allowed
     if is_managed_funding_journal(entry.pk) and not linked_funding_reversal_allowed(entry.pk):
         raise ValidationError("Managed funding requires a controlled source-linked reversal; standalone journal reversal is unavailable.")
-    if getattr(settings, "FINANCE_SALE_COST_SETTLEMENT", False):
+    from .sale_cost_reversal_guards import is_managed_sale_cost_journal, sale_cost_reversal_allowed
+    if is_managed_sale_cost_journal(entry.pk) and not sale_cost_reversal_allowed(entry.pk):
+        raise ValidationError("Managed sale-cost journals require a controlled source-linked correction.")
+    if getattr(settings, "FINANCE_SALE_COST_SETTLEMENT", False) and not sale_cost_reversal_allowed(entry.pk):
         # Refuse before taking any journal/domain locks. Reversing only the GL
         # cannot restore dated source cash or correct the original selling cost.
         source = JournalEntry.objects.values_list("source_model", flat=True).get(pk=entry.pk)

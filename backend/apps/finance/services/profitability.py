@@ -1686,11 +1686,10 @@ def cash_used_from_batch(batch: Batch) -> Decimal:
         payment__status=PayrollPaymentStatus.POSTED,
     ).aggregate(total=Sum("amount"))["total"] or ZERO
     selling_paid = ZERO
-    if getattr(settings, "FINANCE_SALE_COST_SETTLEMENT", False):
-        from ..models import SaleCostPayment
-        selling_paid = SaleCostPayment.objects.filter(
-            funding_source__source_type=FundingSourceType.BATCH_COLLECTION,
-            funding_source__batch=batch).aggregate(total=Sum("amount"))["total"] or ZERO
+    if getattr(settings, "FINANCE_SALE_COST_SETTLEMENT", False) or getattr(settings, "FINANCE_SALE_COST_REVERSALS", False):
+        from .selling_cost_settlement import sale_cost_cash_total
+        selling_paid = sale_cost_cash_total({"funding_source__source_type": FundingSourceType.BATCH_COLLECTION,
+            "funding_source__batch": batch})
     return money(total + payroll_total + selling_paid)
 
 
@@ -1728,9 +1727,9 @@ def available_funding_source_cash(source: FundingSource) -> Decimal:
         ).aggregate(total=Sum("amount"))["total"]
     )
     selling_paid = ZERO
-    if getattr(settings, "FINANCE_SALE_COST_SETTLEMENT", False):
-        from ..models import SaleCostPayment
-        selling_paid = SaleCostPayment.objects.filter(funding_source=source).aggregate(total=Sum("amount"))["total"] or ZERO
+    if getattr(settings, "FINANCE_SALE_COST_SETTLEMENT", False) or getattr(settings, "FINANCE_SALE_COST_REVERSALS", False):
+        from .selling_cost_settlement import sale_cost_cash_total
+        selling_paid = sale_cost_cash_total({"funding_source": source})
     reversed_funding = ZERO
     if getattr(settings, "FINANCE_FUNDING_REVERSALS", False):
         from ..models import FundingReceiptReversal
@@ -1775,10 +1774,10 @@ def funding_source_available_balances(sources: Iterable[FundingSource]) -> dict[
         funding_source__batch_id__in=batch_ids)
     used_by_source, used_by_batch = {}, {}
 
-    def accumulate(rows):
+    def accumulate(rows, sign=1):
         for row in rows.values("funding_source_id", "funding_source__source_type",
                                "funding_source__batch_id").annotate(total=Sum("amount")):
-            amount = money(row["total"])
+            amount = money(row["total"]) * sign
             pk = row["funding_source_id"]
             used_by_source[pk] = used_by_source.get(pk, ZERO) + amount
             if row["funding_source__source_type"] == FundingSourceType.BATCH_COLLECTION:
@@ -1790,9 +1789,12 @@ def funding_source_available_balances(sources: Iterable[FundingSource]) -> dict[
     from ..models import PayrollPaymentFunding, PayrollPaymentStatus
 
     accumulate(PayrollPaymentFunding.objects.filter(source_scope, payment__status=PayrollPaymentStatus.POSTED))
-    if getattr(settings, "FINANCE_SALE_COST_SETTLEMENT", False):
+    if getattr(settings, "FINANCE_SALE_COST_SETTLEMENT", False) or getattr(settings, "FINANCE_SALE_COST_REVERSALS", False):
         from ..models import SaleCostPayment
         accumulate(SaleCostPayment.objects.filter(source_scope))
+        if getattr(settings, "FINANCE_SALE_COST_REVERSALS", False):
+            from ..models import SaleCostPaymentReversal
+            accumulate(SaleCostPaymentReversal.objects.filter(source_scope), sign=-1)
     if getattr(settings, "FINANCE_FUNDING_REVERSALS", False):
         from ..models import FundingReceiptReversal
         accumulate(FundingReceiptReversal.objects.filter(source_scope))
@@ -1905,7 +1907,7 @@ def batch_revenue_utilization(batch: Batch) -> dict:
             }
         )
 
-    if getattr(settings, "FINANCE_SALE_COST_SETTLEMENT", False):
+    if getattr(settings, "FINANCE_SALE_COST_SETTLEMENT", False) or getattr(settings, "FINANCE_SALE_COST_REVERSALS", False):
         from ..models import SaleCostPayment
         for payment in SaleCostPayment.objects.filter(
                 funding_source__source_type=FundingSourceType.BATCH_COLLECTION,
@@ -1922,6 +1924,23 @@ def batch_revenue_utilization(batch: Batch) -> dict:
                 "accounting_nature": "selling_expense", "beneficiary": f"Sale batch {sale.batch.batch_id}",
                 "funding_source": str(payment.funding_source), "status": "posted",
                 "selling_cost_id": payment.selling_cost_id})
+        if getattr(settings, "FINANCE_SALE_COST_REVERSALS", False):
+            from ..models import SaleCostPaymentReversal
+            for refund in SaleCostPaymentReversal.objects.filter(
+                    funding_source__source_type=FundingSourceType.BATCH_COLLECTION,
+                    funding_source__batch=batch).select_related("payment__selling_cost__sale__batch", "funding_source"):
+                payment = refund.payment
+                sale = payment.selling_cost.sale
+                category_label = "Sale-specific selling costs"
+                by_category[category_label] = by_category.get(category_label, ZERO) - refund.amount
+                by_nature["selling_expense"] = by_nature.get("selling_expense", ZERO) - refund.amount
+                transactions.append({"allocation_id": f"sale-cost-refund-{refund.pk}", "expenditure_id": None,
+                    "expenditure_reference": sale.sale_id, "date": refund.refund_date,
+                    "description": f"Selling-cost payment refunded: {refund.reason}", "amount": -refund.amount,
+                    "total_expenditure": payment.selling_cost.amount, "category": category_label,
+                    "accounting_nature": "selling_expense", "beneficiary": f"Sale batch {sale.batch.batch_id}",
+                    "funding_source": str(refund.funding_source), "status": "posted",
+                    "selling_cost_id": payment.selling_cost_id, "original_payment_id": payment.pk})
         transactions.sort(key=lambda row: (row["date"], str(row["allocation_id"])))
         running_cash = collected
         for row in transactions:
@@ -2157,12 +2176,13 @@ def portfolio_expenditure_funding_mix(
             else:
                 key = "other_sources"
             groups[key] += amount
-    if getattr(settings, "FINANCE_SALE_COST_SETTLEMENT", False):
+    if getattr(settings, "FINANCE_SALE_COST_SETTLEMENT", False) or getattr(settings, "FINANCE_SALE_COST_REVERSALS", False):
         from ..models import SaleCostPayment
+        from .selling_cost_settlement import net_sale_cost_payment_rows
         total_batch_cost += money(SaleSellingCost.objects.filter(sale__batch_id__in=batch_ids)
             .exclude(sale__payment_status=PaymentStatus.CANCELLED).aggregate(total=Sum("amount"))["total"])
-        for payment in SaleCostPayment.objects.filter(selling_cost__sale__batch_id__in=batch_ids).select_related(
-                "selling_cost__sale", "funding_source"):
+        for payment, amount in net_sale_cost_payment_rows(SaleCostPayment.objects.filter(
+                selling_cost__sale__batch_id__in=batch_ids).select_related("selling_cost__sale", "funding_source")):
             source = payment.funding_source
             if source.source_type == FundingSourceType.BATCH_COLLECTION:
                 key = "own_batch_sales" if source.batch_id == payment.selling_cost.sale.batch_id else "other_batch_sales"
@@ -2170,8 +2190,8 @@ def portfolio_expenditure_funding_mix(
                 key = "owner_capital"
             else:
                 key = "other_sources"
-            groups[key] += payment.amount
-            total_paid += payment.amount
+            groups[key] += amount
+            total_paid += amount
     allocated_expenditure_cost = money(total_batch_cost)
     total_batch_cost = (
         money(max(Decimal(total_attributed_cost), allocated_expenditure_cost))
