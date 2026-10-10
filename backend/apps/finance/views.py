@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.models import Q, Sum
 from django.shortcuts import get_object_or_404
@@ -1807,7 +1808,10 @@ class FundingSourceViewSet(viewsets.ModelViewSet):
             "description": current.description,
             "is_active": current.is_active,
         }
-        source = serializer.save()
+        try:
+            source = serializer.save()
+        except DjangoValidationError as error:
+            raise ValidationError({"funding_source": error.messages}) from error
         if current.source_type == FundingSourceType.OWNER_CAPITAL or requested_type == FundingSourceType.OWNER_CAPITAL:
             record_finance_action(
                 actor=self.request.user,
@@ -1821,6 +1825,12 @@ class FundingSourceViewSet(viewsets.ModelViewSet):
                     "is_active": source.is_active,
                 },
             )
+
+    def perform_destroy(self, instance):
+        try:
+            instance.delete()
+        except DjangoValidationError as error:
+            raise ValidationError({"funding_source": error.messages}) from error
 
     def list(self, request, *args, **kwargs):
         queryset = self.get_queryset().filter(is_active=True)
@@ -1922,7 +1932,10 @@ class FundingReceiptViewSet(
                     )
                 }
             )
-        serializer.save(created_by=self.request.user)
+        try:
+            serializer.save(created_by=self.request.user)
+        except DjangoValidationError as error:
+            raise ValidationError({"funding_source": error.messages}) from error
 
     @action(detail=True, methods=["post"])
     def reverse(self, request, pk=None):

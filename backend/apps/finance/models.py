@@ -12,6 +12,7 @@ from django.utils import timezone
 
 from apps.poultry.models import Batch
 from .services.poultry_stock_guards import PoultryProtectedQuerySet, stock_save_boundary
+from .services.funding_receipt_guards import FundingProtectedQuerySet, funding_save_boundary, guard_funding_queryset
 
 
 MONEY_VALIDATOR = MinValueValidator(Decimal("0.00"))
@@ -2517,6 +2518,16 @@ class FundingSource(TimestampedModel):
     notes = models.TextField(blank=True, default="")
     is_active = models.BooleanField(default=True, db_index=True)
 
+    objects = FundingProtectedQuerySet.as_manager()
+
+    def save_base(self, *args, **kwargs):
+        with funding_save_boundary(self, kwargs.get("update_fields")):
+            return super().save_base(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        guard_funding_queryset(type(self).objects.filter(pk=self.pk), deleting=True)
+        return super().delete(*args, **kwargs)
+
     class Meta:
         ordering = ["-created_at"]
         indexes = [
@@ -2588,6 +2599,16 @@ class FundingReceipt(TimestampedModel):
         related_name="reversed_funding_receipts",
     )
     reversal_reason = models.TextField(blank=True, default="")
+
+    objects = FundingProtectedQuerySet.as_manager()
+
+    def save_base(self, *args, **kwargs):
+        with funding_save_boundary(self, kwargs.get("update_fields")):
+            return super().save_base(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        guard_funding_queryset(type(self).objects.filter(pk=self.pk), deleting=True)
+        return super().delete(*args, **kwargs)
 
     class Meta:
         ordering = ["-receipt_date", "-created_at"]
@@ -3698,6 +3719,78 @@ class AssetLifecycleEvent(TimestampedModel):
         raise ValidationError("Asset lifecycle events are immutable.")
 
 
+class SaleCostPaymentQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        raise ValidationError("Sale-cost payment evidence is immutable.")
+
+    def bulk_update(self, *args, **kwargs):
+        raise ValidationError("Sale-cost payment evidence is immutable.")
+
+    def bulk_create(self, *args, **kwargs):
+        raise ValidationError("Use the atomic sale-cost settlement service.")
+
+    def delete(self):
+        raise ValidationError("Sale-cost payment evidence cannot be deleted.")
+
+    def _raw_delete(self, using):
+        raise ValidationError("Sale-cost payment evidence cannot be deleted.")
+
+
+class SaleCostPayment(TimestampedModel):
+    """One immutable funding split of an actual sale-specific cost payment.
+
+    Not an expenditure or additional selling expense. Submission groups retain
+    their original dated evidence and permanent financial command receipt.
+    Reversal/publication/owner-cash policy must pass before exposing this model.
+    """
+    selling_cost = models.ForeignKey("poultry.SaleSellingCost", on_delete=models.PROTECT,
+                                     related_name="payments")
+    funding_source = models.ForeignKey(FundingSource, on_delete=models.PROTECT,
+                                       related_name="sale_cost_payments")
+    payable_journal = models.ForeignKey(JournalEntry, on_delete=models.PROTECT,
+                                       related_name="sale_cost_settlements")
+    source_version = models.CharField(max_length=64)
+    submission_id = models.UUIDField(db_index=True)
+    split_index = models.PositiveSmallIntegerField()
+    amount = models.DecimalField(max_digits=14, decimal_places=2,
+                                 validators=[MinValueValidator(Decimal("0.01"))])
+    payment_date = models.DateField(db_index=True)
+    payment_method = models.CharField(max_length=20, choices=[("cash", "Cash"),
+        ("mobile_money", "Mobile Money"), ("bank_transfer", "Bank Transfer")])
+    classification = models.CharField(max_length=30, choices=FundingClassification.choices)
+    payee = models.CharField(max_length=200)
+    external_reference = models.CharField(max_length=120, blank=True, default="")
+    notes = models.TextField(blank=True, default="")
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+                                   related_name="created_sale_cost_payments")
+    objects = SaleCostPaymentQuerySet.as_manager()
+
+    class Meta:
+        ordering = ["payment_date", "created_at", "pk"]
+        constraints = [
+            models.UniqueConstraint(fields=["submission_id", "split_index"], name="sale_cost_payment_split_unique"),
+            models.CheckConstraint(condition=Q(amount__gt=0), name="sale_cost_payment_positive"),
+            models.CheckConstraint(condition=Q(split_index__lt=50), name="sale_cost_payment_bounded_split"),
+        ]
+
+    def save(self, *args, **kwargs):
+        posting = kwargs.pop("_financial_posting", False)
+        if (not posting or not self._state.adding or kwargs.get("force_update")
+                or kwargs.get("update_fields") is not None):
+            raise ValidationError("Use the atomic append-only sale-cost settlement service.")
+        self.full_clean()
+        kwargs["force_insert"] = True
+        return super().save(*args, **kwargs)
+
+    def save_base(self, *args, **kwargs):
+        if not self._state.adding or kwargs.get("raw") or kwargs.get("force_update"):
+            raise ValidationError("Sale-cost payment evidence is immutable.")
+        return super().save_base(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Sale-cost payment evidence cannot be deleted.")
+
+
 class FinancialReceiptQuerySet(models.QuerySet):
     def update(self, **kwargs):
         raise ValidationError("Financial deduplication receipts are immutable.")
@@ -3739,3 +3832,46 @@ class FinancialCommandReceipt(TimestampedModel):
 
     def delete(self, *args, **kwargs):
         raise ValidationError("Financial deduplication receipts cannot be deleted.")
+
+
+class FundingReversalQuerySet(FinancialReceiptQuerySet):
+    def _raw_delete(self, using):
+        raise ValidationError("Funding reversal evidence cannot be deleted.")
+
+
+class FundingReceiptReversal(TimestampedModel):
+    """One dated full reversal; the original receipt remains unchanged forever."""
+    receipt = models.OneToOneField(FundingReceipt, on_delete=models.PROTECT, related_name="financial_reversal")
+    funding_source = models.ForeignKey(FundingSource, on_delete=models.PROTECT, related_name="funding_reversals")
+    original_journal = models.OneToOneField(JournalEntry, on_delete=models.PROTECT, related_name="funding_reversal_source")
+    reversal_journal = models.OneToOneField(JournalEntry, on_delete=models.PROTECT, related_name="funding_reversal_effect")
+    submission_id = models.UUIDField(unique=True)
+    source_version = models.CharField(max_length=64)
+    amount = models.DecimalField(max_digits=14, decimal_places=2, validators=[MinValueValidator(Decimal("0.01"))])
+    reversal_date = models.DateField(db_index=True)
+    reason = models.CharField(max_length=2000)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="created_funding_reversals")
+    objects = FundingReversalQuerySet.as_manager()
+
+    class Meta:
+        ordering = ["reversal_date", "pk"]
+        constraints = [models.CheckConstraint(condition=Q(amount__gt=0), name="funding_reversal_positive")]
+
+    def save(self, *args, **kwargs):
+        from .services.funding_receipt_guards import linked_funding_reversal_allowed
+        if (not linked_funding_reversal_allowed(self.original_journal_id) or not self._state.adding
+                or kwargs.get("force_update") or kwargs.get("update_fields") is not None):
+            raise ValidationError("Use the atomic append-only funding reversal service.")
+        self.full_clean()
+        kwargs["force_insert"] = True
+        return super().save(*args, **kwargs)
+
+    def save_base(self, *args, **kwargs):
+        from .services.funding_receipt_guards import linked_funding_reversal_allowed
+        if (not linked_funding_reversal_allowed(self.original_journal_id) or not self._state.adding
+                or kwargs.get("raw") or kwargs.get("force_update")):
+            raise ValidationError("Funding reversal evidence is immutable.")
+        return super().save_base(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Funding reversal evidence cannot be deleted.")

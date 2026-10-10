@@ -252,6 +252,13 @@ MOBILE_SYNC_POULTRY_V2 = env_bool("MOBILE_SYNC_POULTRY_V2", False)
 # Internal Phase6 domain foundation only; not a financial sync capability.
 # Apply additive migrations in an isolated deployment before opting in.
 FINANCE_POULTRY_STOCK_LINKAGE = env_bool("FINANCE_POULTRY_STOCK_LINKAGE", False)
+# Internal Phase6 settlement/report foundation, not a public/mobile capability.
+# Enable only on an explicitly migrated deployment; never disable after payments.
+FINANCE_SALE_COST_SETTLEMENT = env_bool("FINANCE_SALE_COST_SETTLEMENT", False)
+# Internal verified loan template only; no financial API/sync/native grant.
+FINANCE_FUNDING_RECEIPTS = env_bool("FINANCE_FUNDING_RECEIPTS", False)
+# Internal dated reversal/read foundation. Migrate first; never disable after effects.
+FINANCE_FUNDING_REVERSALS = env_bool("FINANCE_FUNDING_REVERSALS", False)
 MOBILE_SYNC_ENTITY_BYTES = 16 * 1024
 MOBILE_SYNC_PAGE_BYTES = 1024 * 1024
 MOBILE_SYNC_PAGE_ROWS = 500

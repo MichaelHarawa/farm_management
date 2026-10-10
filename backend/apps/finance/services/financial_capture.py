@@ -202,19 +202,23 @@ def record_financial_sale(*, submission_id, user, currency, batch_id, sale_date,
             idempotency_key=f"financial-sale:{sale.pk}", user=actor,
             lines=[{"account": "1100", "debit": sale.sale_total, "batch_id": sale.batch_id},
                    {"account": "4000", "credit": sale.sale_total, "batch_id": sale.batch_id}])]
+        cost_versions = []
         for cost in sale.selling_costs.order_by("pk"):
             journals.append(post_journal(posting_date=business_date(sale.sale_date),
                 description=f"Selling cost of {sale.sale_id}", source_model="poultry.SaleSellingCost",
                 source_identifier=cost.pk, idempotency_key=f"sale-selling-cost:{cost.pk}", user=actor,
                 lines=[{"account": "6000", "debit": cost.amount, "batch_id": sale.batch_id},
                        {"account": "2000", "credit": cost.amount, "batch_id": sale.batch_id}]))
+            from .selling_cost_settlement import selling_cost_version
+            cost_versions.append({"selling_cost_id": str(cost.pk), "source_version": selling_cost_version(cost),
+                                  "journal_id": str(journals[-1].pk)})
         payment = None
         if receipt:
             payment, _ = record_sale_payment(sale_id=sale.pk, **receipt, created_by=actor,
                 idempotency_key=f"sale-initial:{submission_id}")
             journals.append(_post_receipt(payment, actor))
         return {"sale_id": str(sale.pk), "payment_id": str(payment.pk) if payment else None,
-                "journal_ids": [str(entry.pk) for entry in journals]}
+                "journal_ids": [str(entry.pk) for entry in journals], "selling_cost_versions": cost_versions}
     result, created = _submission(submission_id=submission_id, command="poultry.sale.record", user=user,
         payload={"currency": currency, **sale_data, "initial_receipt": receipt}, roles=FINANCE_WRITE_ROLES, effect=effect)
     return Sales.objects.get(pk=result["sale_id"]), created

@@ -371,6 +371,9 @@ def reverse_owner_designation(*, designation_id: int, reason: str, user):
 
 @transaction.atomic
 def reverse_funding_receipt(*, receipt_id: int, reason: str, user):
+    from .funding_receipt_guards import MANAGED_PREFIX
+    if FundingReceipt.objects.filter(pk=receipt_id, idempotency_key__startswith=MANAGED_PREFIX).exists():
+        raise ValidationError({"receipt": "Managed funding requires a controlled source-linked reversal; the ordinary source-only reversal is unavailable."})
     reason = (reason or "").strip()
     if not reason:
         raise ValidationError({"reason": "A reversal reason is required."})

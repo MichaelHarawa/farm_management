@@ -3,6 +3,7 @@ from __future__ import annotations
 import uuid
 from decimal import Decimal
 
+from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.db.models import Sum
 from django.utils import timezone
@@ -136,6 +137,16 @@ def post_journal(
 
 @transaction.atomic
 def reverse_journal(entry: JournalEntry, *, posting_date, reason: str, user=None):
+    from .funding_capture import is_managed_funding_journal
+    from .funding_receipt_guards import linked_funding_reversal_allowed
+    if is_managed_funding_journal(entry.pk) and not linked_funding_reversal_allowed(entry.pk):
+        raise ValidationError("Managed funding requires a controlled source-linked reversal; standalone journal reversal is unavailable.")
+    if getattr(settings, "FINANCE_SALE_COST_SETTLEMENT", False):
+        # Refuse before taking any journal/domain locks. Reversing only the GL
+        # cannot restore dated source cash or correct the original selling cost.
+        source = JournalEntry.objects.values_list("source_model", flat=True).get(pk=entry.pk)
+        if source in {"poultry.SaleSellingCost", "finance.SaleCostPayment"}:
+            raise ValidationError("Sale-cost liabilities/payments require a controlled source-linked reversal; standalone journal reversal is unavailable.")
     entry = JournalEntry.objects.select_for_update().prefetch_related("lines").get(pk=entry.pk)
     if entry.status != JournalStatus.POSTED:
         raise ValidationError("Only a posted journal can be reversed.")
@@ -143,7 +154,9 @@ def reverse_journal(entry: JournalEntry, *, posting_date, reason: str, user=None
         raise ValidationError("A reversal reason is required.")
     reversal = post_journal(
         posting_date=posting_date,
-        description=f"Reversal of {entry.reference}: {reason}",
+        # The full reason remains in original.reversal_reason and the linked
+        # source audit. The journal's bounded display caption is not that evidence.
+        description=f"Reversal of {entry.reference}: {reason}"[:255],
         source_model="finance.JournalEntry",
         source_identifier=entry.pk,
         idempotency_key=f"reversal:{entry.pk}",

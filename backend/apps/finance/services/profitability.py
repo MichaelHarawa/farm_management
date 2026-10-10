@@ -3,6 +3,7 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Iterable
 
+from django.conf import settings
 from rest_framework.exceptions import ValidationError
 
 
@@ -1684,7 +1685,13 @@ def cash_used_from_batch(batch: Batch) -> Decimal:
         funding_source__batch=batch,
         payment__status=PayrollPaymentStatus.POSTED,
     ).aggregate(total=Sum("amount"))["total"] or ZERO
-    return money(total + payroll_total)
+    selling_paid = ZERO
+    if getattr(settings, "FINANCE_SALE_COST_SETTLEMENT", False):
+        from ..models import SaleCostPayment
+        selling_paid = SaleCostPayment.objects.filter(
+            funding_source__source_type=FundingSourceType.BATCH_COLLECTION,
+            funding_source__batch=batch).aggregate(total=Sum("amount"))["total"] or ZERO
+    return money(total + payroll_total + selling_paid)
 
 
 def available_batch_cash(batch: Batch) -> Decimal:
@@ -1720,7 +1727,15 @@ def available_funding_source_cash(source: FundingSource) -> Decimal:
             payment__status=PayrollPaymentStatus.POSTED,
         ).aggregate(total=Sum("amount"))["total"]
     )
-    return money(received - used - payroll_used)
+    selling_paid = ZERO
+    if getattr(settings, "FINANCE_SALE_COST_SETTLEMENT", False):
+        from ..models import SaleCostPayment
+        selling_paid = SaleCostPayment.objects.filter(funding_source=source).aggregate(total=Sum("amount"))["total"] or ZERO
+    reversed_funding = ZERO
+    if getattr(settings, "FINANCE_FUNDING_REVERSALS", False):
+        from ..models import FundingReceiptReversal
+        reversed_funding = FundingReceiptReversal.objects.filter(funding_source=source).aggregate(total=Sum("amount"))["total"] or ZERO
+    return money(received - used - payroll_used - selling_paid - reversed_funding)
 
 
 def funding_source_available_balances(sources: Iterable[FundingSource]) -> dict[int, Decimal]:
@@ -1753,28 +1768,34 @@ def funding_source_available_balances(sources: Iterable[FundingSource]) -> dict[
         .values("funding_source_id")
         .annotate(total=Sum("amount"))
     }
-    expenditure_used = {
-        row["funding_source_id"]: money(row["total"])
-        for row in FundingAllocation.objects.filter(
-            funding_source_id__in=source_ids,
-            expenditure__status=ExpenditureStatus.POSTED,
-        )
-        .values("funding_source_id")
-        .annotate(total=Sum("amount"))
-    }
+    # All aliases of a batch-collection source share that batch's cash. Reading
+    # one alias must not hide withdrawals assigned through another alias.
+    source_scope = Q(funding_source_id__in=source_ids) | Q(
+        funding_source__source_type=FundingSourceType.BATCH_COLLECTION,
+        funding_source__batch_id__in=batch_ids)
+    used_by_source, used_by_batch = {}, {}
+
+    def accumulate(rows):
+        for row in rows.values("funding_source_id", "funding_source__source_type",
+                               "funding_source__batch_id").annotate(total=Sum("amount")):
+            amount = money(row["total"])
+            pk = row["funding_source_id"]
+            used_by_source[pk] = used_by_source.get(pk, ZERO) + amount
+            if row["funding_source__source_type"] == FundingSourceType.BATCH_COLLECTION:
+                batch_id = row["funding_source__batch_id"]
+                used_by_batch[batch_id] = used_by_batch.get(batch_id, ZERO) + amount
+
+    accumulate(FundingAllocation.objects.filter(source_scope, expenditure__status=ExpenditureStatus.POSTED))
 
     from ..models import PayrollPaymentFunding, PayrollPaymentStatus
 
-    payroll_used = {
-        row["funding_source_id"]: money(row["total"])
-        for row in PayrollPaymentFunding.objects.filter(
-            funding_source_id__in=source_ids,
-            payment__status=PayrollPaymentStatus.POSTED,
-        )
-        .values("funding_source_id")
-        .annotate(total=Sum("amount"))
-    }
-
+    accumulate(PayrollPaymentFunding.objects.filter(source_scope, payment__status=PayrollPaymentStatus.POSTED))
+    if getattr(settings, "FINANCE_SALE_COST_SETTLEMENT", False):
+        from ..models import SaleCostPayment
+        accumulate(SaleCostPayment.objects.filter(source_scope))
+    if getattr(settings, "FINANCE_FUNDING_REVERSALS", False):
+        from ..models import FundingReceiptReversal
+        accumulate(FundingReceiptReversal.objects.filter(source_scope))
     balances = {}
     for source in source_rows:
         received = (
@@ -1782,11 +1803,10 @@ def funding_source_available_balances(sources: Iterable[FundingSource]) -> dict[
             if source.source_type == FundingSourceType.BATCH_COLLECTION
             else received_by_source.get(source.pk, ZERO)
         )
-        balances[source.pk] = money(
-            received
-            - expenditure_used.get(source.pk, ZERO)
-            - payroll_used.get(source.pk, ZERO)
-        )
+        used = (used_by_batch.get(source.batch_id, ZERO)
+                if source.source_type == FundingSourceType.BATCH_COLLECTION
+                else used_by_source.get(source.pk, ZERO))
+        balances[source.pk] = money(received - used)
     return balances
 
 
@@ -1884,6 +1904,29 @@ def batch_revenue_utilization(batch: Batch) -> dict:
                 "remaining_cash_after": running_cash,
             }
         )
+
+    if getattr(settings, "FINANCE_SALE_COST_SETTLEMENT", False):
+        from ..models import SaleCostPayment
+        for payment in SaleCostPayment.objects.filter(
+                funding_source__source_type=FundingSourceType.BATCH_COLLECTION,
+                funding_source__batch=batch).select_related("selling_cost__sale__batch", "funding_source"):
+            sale = payment.selling_cost.sale
+            category_label = "Sale-specific selling costs"
+            by_category[category_label] = by_category.get(category_label, ZERO) + payment.amount
+            by_nature["selling_expense"] = by_nature.get("selling_expense", ZERO) + payment.amount
+            beneficiaries.add(f"Sale {sale.sale_id}; batch {sale.batch.batch_id}")
+            transactions.append({"allocation_id": f"sale-cost-{payment.pk}", "expenditure_id": None,
+                "expenditure_reference": sale.sale_id, "date": payment.payment_date,
+                "description": f"Selling cost paid to {payment.payee}", "amount": payment.amount,
+                "total_expenditure": payment.selling_cost.amount, "category": category_label,
+                "accounting_nature": "selling_expense", "beneficiary": f"Sale batch {sale.batch.batch_id}",
+                "funding_source": str(payment.funding_source), "status": "posted",
+                "selling_cost_id": payment.selling_cost_id})
+        transactions.sort(key=lambda row: (row["date"], str(row["allocation_id"])))
+        running_cash = collected
+        for row in transactions:
+            running_cash = money(running_cash - row["amount"])
+            row["remaining_cash_after"] = running_cash
 
     return {
         "batch_id": batch.pk,
@@ -2114,6 +2157,21 @@ def portfolio_expenditure_funding_mix(
             else:
                 key = "other_sources"
             groups[key] += amount
+    if getattr(settings, "FINANCE_SALE_COST_SETTLEMENT", False):
+        from ..models import SaleCostPayment
+        total_batch_cost += money(SaleSellingCost.objects.filter(sale__batch_id__in=batch_ids)
+            .exclude(sale__payment_status=PaymentStatus.CANCELLED).aggregate(total=Sum("amount"))["total"])
+        for payment in SaleCostPayment.objects.filter(selling_cost__sale__batch_id__in=batch_ids).select_related(
+                "selling_cost__sale", "funding_source"):
+            source = payment.funding_source
+            if source.source_type == FundingSourceType.BATCH_COLLECTION:
+                key = "own_batch_sales" if source.batch_id == payment.selling_cost.sale.batch_id else "other_batch_sales"
+            elif source.source_type == FundingSourceType.OWNER_CAPITAL:
+                key = "owner_capital"
+            else:
+                key = "other_sources"
+            groups[key] += payment.amount
+            total_paid += payment.amount
     allocated_expenditure_cost = money(total_batch_cost)
     total_batch_cost = (
         money(max(Decimal(total_attributed_cost), allocated_expenditure_cost))
@@ -2151,7 +2209,8 @@ def portfolio_expenditure_funding_mix(
         "groups": result_groups,
         "basis": (
             "Shows cash sources assigned to costs borne by the selected batches. "
-            "Sale-specific costs, legacy inputs, allocated management costs, or other "
+            "Sale-specific cost payments are included when the isolated settlement "
+            "gate is enabled. Legacy inputs, allocated management costs, or other "
             "costs without a posted funding assignment remain in unpaid or source not "
             "assigned. Funding source is independent of which batch bears the cost."
         ),

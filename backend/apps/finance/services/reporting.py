@@ -465,6 +465,24 @@ def _calculate_monthly_profitability_report(period: AccountingPeriod) -> dict:
         ).aggregate(total=Sum("amount"))["total"]
     )
     net_profit_before_tax = operating_profit - finance_costs
+    sale_cost_paid = Decimal("0.00")
+    sale_cost_payables = None
+    if getattr(settings, "FINANCE_SALE_COST_SETTLEMENT", False):
+        from apps.poultry.models import SaleSellingCost
+        from ..models import SaleCostPayment
+        from .selling_cost_settlement import sale_cost_payable_summary
+        # Existing sale-specific cost evidence is recognized once on the sale's
+        # date, not again when its new dated payment is recorded.
+        sale_cost_expense = money(SaleSellingCost.objects.filter(
+            sale__sale_date__date__gte=period.period_start,
+            sale__sale_date__date__lte=period.period_end).exclude(
+                sale__payment_status=PaymentStatus.CANCELLED).aggregate(total=Sum("amount"))["total"])
+        selling_distribution_costs += sale_cost_expense
+        operating_profit -= sale_cost_expense
+        net_profit_before_tax -= sale_cost_expense
+        sale_cost_paid = money(SaleCostPayment.objects.filter(
+            payment_date__gte=period.period_start, payment_date__lte=period.period_end).aggregate(total=Sum("amount"))["total"])
+        sale_cost_payables = sale_cost_payable_summary(period.period_end)
     net_profit_after_recorded_tax = net_profit_before_tax - tax_expenses
 
     dated_payments = FundingAllocation.objects.filter(
@@ -512,7 +530,7 @@ def _calculate_monthly_profitability_report(period: AccountingPeriod) -> dict:
             payment_date__lte=period.period_end,
             status=PayrollPaymentStatus.POSTED,
         ).aggregate(total=Sum("amount"))["total"]
-    ) + legacy_operating_paid
+    ) + legacy_operating_paid + sale_cost_paid
     investing_cash_paid = money(
         dated_payments.filter(
             expenditure__accounting_nature=AccountingNature.CAPITAL_EXPENDITURE
@@ -527,6 +545,12 @@ def _calculate_monthly_profitability_report(period: AccountingPeriod) -> dict:
             ]
         ).aggregate(total=Sum("amount"))["total"]
     )
+    funding_reversals = None
+    if getattr(settings, "FINANCE_FUNDING_REVERSALS", False):
+        from ..models import FundingReceiptReversal
+        funding_reversals = FundingReceiptReversal.objects.all()
+        financing_cash_paid += money(funding_reversals.filter(
+            reversal_date__range=(period.period_start, period.period_end)).aggregate(total=Sum("amount"))["total"])
     non_sales_receipts = FundingReceipt.objects.filter(
         receipt_date__date__gte=period.period_start,
         receipt_date__date__lte=period.period_end,
@@ -564,7 +588,13 @@ def _calculate_monthly_profitability_report(period: AccountingPeriod) -> dict:
             status=PayrollPaymentStatus.POSTED, payment_date__lt=period.period_start
         ).aggregate(total=Sum("amount"))["total"]
     )
+    if getattr(settings, "FINANCE_SALE_COST_SETTLEMENT", False):
+        from ..models import SaleCostPayment
+        opening_cash_payments += money(SaleCostPayment.objects.filter(
+            payment_date__lt=period.period_start).aggregate(total=Sum("amount"))["total"])
     opening_cash = money(opening_cash_receipts - opening_cash_payments)
+    if funding_reversals is not None:
+        opening_cash -= money(funding_reversals.filter(reversal_date__lt=period.period_start).aggregate(total=Sum("amount"))["total"])
     closing_cash = money(opening_cash + net_cash_movement)
     reserve_contributions = money(
         ReplacementReserveTransaction.objects.filter(
@@ -670,6 +700,10 @@ def _calculate_monthly_profitability_report(period: AccountingPeriod) -> dict:
         age = (period.period_end - expenditure.expenditure_date).days
         bucket = "current" if age <= 30 else "31_60" if age <= 60 else "61_90" if age <= 90 else "over_90"
         payable_ageing[bucket] += outstanding
+    if sale_cost_payables is not None:
+        supplier_payables += sale_cost_payables["total"]
+        for bucket, amount in sale_cost_payables["ageing"].items():
+            payable_ageing[bucket] += amount
     payroll_payable = Decimal("0.00")
     for entry in PayrollEntry.objects.filter(
         accounting_period__period_end__lte=period.period_end
@@ -700,6 +734,8 @@ def _calculate_monthly_profitability_report(period: AccountingPeriod) -> dict:
             allocation_date__lte=period.period_end,
         ).aggregate(total=Sum("amount"))["total"]
     )
+    if funding_reversals is not None:
+        loans -= money(funding_reversals.filter(reversal_date__lte=period.period_end).aggregate(total=Sum("amount"))["total"])
     owner_equity = money(
         FundingReceipt.objects.filter(
             status=FundingReceiptStatus.POSTED,
@@ -784,6 +820,11 @@ def _calculate_monthly_profitability_report(period: AccountingPeriod) -> dict:
         "status": period.status,
         "reporting_basis": "MTD / provisional" if period.status == PeriodStatus.OPEN else "closed snapshot",
         "as_of": period.period_end,
+        **({"sale_cost_settlement": {"cash_paid_in_period": sale_cost_paid,
+            "verified_payables": sale_cost_payables["total"],
+            "review_required": sale_cost_payables["review_required"],
+            "basis": "Original versioned payable journals and dated settlements; not legacy adoption."}}
+           if sale_cost_payables is not None else {}),
         "revenue": {
             "bird_sales": bird_sales,
             "egg_sales": egg_sales,

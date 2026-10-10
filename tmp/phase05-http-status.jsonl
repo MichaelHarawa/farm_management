@@ -123,3 +123,13 @@
 {"at":"2026-10-08T14:19:55.163343+00:00","route_kind":"capabilities","http_status":200}
 {"at":"2026-10-08T14:19:56.174959+00:00","route_kind":"changes","http_status":200}
 {"at":"2026-10-08T14:19:57.191608+00:00","route_kind":"changes","http_status":200}
+{"at":"2026-10-09T13:45:35.578475+00:00","route_kind":"current_user","http_status":401}
+{"at":"2026-10-09T13:45:36.166276+00:00","route_kind":"refresh","http_status":200}
+{"at":"2026-10-09T13:45:36.518917+00:00","route_kind":"current_user","http_status":200}
+{"at":"2026-10-09T13:45:36.732190+00:00","route_kind":"capabilities","http_status":200}
+{"at":"2026-10-09T13:45:37.857267+00:00","route_kind":"changes","http_status":200}
+{"at":"2026-10-09T13:45:41.175865+00:00","route_kind":"current_user","http_status":200}
+{"at":"2026-10-09T13:45:42.203182+00:00","route_kind":"capabilities","http_status":200}
+{"at":"2026-10-09T13:45:43.219318+00:00","route_kind":"changes","http_status":200}
+{"at":"2026-10-09T13:45:44.222162+00:00","route_kind":"changes","http_status":200}
+{"at":"2026-10-09T13:52:05.205815+00:00","route_kind":"current_user","http_status":200}
