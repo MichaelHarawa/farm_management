@@ -22,6 +22,7 @@ from apps.finance.services.reporting import monthly_profitability_report
 from apps.poultry.models import BatchStatus, FlockAdjustment, InputCosts
 from .test_financial_capture import instant
 from . import test_inventory_capture as inventory_tests
+from .inventory_corruption import corrupt_inventory, corrupt_inventory_insert
 
 
 def movement(test, lot, **extra):
@@ -337,7 +338,8 @@ class InventoryCorrectionTests(TestCase):
                        lambda: InventoryMovementEvidence.objects.bulk_update([evidence], ['counted_quantity'])]:
             with self.assertRaises(DjangoValidationError):
                 action()
-        InventoryValuePool.objects.filter(item=self.item).update(carrying_value=Decimal('99'))
+        corrupt_inventory(InventoryValuePool, InventoryValuePool.objects.get(item=self.item).pk,
+            carrying_value=Decimal('99'))
         with self.assertRaises(ValidationError) as error:
             record_inventory_transfer(**transfer(self, lot))
         self.assertIn('inventory_reconciliation', error.exception.detail)
@@ -401,9 +403,11 @@ class InventoryCorrectionTests(TestCase):
 
     def test_consistently_tampered_pool_lot_location_cannot_invent_stock(self):
         lot = self.purchase()
-        SharedConsumableLot.objects.filter(pk=lot.pk).update(quantity_available=Decimal('20'))
-        InventoryLocationStock.objects.update(quantity=Decimal('20'))
-        InventoryValuePool.objects.update(quantity=Decimal('20'))
+        corrupt_inventory(SharedConsumableLot, lot.pk, quantity_available=Decimal('20'))
+        corrupt_inventory(InventoryLocationStock, InventoryLocationStock.objects.get(binding__lot=lot).pk,
+            quantity=Decimal('20'))
+        corrupt_inventory(InventoryValuePool, InventoryValuePool.objects.get(item=self.item).pk,
+            quantity=Decimal('20'))
         with self.assertRaises(ValidationError) as error:
             record_inventory_waste(**movement(self, lot))
         self.assertIn('inventory_reconciliation', error.exception.detail)
@@ -413,8 +417,12 @@ class InventoryCorrectionTests(TestCase):
         lot = self.purchase()
         from apps.finance.models import InventoryLotBinding
         binding = InventoryLotBinding.objects.get(lot=lot)
-        InventoryLocationStock.objects.filter(binding=binding, location=self.location).update(quantity=Decimal('5'))
-        InventoryLocationStock.objects.create(binding=binding, location=self.other_location, quantity=Decimal('5'))
+        original_stock = InventoryLocationStock.objects.get(binding=binding, location=self.location)
+        corrupt_inventory(InventoryLocationStock, original_stock.pk, quantity=Decimal('5'))
+        # Create a deliberately incomplete test-only destination, then corrupt
+        # its balances to mimic a privileged import, not an ordinary writer.
+        destination = corrupt_inventory_insert(InventoryLocationStock(binding=binding, location=self.other_location))
+        corrupt_inventory(InventoryLocationStock, destination.pk, quantity=Decimal('5'))
         with self.assertRaises(ValidationError) as error:
             self.issue(lot, location_id=self.other_location.pk, quantity='1')
         self.assertIn('inventory_reconciliation', error.exception.detail)

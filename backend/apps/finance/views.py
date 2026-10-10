@@ -559,7 +559,15 @@ class SharedExpenseViewSet(viewsets.ModelViewSet):
         project_shared_expense(expense, user=self.request.user)
 
 
-class SharedConsumableLotViewSet(viewsets.ModelViewSet):
+class InventoryMutationGuardMixin:
+    """Return a reviewable 400 when a model writer refuses managed stock edits."""
+    def handle_exception(self, exc):
+        if isinstance(exc, DjangoValidationError):
+            exc = ValidationError(getattr(exc, "message_dict", {"inventory": exc.messages}))
+        return super().handle_exception(exc)
+
+
+class SharedConsumableLotViewSet(InventoryMutationGuardMixin, viewsets.ModelViewSet):
     serializer_class = SharedConsumableLotSerializer
     permission_classes = (FinancePermission,)
     queryset = SharedConsumableLot.objects.select_related(
@@ -576,7 +584,7 @@ class SharedConsumableLotViewSet(viewsets.ModelViewSet):
             raise ValidationError({"detail": str(error)}) from error
 
 
-class ConsumableItemViewSet(viewsets.ModelViewSet):
+class ConsumableItemViewSet(InventoryMutationGuardMixin, viewsets.ModelViewSet):
     serializer_class = ConsumableItemSerializer
     permission_classes = (FinancePermission,)
     queryset = ConsumableItem.objects.all()
@@ -596,6 +604,7 @@ class StockMovementViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, vie
 
 
 class ConsumableUsageViewSet(
+    InventoryMutationGuardMixin,
     mixins.CreateModelMixin,
     mixins.ListModelMixin,
     mixins.RetrieveModelMixin,

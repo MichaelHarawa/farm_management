@@ -20,6 +20,7 @@ from .financial_values import business_date, exact_decimal, lock_financial_perio
 from .inventory_capture import (_advance, _day, _item, _location, _movement, _pool,
     _required_text, stock_quantity, ZERO, CENT)
 from .ledger import post_journal
+from .inventory_guards import inventory_posting_boundary
 
 
 def _stock(lot_id, day, location_ids):
@@ -74,6 +75,7 @@ def record_inventory_return(*, submission_id, user, original_issue_id, location_
     quantity = stock_quantity(quantity)
     reason = _required_text(reason, "reason", 255)
 
+    @inventory_posting_boundary()
     def effect(actor):
         lock_financial_periods(movement_date)
         original = StockMovement.objects.select_related("usage").filter(pk=original_issue_id,
@@ -143,6 +145,7 @@ def record_inventory_transfer(*, submission_id, user, lot_id, from_location_id, 
     quantity = stock_quantity(quantity)
     reason = _required_text(reason, "reason", 255)
 
+    @inventory_posting_boundary()
     def effect(actor):
         lock_financial_periods(movement_date)
         binding, item, pool, lot, locations = _stock(lot_id, movement_date, [from_location_id, to_location_id])
@@ -183,6 +186,7 @@ def _loss(*, submission_id, user, lot_id, location_id, movement_date, quantity, 
         counted_quantity = exact_decimal(counted_quantity, scale=4, max_digits=14, field="counted_quantity")
         expected_revision = _identifier(expected_revision, "expected_revision")
 
+    @inventory_posting_boundary()
     def effect(actor):
         lock_financial_periods(movement_date)
         binding, item, pool, lot, locations = _stock(lot_id, movement_date, [location_id])

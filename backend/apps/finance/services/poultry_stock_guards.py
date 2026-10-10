@@ -26,6 +26,8 @@ def guard_queryset(queryset, fields=(), *, deleting=False):
         field = {"poultry.feedusage": "feed_id", "poultry.drugsvaccination": "treatment_id",
                  "finance.consumableusage": "usage_id"}[label]
         protected = deleting or label != "poultry.feedusage" or bool(fields - DERIVED_FEED_FIELDS)
+        if label == "finance.consumableusage":
+            protected = deleting or bool(fields - {"locked", "updated_at"})
         linked = protected and PoultryStockConsumption.objects.filter(**{f"{field}__in": ids}).exists()
     if linked:
         raise ValidationError("Stock-backed consumption evidence/units are immutable; use a controlled linked correction.")

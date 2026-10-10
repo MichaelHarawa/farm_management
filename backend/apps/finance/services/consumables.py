@@ -17,6 +17,7 @@ from ..models import (
     StockMovementType,
 )
 from .ledger import post_journal
+from .financial_values import lock_financial_periods
 
 
 def _item_for_lot(lot: SharedConsumableLot) -> ConsumableItem:
@@ -37,6 +38,10 @@ def _location_for_lot(lot: SharedConsumableLot) -> InventoryLocation:
 
 @transaction.atomic
 def record_consumable_receipt(*, created_by=None, **data) -> SharedConsumableLot:
+    # Period before item/lot, matching the managed workflow. The journal already
+    # required this open dated period; checking early prevents an item->period
+    # inversion when legacy receipt and first managed purchase compete.
+    lock_financial_periods(data['purchase_date'])
     # Existing movement table is available before the additive Phase6 schema.
     # Do not create parallel legacy stock after this item enters managed costing.
     sku = "ITEM-" + "-".join(data["item"].upper().split())[:32]
@@ -78,6 +83,7 @@ def record_consumable_usage(*, recorded_by=None, **data) -> ConsumableUsage:
     period: AccountingPeriod = data["accounting_period"]
     if period.status == PeriodStatus.CLOSED:
         raise ValueError("Closed accounting periods cannot receive consumable usage.")
+    lock_financial_periods(data['usage_date'])
 
     lot = SharedConsumableLot.objects.select_for_update().get(
         pk=data["consumable_lot"].pk

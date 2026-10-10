@@ -13,6 +13,8 @@ from django.utils import timezone
 from apps.poultry.models import Batch
 from .services.poultry_stock_guards import PoultryProtectedQuerySet, stock_save_boundary
 from .services.funding_receipt_guards import FundingProtectedQuerySet, funding_save_boundary, guard_funding_queryset
+from .services.inventory_guards import (InventoryProtectedModel, InventoryProtectedQuerySet,
+    InventoryStateModel, InventoryStateQuerySet, guard_new_movement, require_inventory_posting)
 
 
 MONEY_VALIDATOR = MinValueValidator(Decimal("0.00"))
@@ -890,7 +892,8 @@ class BirdDaySnapshot(TimestampedModel):
         return f"{self.batch} bird-days for {self.accounting_period}"
 
 
-class SharedConsumableLot(DollarReferenceMixin, TimestampedModel):
+class SharedConsumableLot(DollarReferenceMixin, InventoryProtectedModel, TimestampedModel):
+    objects = InventoryProtectedQuerySet.as_manager()
     item = models.CharField(max_length=160)
     category = models.CharField(max_length=120)
     purchase_date = models.DateField(db_index=True)
@@ -989,8 +992,8 @@ class SharedConsumableLot(DollarReferenceMixin, TimestampedModel):
         super().save(*args, **kwargs)
 
 
-class ConsumableUsage(TimestampedModel):
-    objects = PoultryProtectedQuerySet.as_manager()
+class ConsumableUsage(InventoryProtectedModel, TimestampedModel):
+    objects = InventoryProtectedQuerySet.as_manager()
     consumable_lot = models.ForeignKey(
         SharedConsumableLot,
         on_delete=models.PROTECT,
@@ -3368,8 +3371,8 @@ class StockMovementType(models.TextChoices):
     ADJUSTMENT = "adjustment", "Adjustment"
 
 
-class ConsumableItem(TimestampedModel):
-    objects = PoultryProtectedQuerySet.as_manager()
+class ConsumableItem(InventoryProtectedModel, TimestampedModel):
+    objects = InventoryProtectedQuerySet.as_manager()
     sku = models.CharField(max_length=40, unique=True)
     name = models.CharField(max_length=160)
     category = models.CharField(max_length=80)
@@ -3434,6 +3437,9 @@ class StockMovementQuerySet(models.QuerySet):
     def delete(self):
         raise ValidationError("Stock movements are immutable; post a correcting movement.")
 
+    def _raw_delete(self, using):
+        raise ValidationError("Stock movements are immutable; post a correcting movement.")
+
 
 class StockMovement(TimestampedModel):
     movement_type = models.CharField(max_length=20, choices=StockMovementType.choices, db_index=True)
@@ -3488,8 +3494,18 @@ class StockMovement(TimestampedModel):
     def delete(self, *args, **kwargs):
         raise ValidationError("Stock movements are immutable; post a correcting movement.")
 
+    def save_base(self, *args, **kwargs):
+        if (not self._state.adding or kwargs.get("raw") or kwargs.get("force_update")
+                or kwargs.get("update_fields") is not None):
+            raise ValidationError("Stock movements are immutable; post a correcting movement.")
+        from django.db import transaction
+        with transaction.atomic():
+            guard_new_movement(self)
+            kwargs["force_insert"] = True
+            return super().save_base(*args, **kwargs)
 
-class InventoryValuePool(TimestampedModel):
+
+class InventoryValuePool(InventoryStateModel, TimestampedModel):
     """Moving weighted-average value for explicitly managed, reconciled stock.
 
     No automatic opening balance or historical lot import. Old lots keep their
@@ -3500,6 +3516,7 @@ class InventoryValuePool(TimestampedModel):
     carrying_value = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal("0.00"))
     last_movement_date = models.DateField()
     revision = models.PositiveBigIntegerField(default=1)
+    objects = InventoryStateQuerySet.as_manager()
 
     class Meta:
         constraints = [
@@ -3509,18 +3526,26 @@ class InventoryValuePool(TimestampedModel):
         ]
 
 
-class InventoryLotBinding(TimestampedModel):
+class InventoryLotBinding(InventoryStateModel, TimestampedModel):
     """Explicit new lot -> item and one inventory purchase payable; no guessing."""
     lot = models.OneToOneField(SharedConsumableLot, on_delete=models.PROTECT, related_name="inventory_binding")
     item = models.ForeignKey(ConsumableItem, on_delete=models.PROTECT, related_name="inventory_lots")
     expenditure = models.OneToOneField(Expenditure, on_delete=models.PROTECT, related_name="inventory_lot")
     invoice_key = models.CharField(max_length=64, unique=True, null=True, blank=True, default=None)
+    objects = StockMovementQuerySet.as_manager()
+
+    def save_base(self, *args, **kwargs):
+        if not self._state.adding or kwargs.get("force_update") or kwargs.get("update_fields") is not None:
+            raise ValidationError("Inventory lot/item/payable bindings are immutable.")
+        kwargs["force_insert"] = True
+        return super().save_base(*args, **kwargs)
 
 
-class InventoryLocationStock(TimestampedModel):
+class InventoryLocationStock(InventoryStateModel, TimestampedModel):
     binding = models.ForeignKey(InventoryLotBinding, on_delete=models.PROTECT, related_name="location_stock")
     location = models.ForeignKey(InventoryLocation, on_delete=models.PROTECT, related_name="lot_stock")
     quantity = models.DecimalField(max_digits=14, decimal_places=4, default=Decimal("0.0000"))
+    objects = InventoryStateQuerySet.as_manager()
 
     class Meta:
         constraints = [
@@ -3587,6 +3612,15 @@ class InventoryMovementEvidence(TimestampedModel):
 
     def delete(self, *args, **kwargs):
         raise ValidationError("Inventory correction evidence is immutable.")
+
+    def save_base(self, *args, **kwargs):
+        require_inventory_posting()
+        if (not self._state.adding or kwargs.get("raw") or kwargs.get("force_update")
+                or kwargs.get("update_fields") is not None):
+            raise ValidationError("Inventory correction evidence is immutable.")
+        self.full_clean()
+        kwargs["force_insert"] = True
+        return super().save_base(*args, **kwargs)
 
 
 class PoultryStockKind(models.TextChoices):

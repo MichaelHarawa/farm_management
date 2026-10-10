@@ -26,6 +26,7 @@ from .expenditures import post_expenditure, record_expenditure_payment
 from .financial_capture import _currency, _funding_rows, _identifier, _submission, _text
 from .financial_values import business_date, exact_decimal, lock_financial_periods
 from .ledger import post_journal
+from .inventory_guards import inventory_posting_boundary
 
 ZERO = Decimal("0.00")
 CENT = Decimal("0.01")
@@ -69,6 +70,8 @@ def _pool(item, day, *, create=False):
     # The item row is the mutex before a pool exists. Legacy SKU derivation is
     # used only to REFUSE an unresolved overlap, never to bind/import old rows.
     pool = InventoryValuePool.objects.select_for_update().filter(item=item).first()
+    if StockMovement.objects.filter(item=item).exclude(idempotency_key__startswith="inventory-").exists():
+        raise ValidationError({"legacy_reconciliation": "Existing ordinary movements for this item require explicit reconciliation, not automatic adoption."})
     legacy = SharedConsumableLot.objects.filter(inventory_binding__isnull=True)
     if any(lot.item.casefold() == item.name.casefold() or
            ("ITEM-" + "-".join(lot.item.upper().split())[:32]) == item.sku for lot in legacy.iterator()):
@@ -148,6 +151,7 @@ def _movement(*, kind, day, item, lot, quantity, cost, key, user, usage=None,
     return movement
 
 
+@inventory_posting_boundary()
 def _sync_lot_payment(lot, expenditure):
     # The payable/payment ledger is the authority; never treat a dropdown as cash.
     lot.payment_status = {ExpenditurePaymentStatus.PAID: FinancePaymentStatus.PAID,
@@ -205,6 +209,7 @@ def record_inventory_purchase(*, submission_id, user, currency, item_id, locatio
     elif payment_date is not None:
         raise ValidationError({"payment_date": "A date without actual funding/payment evidence is not paid status."})
 
+    @inventory_posting_boundary()
     def effect(actor):
         periods = lock_financial_periods(purchase_date, *([payment_date] if funding_allocations else []))
         _claim_invoice(invoice_key)
@@ -287,6 +292,7 @@ def record_inventory_issue(*, submission_id, user, lot_id, location_id, usage_da
     return ConsumableUsage.objects.get(pk=result["usage_id"]), created
 
 
+@inventory_posting_boundary()
 def _issue_effect(*, actor, submission_id, lot_id, location_id, usage_date, quantity,
                   task_or_purpose, batch_id, usage_scope):
     """Validated issue effect; call only inside a permanent submission boundary.

@@ -26,6 +26,7 @@ from apps.finance.services.reporting import monthly_profitability_report
 from apps.poultry.models import BatchStatus, InputCosts
 from .test_financial_capture import fixture, instant
 from apps.finance.services.consumables import record_consumable_usage, record_consumable_receipt
+from .inventory_corruption import corrupt_inventory, corrupt_inventory_insert
 
 
 def inventory_fixture(test):
@@ -221,19 +222,20 @@ class InventoryCaptureTests(TestCase):
         for change in [{'quantity': '10.0001'}, {'location_id': wrong.pk}]:
             with self.subTest(change=change), self.assertRaises(ValidationError):
                 record_inventory_issue(**{**issue(self, lot), **change})
-        SharedConsumableLot.objects.filter(pk=lot.pk).update(quantity_available=Decimal('9.0000'))
+        corrupt_inventory(SharedConsumableLot, lot.pk, quantity_available=Decimal('9.0000'))
         with self.assertRaises(ValidationError):
             record_inventory_issue(**issue(self, lot))
         self.assertFalse(ConsumableUsage.objects.exists())
 
     def test_tampered_carrying_value_or_recognized_cost_is_not_silently_repriced(self):
         lot, _ = record_inventory_purchase(**purchase(self))
-        InventoryValuePool.objects.filter(item=self.item).update(carrying_value=Decimal('101.00'))
+        pool = InventoryValuePool.objects.get(item=self.item)
+        corrupt_inventory(InventoryValuePool, pool.pk, carrying_value=Decimal('101.00'))
         with self.assertRaises(ValidationError):
             record_inventory_issue(**issue(self, lot))
-        InventoryValuePool.objects.filter(item=self.item).update(carrying_value=Decimal('100.00'))
+        corrupt_inventory(InventoryValuePool, pool.pk, carrying_value=Decimal('100.00'))
         usage, _ = record_inventory_issue(**issue(self, lot))
-        ConsumableUsage.objects.filter(pk=usage.pk).update(recognized_cost=Decimal('21.00'))
+        corrupt_inventory(ConsumableUsage, usage.pk, recognized_cost=Decimal('21.00'))
         with self.assertRaises(ValidationError):
             record_inventory_issue(**issue(self, lot))
         self.assertEqual(ConsumableUsage.objects.count(), 1)
@@ -247,7 +249,9 @@ class InventoryCaptureTests(TestCase):
             record_inventory_purchase(**purchase(self))
         legacy.delete()
         lot, _ = record_inventory_purchase(**purchase(self))
-        legacy = SharedConsumableLot.objects.create(**data)
+        with self.assertRaises(DjangoValidationError):
+            SharedConsumableLot.objects.create(**data)
+        legacy = corrupt_inventory_insert(SharedConsumableLot(**data))
         with self.assertRaises(ValidationError):
             record_inventory_issue(**issue(self, lot))
         with self.assertRaises(ValidationError):
@@ -338,7 +342,7 @@ class InventoryCaptureTests(TestCase):
         movement._state.adding = True
         with self.assertRaises(DjangoValidationError):
             movement.save(force_update=True)
-        with self.assertRaises(IntegrityError), transaction.atomic():
+        with self.assertRaises(DjangoValidationError), transaction.atomic():
             movement.save()
 
     def test_purchase_input_never_accepts_float_rounding_or_fictional_payment(self):

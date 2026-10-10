@@ -170,6 +170,16 @@ class SharedConsumableLotAdmin(admin.ModelAdmin):
     search_fields = ("item", "supplier", "invoice_reference")
     autocomplete_fields = ("linked_expense", "created_by")
 
+    def has_change_permission(self, request, obj=None):
+        if obj and obj.movements.filter(idempotency_key__startswith="inventory-receipt:").exists():
+            return False
+        return super().has_change_permission(request, obj)
+
+    def has_delete_permission(self, request, obj=None):
+        if obj and obj.movements.filter(idempotency_key__startswith="inventory-receipt:").exists():
+            return False
+        return super().has_delete_permission(request, obj)
+
 
 @admin.register(ConsumableUsage)
 class ConsumableUsageAdmin(admin.ModelAdmin):
@@ -190,6 +200,20 @@ class ConsumableUsageAdmin(admin.ModelAdmin):
         "recorded_by",
         "approved_by",
     )
+
+    def has_change_permission(self, request, obj=None):
+        if obj:
+            from .models import StockMovement
+            if StockMovement.objects.filter(usage=obj, idempotency_key__startswith="inventory-issue:").exists():
+                return False
+        return super().has_change_permission(request, obj)
+
+    def has_delete_permission(self, request, obj=None):
+        if obj:
+            from .models import StockMovement
+            if StockMovement.objects.filter(usage=obj, idempotency_key__startswith="inventory-issue:").exists():
+                return False
+        return super().has_delete_permission(request, obj)
 
 
 @admin.register(ExpenseRecognitionSchedule)

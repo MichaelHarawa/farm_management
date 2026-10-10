@@ -57,6 +57,18 @@ class PoultryStockCaptureTests(TestCase):
             PoultryStockConsumption, StockMovement, JournalEntry, FinancialCommandReceipt, Expenditure,
             CostAllocation, InputCosts])
 
+    def test_linked_usage_period_lock_unlock_preserves_cost_and_consumption(self):
+        link = record_stock_backed_feed(**feed(self))[0]
+        before = (link.usage.recognized_cost, self.counts())
+        ConsumableUsage.objects.filter(pk=link.usage_id).update(locked=True)
+        link.usage.refresh_from_db()
+        self.assertTrue(link.usage.locked)
+        link.usage.locked = False
+        link.usage.save(update_fields=['locked', 'updated_at'])
+        link.usage.refresh_from_db()
+        self.assertEqual((link.usage.recognized_cost, self.counts()), before)
+        self.assertFalse(link.usage.locked)
+
     def test_twenty_feed_retries_one_observation_issue_cost_receipt_and_exact_hash(self):
         payload = feed(self)
         before = self.counts()
