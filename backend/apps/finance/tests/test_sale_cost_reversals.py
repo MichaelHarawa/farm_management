@@ -229,7 +229,9 @@ class SaleCostRefundTests(TestCase):
         with self.assertRaises(ValidationError):
             refund_sale_cost_payment(**request)
         corrupt_fixture(SaleCostPayment, self.payments[0].pk, "payee", "Synthetic transporter")
-        SaleSellingCost.objects.filter(pk=self.cost.pk).update(notes="Changed original economic evidence")
+        with self.assertRaises(DjangoValidationError):
+            SaleSellingCost.objects.filter(pk=self.cost.pk).update(notes="Changed original economic evidence")
+        corrupt_fixture(SaleSellingCost, self.cost.pk, "notes", "Changed original economic evidence")
         with self.assertRaises(ValidationError):
             refund_sale_cost_payment(**request)
 
@@ -262,7 +264,9 @@ class SaleCostRefundTests(TestCase):
             refund_sale_cost_payment(**refund_payload(self))
 
     def test_sale_cancellation_refused(self):
-        Sales.objects.filter(pk=self.sale.pk).update(payment_status="cancelled")
+        with self.assertRaises(DjangoValidationError):
+            Sales.objects.filter(pk=self.sale.pk).update(payment_status="cancelled")
+        corrupt_fixture(Sales, self.sale.pk, "payment_status", "cancelled")
         with self.assertRaises(ValidationError):
             refund_sale_cost_payment(**refund_payload(self))
 

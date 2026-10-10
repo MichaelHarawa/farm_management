@@ -133,3 +133,13 @@
 {"at":"2026-10-09T13:45:43.219318+00:00","route_kind":"changes","http_status":200}
 {"at":"2026-10-09T13:45:44.222162+00:00","route_kind":"changes","http_status":200}
 {"at":"2026-10-09T13:52:05.205815+00:00","route_kind":"current_user","http_status":200}
+{"at":"2026-10-10T11:31:35.890546+00:00","route_kind":"refresh","http_status":200}
+{"at":"2026-10-10T11:31:35.980556+00:00","route_kind":"current_user","http_status":200}
+{"at":"2026-10-10T11:31:36.024623+00:00","route_kind":"capabilities","http_status":200}
+{"at":"2026-10-10T11:31:36.145049+00:00","route_kind":"changes","http_status":200}
+{"at":"2026-10-10T11:31:36.265260+00:00","route_kind":"changes","http_status":200}
+{"at":"2026-10-10T11:31:36.348252+00:00","route_kind":"changes","http_status":200}
+{"at":"2026-10-10T11:33:11.256369+00:00","route_kind":"current_user","http_status":200}
+{"at":"2026-10-10T11:33:11.301614+00:00","route_kind":"capabilities","http_status":200}
+{"at":"2026-10-10T11:33:11.380269+00:00","route_kind":"changes","http_status":200}
+{"at":"2026-10-10T11:33:11.452135+00:00","route_kind":"changes","http_status":200}

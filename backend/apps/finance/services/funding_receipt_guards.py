@@ -53,6 +53,11 @@ def guard_funding_queryset(queryset, fields=(), *, deleting=False):
         from ..models import FundingReceipt
         protected = _managed(FundingReceipt.objects.filter(funding_source_id__in=queryset.values("pk"))).exists()
         if not protected:
+            from apps.poultry.models import Sales
+            from .sale_guards import managed_sales
+            protected = queryset.filter(source_type="batch_collection", batch_id__in=
+                managed_sales(Sales.objects.using(queryset.db).all()).values("batch_id")).exists()
+        if not protected:
             from ..models import JournalLine
             protected = JournalLine.objects.filter(funding_source_id__in=queryset.values("pk"),
                 journal_entry__source_model="finance.SaleCostPayment",
@@ -79,6 +84,8 @@ class FundingProtectedQuerySet(models.QuerySet):
     def bulk_create(self, objs, **kwargs):
         objs = tuple(objs)
         if self.model._meta.model_name != "fundingreceipt":
+            if kwargs.get("update_conflicts"):
+                raise ValidationError("Funding-source upserts cannot bypass economic-binding review.")
             return super().bulk_create(objs, **kwargs)
         with transaction.atomic():
             if any((obj.idempotency_key or "").startswith(MANAGED_PREFIX) for obj in objs):

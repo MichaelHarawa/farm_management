@@ -15,6 +15,8 @@ from .services.poultry_stock_guards import PoultryProtectedQuerySet, stock_save_
 from .services.funding_receipt_guards import FundingProtectedQuerySet, funding_save_boundary, guard_funding_queryset
 from .services.inventory_guards import (InventoryProtectedModel, InventoryProtectedQuerySet,
     InventoryStateModel, InventoryStateQuerySet, guard_new_movement, require_inventory_posting)
+from .services.sale_guards import (SaleEvidenceQuerySet, SaleFinancialProtectedModel,
+    SaleJournalQuerySet, SaleJournalProtectedModel)
 
 
 MONEY_VALIDATOR = MinValueValidator(Decimal("0.00"))
@@ -3042,8 +3044,10 @@ class SalePaymentStatus(models.TextChoices):
     REVERSED = "reversed", "Reversed"
 
 
-class SalePayment(TimestampedModel):
+class SalePayment(SaleFinancialProtectedModel, TimestampedModel):
     """Immutable receipt ledger for a poultry sale; reversals preserve the row."""
+
+    objects = SaleEvidenceQuerySet.as_manager()
 
     sale = models.ForeignKey(
         "poultry.Sales",
@@ -3166,7 +3170,8 @@ class CashOrBankAccount(TimestampedModel):
     is_active = models.BooleanField(default=True, db_index=True)
 
 
-class JournalEntry(TimestampedModel):
+class JournalEntry(SaleJournalProtectedModel, TimestampedModel):
+    objects = SaleJournalQuerySet.as_manager()
     reference = models.CharField(max_length=40, unique=True, db_index=True)
     posting_date = models.DateField(db_index=True)
     accounting_period = models.ForeignKey(
@@ -3246,7 +3251,8 @@ class JournalEntry(TimestampedModel):
         return super().delete(*args, **kwargs)
 
 
-class JournalLine(TimestampedModel):
+class JournalLine(SaleJournalProtectedModel, TimestampedModel):
+    objects = SaleJournalQuerySet.as_manager()
     journal_entry = models.ForeignKey(
         JournalEntry, on_delete=models.PROTECT, related_name="lines"
     )

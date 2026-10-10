@@ -137,6 +137,9 @@ def post_journal(
 
 @transaction.atomic
 def reverse_journal(entry: JournalEntry, *, posting_date, reason: str, user=None):
+    from .sale_guards import is_managed_sale_journal
+    if is_managed_sale_journal(entry.pk):
+        raise ValidationError("Posted sale/cash journals require a controlled source-linked correction.")
     from .inventory_guards import is_managed_inventory_journal
     if is_managed_inventory_journal(entry.pk):
         raise ValidationError("Managed inventory journals require a controlled source-linked stock correction.")

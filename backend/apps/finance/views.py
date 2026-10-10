@@ -1014,11 +1014,14 @@ class SalePaymentsView(APIView):
     def post(self, request, sale_id: int):
         serializer = RecordSalePaymentSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        payment, created = record_sale_payment(
-            sale_id=sale_id,
-            created_by=request.user,
-            **serializer.validated_data,
-        )
+        try:
+            payment, created = record_sale_payment(
+                sale_id=sale_id,
+                created_by=request.user,
+                **serializer.validated_data,
+            )
+        except DjangoValidationError as error:
+            raise ValidationError({"sale": error.messages}) from error
         payment = SalePayment.objects.select_related(
             "sale__batch", "created_by", "reversed_by"
         ).get(pk=payment.pk)
@@ -1032,11 +1035,14 @@ class SalePaymentReverseView(APIView):
     permission_classes = (FinancePermission,)
 
     def post(self, request, payment_id: int):
-        payment = reverse_sale_payment(
-            payment_id=payment_id,
-            reason=request.data.get("reason", ""),
-            reversed_by=request.user,
-        )
+        try:
+            payment = reverse_sale_payment(
+                payment_id=payment_id,
+                reason=request.data.get("reason", ""),
+                reversed_by=request.user,
+            )
+        except DjangoValidationError as error:
+            raise ValidationError({"payment": error.messages}) from error
         payment = SalePayment.objects.select_related(
             "sale__batch", "created_by", "reversed_by"
         ).get(pk=payment.pk)

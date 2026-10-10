@@ -9,6 +9,8 @@ from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models, transaction
 from django.utils import timezone
 from apps.mobile_sync.writers import SyncTrackedModel, guarded_model_write
+from apps.finance.services.sale_guards import (FinancialSaleQuerySet, SaleEvidenceQuerySet,
+    SaleFinancialProtectedModel)
 
 
 MONEY_VALIDATOR = MinValueValidator(Decimal("0.00"))
@@ -353,7 +355,8 @@ class InputCosts(models.Model):
         super().save(*args, **kwargs)
 
 
-class Sales(SyncTrackedModel):
+class Sales(SaleFinancialProtectedModel, SyncTrackedModel):
+    objects = FinancialSaleQuerySet.as_manager()
     batch = models.ForeignKey(
     Batch,
     on_delete=models.CASCADE,
@@ -570,12 +573,14 @@ class SaleSellingCostCategory(models.TextChoices):
     OTHER = "other", "Other selling cost"
 
 
-class SaleSellingCost(models.Model):
+class SaleSellingCost(SaleFinancialProtectedModel):
     """A cost incurred specifically to complete one recorded sale.
 
     These rows are management-cost evidence attached to the sale. They are not
     customer master records and they do not create or imply a second sale.
     """
+
+    objects = SaleEvidenceQuerySet.as_manager()
 
     sale = models.ForeignKey(
         Sales,

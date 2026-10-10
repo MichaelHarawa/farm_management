@@ -1,4 +1,4 @@
-"""Explicit privileged-SQL corruption for reconciliation tests, never a writer.
+"""Explicit privileged-SQL corruption for stock/finance tests, never a writer.
 
 Application edits must now refuse these mutations. Keep the independent
 reconciliation tests by injecting damage only into an owned disposable test DB.

@@ -12,7 +12,7 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 
 from apps.finance.models import (AccountingPeriod, ChartOfAccount, CostAllocation, Expenditure,
     FinanceActionEvent, FinancialCommandReceipt, FundingAllocation, FundingReceipt, FundingSource,
-    FundingSourceType, JournalEntry, PeriodStatus, SaleCostPayment)
+    FundingSourceType, JournalEntry, PeriodStatus, SaleCostPayment, SalePayment)
 from apps.finance.services.financial_capture import (record_financial_sale, record_financial_receipt,
     record_financial_expenditure, record_financial_supplier_payment)
 from apps.finance.services.ledger import trial_balance, reverse_journal
@@ -138,7 +138,8 @@ class SellingCostSettlementTests(TestCase):
     def test_alias_batch_sources_cannot_double_the_available_cash(self):
         alias = FundingSource.objects.create(source_type="batch_collection", batch=self.batch)
         # Reduce original collections to 50 only inside this owned fixture.
-        self.batch.sales_row.get().payments.update(amount="50.00")
+        from .inventory_corruption import corrupt_inventory
+        corrupt_inventory(SalePayment, self.batch.sales_row.get().payments.get().pk, amount="50.00")
         request = payment_payload(self)
         request["funding_allocations"] = [{"funding_source": self.source.pk, "amount": "40.00"},
                                          {"funding_source": alias.pk, "amount": "40.00"}]
@@ -176,7 +177,8 @@ class SellingCostSettlementTests(TestCase):
         self.assertEqual(SaleCostPayment.objects.count(), 0)
 
     def test_later_collection_cannot_fund_backdated_payment(self):
-        self.batch.sales_row.get().payments.update(payment_date=instant(day=25))
+        from .inventory_corruption import corrupt_inventory
+        corrupt_inventory(SalePayment, self.batch.sales_row.get().payments.get().pk, payment_date=instant(day=25))
         self.assertEqual(available_batch_cash(self.batch), Decimal("200.00"))
         with self.assertRaises(ValidationError):
             record_sale_cost_payment(**payment_payload(self))
@@ -219,16 +221,19 @@ class SellingCostSettlementTests(TestCase):
                 self.assertEqual(available_batch_cash(self.batch), Decimal("200.00"))
 
     def test_original_cost_and_sale_economics_mutation_require_review_without_adoption(self):
+        from .inventory_corruption import corrupt_inventory
         for model, pk, field, original, changed in [
             (SaleSellingCost, self.cost.pk, "amount", self.cost.amount, Decimal("101.00")),
             (SaleSellingCost, self.cost.pk, "category", self.cost.category, "packaging"),
             (SaleSellingCost, self.cost.pk, "notes", self.cost.notes, "Changed"),
             (Sales, self.sale.pk, "sale_date", self.sale.sale_date, instant(day=21)),
             (Sales, self.sale.pk, "unit_price", self.sale.unit_price, Decimal("101.00"))]:
-            model.objects.filter(pk=pk).update(**{field: changed})
+            with self.assertRaises(DjangoValidationError):
+                model.objects.filter(pk=pk).update(**{field: changed})
+            corrupt_inventory(model, pk, **{field: changed})
             with self.subTest(field=field), self.assertRaises(ValidationError):
                 record_sale_cost_payment(**payment_payload(self))
-            model.objects.filter(pk=pk).update(**{field: original})
+            corrupt_inventory(model, pk, **{field: original})
         self.assertEqual(SaleCostPayment.objects.count(), 0)
 
     def test_derived_collection_updates_do_not_change_cost_authorization(self):
@@ -240,7 +245,8 @@ class SellingCostSettlementTests(TestCase):
     def test_cost_parent_rebinding_between_discovery_and_lock_is_refused(self):
         original_lock = Sales.objects.select_for_update
         def rebound(*args, **kwargs):
-            SaleSellingCost.objects.filter(pk=self.cost.pk).update(sale_id=self.batch.sales_row.get().pk)
+            from .inventory_corruption import corrupt_inventory
+            corrupt_inventory(SaleSellingCost, self.cost.pk, sale=self.batch.sales_row.get().pk)
             return original_lock(*args, **kwargs)
         with patch.object(Sales.objects, "select_for_update", side_effect=rebound), self.assertRaises(ValidationError):
             record_sale_cost_payment(**payment_payload(self))
@@ -251,7 +257,8 @@ class SellingCostSettlementTests(TestCase):
     def test_cash_source_rebinding_between_discovery_and_lock_is_refused(self):
         original_lock = FundingSource.objects.select_for_update
         def rebound(*args, **kwargs):
-            FundingSource.objects.filter(pk=self.source.pk).update(source_type="owner_capital", batch=None)
+            from .inventory_corruption import corrupt_inventory
+            corrupt_inventory(FundingSource, self.source.pk, source_type="owner_capital", batch=None)
             return original_lock(*args, **kwargs)
         with patch.object(FundingSource.objects, "select_for_update", side_effect=rebound), self.assertRaises(ValidationError):
             record_sale_cost_payment(**payment_payload(self))
@@ -272,7 +279,8 @@ class SellingCostSettlementTests(TestCase):
     def test_missing_or_reversed_liability_or_cancelled_sale_cannot_be_paid(self):
         journal = JournalEntry.objects.get(source_model="poultry.SaleSellingCost", source_identifier=str(self.cost.pk))
         # Pre-existing reversed liability fixture ONLY in the owned test DB.
-        JournalEntry.objects.filter(pk=journal.pk).update(status="reversed")
+        from .inventory_corruption import corrupt_inventory
+        corrupt_inventory(JournalEntry, journal.pk, status="reversed")
         with self.assertRaises(ValidationError):
             record_sale_cost_payment(**payment_payload(self))
         self.assertEqual(SaleCostPayment.objects.count(), 0)
@@ -302,7 +310,8 @@ class SellingCostSettlementTests(TestCase):
         self.assertEqual(Expenditure.objects.count(), 0)
 
     def test_cancelled_sale_is_refused_but_original_payable_remains_for_review(self):
-        Sales.objects.filter(pk=self.sale.pk).update(payment_status="cancelled")
+        from .inventory_corruption import corrupt_inventory
+        corrupt_inventory(Sales, self.sale.pk, payment_status="cancelled")
         with self.assertRaises(ValidationError):
             record_sale_cost_payment(**payment_payload(self))
         report = sale_cost_payable_summary(date(2026, 1, 31))
@@ -358,7 +367,7 @@ class SellingCostSettlementTests(TestCase):
                 lambda: SaleCostPayment.objects.bulk_create([row]), lambda: SaleCostPayment.objects.all().delete()]:
             with self.assertRaises(DjangoValidationError):
                 mutation()
-        with self.assertRaises(ProtectedError):
+        with self.assertRaises((ProtectedError, DjangoValidationError)):
             self.cost.delete()
 
     def test_monthly_payable_cash_and_cost_cutoffs_and_utilization_reconcile(self):
@@ -396,13 +405,16 @@ class SellingCostSettlementTests(TestCase):
 
     def test_mutated_cost_does_not_remove_original_journal_based_liability(self):
         record_sale_cost_payment(**payment_payload(self))
-        SaleSellingCost.objects.filter(pk=self.cost.pk).update(amount="1.00")
+        from .inventory_corruption import corrupt_inventory
+        corrupt_inventory(SaleSellingCost, self.cost.pk, amount="1.00")
         summary = sale_cost_payable_summary(date(2026, 1, 31))
         self.assertEqual((summary["total"], summary["review_required"]), (Decimal("40.00"), 1))
 
     def test_corrupt_payable_lines_are_not_authority_for_payment(self):
         journal = JournalEntry.objects.get(source_model="poultry.SaleSellingCost", source_identifier=str(self.cost.pk))
-        journal.lines.filter(account__code="2000").update(batch_id=self.batch.pk)
+        from .inventory_corruption import corrupt_inventory
+        line = journal.lines.get(account__code="2000")
+        corrupt_inventory(type(line), line.pk, batch=self.batch.pk)
         with self.assertRaises(ValidationError):
             record_sale_cost_payment(**payment_payload(self))
         self.assertEqual(SaleCostPayment.objects.count(), 0)

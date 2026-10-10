@@ -30,6 +30,7 @@ from .expenditures import post_expenditure, record_expenditure_payment, validate
 from .financial_values import business_date, exact_decimal, lock_financial_periods
 from .ledger import post_journal
 from .owner_capital import record_owner_contribution
+from .sale_guards import sale_posting_boundary
 
 
 def _canonical(value):
@@ -163,7 +164,33 @@ def _post_receipt(payment, actor):
         description=f"Collection of {payment.sale.sale_id}", source_model="finance.SalePayment",
         source_identifier=payment.pk, idempotency_key=f"sale-receipt:{payment.pk}", user=actor,
         lines=[{"account": "1000", "debit": payment.amount, "batch_id": payment.sale.batch_id},
-               {"account": "1100", "credit": payment.amount, "batch_id": payment.sale.batch_id}])
+                   {"account": "1100", "credit": payment.amount, "batch_id": payment.sale.batch_id}])
+
+
+def financial_sale_version(sale):
+    """Original source evidence, excluding the mutable collection summary."""
+    return checksum(_canonical({"basis": "phase6-financial-sale-v1", "sale": {
+        field.attname: getattr(sale, field.attname) for field in sale._meta.concrete_fields
+        if field.attname not in {"amount_paid", "balance", "payment_status", "updated_at"}}}))
+
+
+def _require_sale_receivable(sale):
+    """Refuse historical adoption or damaged controls, not backfill them."""
+    journal = JournalEntry.objects.filter(source_model="poultry.Sales", source_identifier=str(sale.pk),
+        idempotency_key=f"financial-sale:{sale.pk}", status=JournalStatus.POSTED,
+        posting_date=business_date(sale.sale_date)).first()
+    if journal is not None:
+        anchors = FinancialCommandReceipt.objects.filter(command="poultry.sale.record", completed_at__isnull=False,
+            result__sale_id=str(sale.pk)).values_list("result", flat=True)
+        anchored = any(isinstance(result, dict) and isinstance(result.get("journal_ids"), list)
+            and result.get("sale_version") == financial_sale_version(sale)
+            and str(journal.pk) in result["journal_ids"] for result in anchors)
+        actual = sorted(journal.lines.values_list("account__code", "debit", "credit", "batch_id", "funding_source_id"))
+        expected = [("1100", sale.sale_total, Decimal("0.00"), sale.batch_id, None),
+                    ("4000", Decimal("0.00"), sale.sale_total, sale.batch_id, None)]
+        if anchored and actual == expected and sale.payment_status != PaymentStatus.CANCELLED:
+            return
+    raise ValidationError({"sale": "Original versioned sale/receivable evidence does not match; legacy reconciliation or controlled review is required."})
 
 
 def record_financial_sale(*, submission_id, user, currency, batch_id, sale_date, product_type,
@@ -217,10 +244,12 @@ def record_financial_sale(*, submission_id, user, currency, batch_id, sale_date,
             payment, _ = record_sale_payment(sale_id=sale.pk, **receipt, created_by=actor,
                 idempotency_key=f"sale-initial:{submission_id}")
             journals.append(_post_receipt(payment, actor))
-        return {"sale_id": str(sale.pk), "payment_id": str(payment.pk) if payment else None,
+        return {"sale_id": str(sale.pk), "sale_version": financial_sale_version(sale),
+                "payment_id": str(payment.pk) if payment else None,
                 "journal_ids": [str(entry.pk) for entry in journals], "selling_cost_versions": cost_versions}
     result, created = _submission(submission_id=submission_id, command="poultry.sale.record", user=user,
-        payload={"currency": currency, **sale_data, "initial_receipt": receipt}, roles=FINANCE_WRITE_ROLES, effect=effect)
+        payload={"currency": currency, **sale_data, "initial_receipt": receipt}, roles=FINANCE_WRITE_ROLES,
+        effect=sale_posting_boundary()(effect))
     return Sales.objects.get(pk=result["sale_id"]), created
 
 
@@ -230,6 +259,8 @@ def record_financial_receipt(*, submission_id, user, currency, sale_id, **receip
     receipt = _receipt_payload(receipt)
     def effect(actor):
         lock_financial_periods(receipt["payment_date"], field="payment_date")
+        sale = Sales.objects.select_for_update().get(pk=sale_id)
+        _require_sale_receivable(sale)
         payment, _ = record_sale_payment(sale_id=sale_id, **receipt, created_by=actor,
             idempotency_key=f"financial-receipt:{submission_id}")
         if payment.payment_date < payment.sale.sale_date:
@@ -237,7 +268,8 @@ def record_financial_receipt(*, submission_id, user, currency, sale_id, **receip
         journal = _post_receipt(payment, actor)
         return {"payment_id": str(payment.pk), "journal_id": str(journal.pk)}
     result, created = _submission(submission_id=submission_id, command="finance.sale_receipt.record", user=user,
-        payload={"currency": currency, "sale_id": str(sale_id), **receipt}, roles=FINANCE_WRITE_ROLES, effect=effect)
+        payload={"currency": currency, "sale_id": str(sale_id), **receipt}, roles=FINANCE_WRITE_ROLES,
+        effect=sale_posting_boundary()(effect))
     return SalePayment.objects.get(pk=result["payment_id"]), created
 
 

@@ -137,7 +137,14 @@ class FinancialCaptureTests(TestCase):
         self.assertEqual(SalePayment.objects.count(), 1)
 
     def test_shared_receipt_replay_detects_amount_date_and_evidence_changes(self):
-        sale, _ = record_financial_sale(**sale_payload(self))
+        # Verify the legacy shared-service contract, not a journaled Phase6 sale.
+        from apps.poultry.services.batch_lifecycle import create_sale_with_lifecycle
+        data = sale_payload(self)
+        for field in ['submission_id', 'currency', 'user']:
+            data.pop(field)
+        data['unit_price'] = Decimal(data['unit_price'])
+        sale = create_sale_with_lifecycle(created_by=self.user, amount_paid=Decimal('0'),
+            payment_status='unpaid', payment_method='cash', **data)
         payload = dict(sale_id=sale.pk, amount=Decimal("50.00"), payment_date=instant(),
             payment_method="cash", created_by=self.user, idempotency_key="shared-receipt-proof")
         original, _ = record_sale_payment(**payload)

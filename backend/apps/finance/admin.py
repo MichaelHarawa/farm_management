@@ -425,3 +425,15 @@ class SalePaymentAdmin(admin.ModelAdmin):
         "created_by", "created_at", "updated_at", "reversed_at", "reversed_by",
         "reversal_reason",
     )
+
+    def has_change_permission(self, request, obj=None):
+        from .services.sale_guards import protected_sale_rows
+        if obj and protected_sale_rows(SalePayment.objects.filter(pk=obj.pk)):
+            return False
+        return super().has_change_permission(request, obj)
+
+    def has_delete_permission(self, request, obj=None):
+        from .services.sale_guards import protected_sale_rows
+        if obj and protected_sale_rows(SalePayment.objects.filter(pk=obj.pk)):
+            return False
+        return super().has_delete_permission(request, obj)

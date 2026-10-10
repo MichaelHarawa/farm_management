@@ -1,5 +1,7 @@
 from django.contrib import admin
+from django import forms
 from apps.mobile_sync.writers import capture_enabled
+from apps.finance.services.sale_guards import protected_sale_rows, managed_sales
 
 from .models import (
     Batch,
@@ -45,8 +47,20 @@ class InputCostsAdmin(admin.ModelAdmin):
     autocomplete_fields = ("batch", "created_by")
 
 
+class FinancialSaleReadOnlyAdmin:
+    def has_change_permission(self, request, obj=None):
+        if obj and protected_sale_rows(type(obj).objects.filter(pk=obj.pk)):
+            return False
+        return super().has_change_permission(request, obj)
+
+    def has_delete_permission(self, request, obj=None):
+        if obj and protected_sale_rows(type(obj).objects.filter(pk=obj.pk)):
+            return False
+        return super().has_delete_permission(request, obj)
+
+
 @admin.register(Sales)
-class SalesAdmin(PublishedReadOnlyAdmin):
+class SalesAdmin(FinancialSaleReadOnlyAdmin, PublishedReadOnlyAdmin):
     list_display = ("sale_id", "batch", "product_type", "sale_total", "balance", "payment_status", "receivable_follow_up_name")
     list_filter = ("product_type", "payment_status", "sale_date")
     search_fields = ("sale_id", "batch__batch_id", "buyer_name", "receivable_follow_up_name")
@@ -54,7 +68,16 @@ class SalesAdmin(PublishedReadOnlyAdmin):
 
 
 @admin.register(SaleSellingCost)
-class SaleSellingCostAdmin(admin.ModelAdmin):
+class SaleSellingCostAdmin(FinancialSaleReadOnlyAdmin, admin.ModelAdmin):
+    class SaleCostForm(forms.ModelForm):
+        def clean(self):
+            data = super().clean()
+            sale = data.get('sale')
+            if sale and managed_sales(Sales.objects.filter(pk=sale.pk)).exists():
+                self.add_error('sale', 'Posted sales require a controlled financial cost workflow.')
+            return data
+
+    form = SaleCostForm
     list_display = ("sale", "category", "amount", "created_at")
     list_filter = ("category", "created_at")
     search_fields = ("sale__sale_id", "sale__buyer_name", "notes")
