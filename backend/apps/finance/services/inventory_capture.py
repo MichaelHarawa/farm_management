@@ -31,6 +31,8 @@ from .inventory_guards import inventory_posting_boundary
 
 ZERO = Decimal("0.00")
 CENT = Decimal("0.01")
+MAX_POOL_PURCHASES = 1000
+PURCHASE_PROOF_MESSAGE = "Original versioned stock purchase/payable/journal evidence does not match; preserve it for controlled review."
 
 
 def stock_quantity(value):
@@ -83,8 +85,27 @@ def _pool(item, day, *, create=False):
         pool = InventoryValuePool.objects.create(item=item, last_movement_date=day)
     if day < pool.last_movement_date:
         raise ValidationError({"stock_chronology": "Earlier stock dates require review; the original date must not be changed automatically."})
+    _require_pool_purchase_proof(pool)
     _check_pool(pool)
     return pool
+
+
+def _require_pool_purchase_proof(pool):
+    """Validate every original cost feeding this managed weighted-average pool.
+
+    Called under the item/pool mutex before a NEW effect. Do not call from
+    _advance: a composite purchase's new receipt is sealed only after its whole
+    effect succeeds. Accepted replay and read-only reports never adopt/repair
+    missing historical proof. Later payment/stock balances are derived fields,
+    deliberately excluded by the existing original-payable verifier.
+    """
+    from .payable_evidence import verified_payable
+    bindings = list(InventoryLotBinding.objects.filter(item_id=pool.item_id)
+        .select_related("expenditure").order_by("pk")[:MAX_POOL_PURCHASES + 1])
+    if len(bindings) > MAX_POOL_PURCHASES:
+        raise ValidationError({"inventory_reconciliation": "This valuation pool exceeds the supported purchase-proof review bound; do not value only a partial history."})
+    if any(not verified_payable(binding.expenditure) for binding in bindings):
+        raise ValidationError({"inventory_reconciliation": PURCHASE_PROOF_MESSAGE})
 
 
 def _check_pool(pool):
