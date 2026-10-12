@@ -141,8 +141,12 @@ def _submission(*, submission_id, command, user, payload, roles, effect):
         if receipt.completed_at is None:
             raise ValidationError({"submission_id": "Incomplete financial receipt requires investigation."})
         return receipt.result, False
+    result = effect(actor)
+    from .payable_evidence import seal_payable_result
+    result = seal_payable_result(result, submission_id=submission_id, command=command,
+        actor_id=actor.pk, request_hash=fingerprint)
     receipt = FinancialCommandReceipt.objects.create(submission_id=submission_id, command=command,
-        actor=actor, request_hash=fingerprint, result=effect(actor), completed_at=timezone.now())
+        actor=actor, request_hash=fingerprint, result=result, completed_at=timezone.now())
     return receipt.result, True
 
 
@@ -364,24 +368,8 @@ def _post_expenditure_effect(*, expenditure, actor, costs, funding_allocations, 
 
 
 def _verified_payable(expenditure):
-    """An accepted draft-create alone does not prove a posted liability.
-
-    Match permanent posting evidence to the actual unreversed control-account
-    journal. Never backfill or manufacture a missing historical payable.
-    """
-    key = (f"inventory-purchase:{expenditure.pk}" if expenditure.accounting_nature == AccountingNature.INVENTORY_PURCHASE
-           else f"financial-expenditure:{expenditure.pk}")
-    results = FinancialCommandReceipt.objects.filter(
-        command__in=["finance.expenditure.create", "finance.expenditure.post", "inventory.receipt.record"],
-        completed_at__isnull=False, result__expenditure_id=str(expenditure.pk)).values_list("result", flat=True)
-    for result in results:
-        journal_id = result.get("journal_id")
-        if journal_id and JournalEntry.objects.filter(pk=journal_id, status=JournalStatus.POSTED,
-                source_model="finance.Expenditure", source_identifier=str(expenditure.pk),
-                idempotency_key=key, posting_date=expenditure.expenditure_date,
-                lines__account__code="2000", lines__credit=expenditure.amount, lines__debit=Decimal("0.00")).exists():
-            return True
-    return False
+    from .payable_evidence import verified_payable
+    return verified_payable(expenditure)
 
 
 def record_financial_supplier_payment(*, submission_id, user, currency, expenditure_id, payment_date, funding_allocations):
