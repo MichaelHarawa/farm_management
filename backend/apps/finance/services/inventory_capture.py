@@ -23,6 +23,7 @@ from ..models import (AccountingNature, AllocationMethod, ConsumableItem,
     SharedConsumableLot, StockMovement, StockMovementType)
 from ..permissions import FINANCE_WRITE_ROLES
 from .expenditures import post_expenditure, record_expenditure_payment
+from .expenditure_guards import expenditure_effect_boundary
 from .financial_capture import _currency, _funding_rows, _identifier, _submission, _text
 from .financial_values import business_date, exact_decimal, lock_financial_periods
 from .ledger import post_journal
@@ -226,10 +227,12 @@ def record_inventory_purchase(*, submission_id, user, currency, item_id, locatio
             beneficiary_type="inventory_stock", external_reference=invoice_reference, notes=notes,
             idempotency_key=f"inventory-purchase:{submission_id}", created_by=actor)
         expenditure._inventory_purchase = True
-        expenditure.full_clean()
-        expenditure.save()
-        expenditure = post_expenditure(expenditure_id=expenditure.pk, user=actor, cost_rows=[], funding_rows=[],
-            allow_unpaid=True, _inventory_purchase=True)
+        with expenditure_effect_boundary("create"):
+            expenditure.full_clean()
+            expenditure.save()
+        with expenditure_effect_boundary("post"):
+            expenditure = post_expenditure(expenditure_id=expenditure.pk, user=actor, cost_rows=[], funding_rows=[],
+                allow_unpaid=True, _inventory_purchase=True)
         with localcontext() as context:
             context.prec = 40
             unit_cost = exact_decimal((total_purchase_cost / quantity).quantize(Decimal("0.000001")), scale=6, max_digits=16, field="unit_cost")
@@ -245,17 +248,19 @@ def record_inventory_purchase(*, submission_id, user, currency, item_id, locatio
         movement = _movement(kind=StockMovementType.RECEIPT, day=purchase_date, item=item, lot=lot,
             destination=location, quantity=quantity, cost=total_purchase_cost,
             key=f"inventory-receipt:{submission_id}", user=actor, reference=invoice_reference)
-        journal = post_journal(posting_date=purchase_date, description=f"Inventory purchase {expenditure.expenditure_reference}",
-            source_model="finance.Expenditure", source_identifier=expenditure.pk,
-            idempotency_key=f"inventory-purchase:{expenditure.pk}", user=actor,
-            lines=[{"account": "1200", "debit": total_purchase_cost}, {"account": "2000", "credit": total_purchase_cost}])
+        with expenditure_effect_boundary("post"):
+            journal = post_journal(posting_date=purchase_date, description=f"Inventory purchase {expenditure.expenditure_reference}",
+                source_model="finance.Expenditure", source_identifier=expenditure.pk,
+                idempotency_key=f"inventory-purchase:{expenditure.pk}", user=actor,
+                lines=[{"account": "1200", "debit": total_purchase_cost}, {"account": "2000", "credit": total_purchase_cost}])
         pool.quantity += quantity
         pool.carrying_value += total_purchase_cost
         _advance(pool, purchase_date)
         if funding_allocations:
-            expenditure = record_expenditure_payment(expenditure_id=expenditure.pk, funding_rows=funding_allocations,
-                payment_group_key=f"inventory-initial:{submission_id}", payment_date=payment_date, user=actor,
-                _inventory_purchase=True)
+            with expenditure_effect_boundary("payment"):
+                expenditure = record_expenditure_payment(expenditure_id=expenditure.pk, funding_rows=funding_allocations,
+                    payment_group_key=f"inventory-initial:{submission_id}", payment_date=payment_date, user=actor,
+                    _inventory_purchase=True)
             _sync_lot_payment(lot, expenditure)
         return {"lot_id": str(lot.pk), "expenditure_id": str(expenditure.pk),
                 "movement_id": str(movement.pk), "journal_id": str(journal.pk)}

@@ -378,9 +378,9 @@ class InventoryCaptureTests(TestCase):
         lot, _ = record_inventory_purchase(**purchase(self))
         expense = InventoryLotBinding.objects.get(lot=lot).expenditure
         source = self.funded_source()
-        with self.assertRaises(ValidationError):
+        with self.assertRaises((ValidationError, DjangoValidationError)):
             post_expenditure(expenditure_id=expense.pk, user=self.user, allow_unpaid=True)
-        with self.assertRaises(ValidationError):
+        with self.assertRaises((ValidationError, DjangoValidationError)):
             record_expenditure_payment(expenditure_id=expense.pk, user=self.user, payment_date=date(2026, 1, 12),
                 payment_group_key='generic-bypass', funding_rows=[{'funding_source': source.pk, 'amount': '100.00'}])
         with self.assertRaises(ValidationError):

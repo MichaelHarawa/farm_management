@@ -12,11 +12,13 @@ from django.utils import timezone
 
 from apps.poultry.models import Batch
 from .services.poultry_stock_guards import PoultryProtectedQuerySet, stock_save_boundary
-from .services.funding_receipt_guards import FundingProtectedQuerySet, funding_save_boundary, guard_funding_queryset
+from .services.funding_receipt_guards import FundingProtectedQuerySet, funding_save_boundary, funding_delete_boundary
 from .services.inventory_guards import (InventoryProtectedModel, InventoryProtectedQuerySet,
     InventoryStateModel, InventoryStateQuerySet, guard_new_movement, require_inventory_posting)
 from .services.sale_guards import (SaleEvidenceQuerySet, SaleFinancialProtectedModel,
     SaleJournalQuerySet, SaleJournalProtectedModel)
+from .services.expenditure_guards import ExpenditureProtectedModel, ExpenditureEvidenceQuerySet
+from .services.owner_capital_guards import OwnerCapitalProtectedModel, OwnerCapitalQuerySet, guard_owner_receipt_creation
 
 
 MONEY_VALIDATOR = MinValueValidator(Decimal("0.00"))
@@ -1202,7 +1204,8 @@ class ExpenseRecognitionSchedule(DollarReferenceMixin, TimestampedModel):
         super().save(*args, **kwargs)
 
 
-class CostAllocation(TimestampedModel):
+class CostAllocation(ExpenditureProtectedModel, TimestampedModel):
+    objects = ExpenditureEvidenceQuerySet.as_manager()
     accounting_period = models.ForeignKey(
         AccountingPeriod,
         on_delete=models.PROTECT,
@@ -2470,8 +2473,10 @@ class CustomerCostAttribution(TimestampedModel):
         raise ValidationError("Customer cost attributions cannot be deleted; reverse them.")
 
 
-class OwnerContributor(TimestampedModel):
+class OwnerContributor(OwnerCapitalProtectedModel, TimestampedModel):
     """A stable non-login identity for a person or entity contributing capital."""
+
+    objects = OwnerCapitalQuerySet.as_manager()
 
     public_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     display_name = models.CharField(max_length=160)
@@ -2530,8 +2535,8 @@ class FundingSource(TimestampedModel):
             return super().save_base(*args, **kwargs)
 
     def delete(self, *args, **kwargs):
-        guard_funding_queryset(type(self).objects.filter(pk=self.pk), deleting=True)
-        return super().delete(*args, **kwargs)
+        with funding_delete_boundary(self):
+            return super().delete(*args, **kwargs)
 
     class Meta:
         ordering = ["-created_at"]
@@ -2607,13 +2612,18 @@ class FundingReceipt(TimestampedModel):
 
     objects = FundingProtectedQuerySet.as_manager()
 
+    def clean(self):
+        super().clean()
+        if not self.pk or not type(self).objects.filter(pk=self.pk).exists():
+            guard_owner_receipt_creation(self, self._state.db or "default")
+
     def save_base(self, *args, **kwargs):
         with funding_save_boundary(self, kwargs.get("update_fields")):
             return super().save_base(*args, **kwargs)
 
     def delete(self, *args, **kwargs):
-        guard_funding_queryset(type(self).objects.filter(pk=self.pk), deleting=True)
-        return super().delete(*args, **kwargs)
+        with funding_delete_boundary(self):
+            return super().delete(*args, **kwargs)
 
     class Meta:
         ordering = ["-receipt_date", "-created_at"]
@@ -2628,8 +2638,10 @@ class OwnerDesignationStatus(models.TextChoices):
     REVERSED = "reversed", "Reversed"
 
 
-class OwnerReceiptDesignation(TimestampedModel):
+class OwnerReceiptDesignation(OwnerCapitalProtectedModel, TimestampedModel):
     """Analytical designation of one existing owner receipt to a poultry batch."""
+
+    objects = OwnerCapitalQuerySet.as_manager()
 
     receipt = models.ForeignKey(
         FundingReceipt,
@@ -2715,11 +2727,12 @@ class FinanceActionEvent(models.Model):
         raise ValidationError("Finance action events cannot be deleted.")
 
 
-class Expenditure(DollarReferenceMixin, TimestampedModel):
+class Expenditure(ExpenditureProtectedModel, DollarReferenceMixin, TimestampedModel):
     """
     A general record of money spent by the farm.
     This is the central record for tracking both funding source and cost allocation.
     """
+    objects = ExpenditureEvidenceQuerySet.as_manager()
     expenditure_date = models.DateField(db_index=True)
     accounting_period = models.ForeignKey(
         AccountingPeriod,
@@ -2872,11 +2885,12 @@ class Expenditure(DollarReferenceMixin, TimestampedModel):
         super().save(*args, **kwargs)
 
 
-class FundingAllocation(TimestampedModel):
+class FundingAllocation(ExpenditureProtectedModel, TimestampedModel):
     """
     Links an Expenditure to the source of funds used to pay for it.
     This is the "Funding allocation" dimension (where the money came from).
     """
+    objects = ExpenditureEvidenceQuerySet.as_manager()
     expenditure = models.ForeignKey(
         Expenditure,
         on_delete=models.CASCADE,

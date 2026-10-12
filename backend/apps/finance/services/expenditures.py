@@ -31,6 +31,7 @@ from .profitability import available_funding_source_cash
 from .ledger import post_journal
 from .action_audit import record_finance_action
 from .financial_values import exact_decimal, business_date, lock_financial_periods
+from .expenditure_guards import require_expenditure_effect, managed_expenditures
 
 
 ZERO = Decimal("0.00")
@@ -327,6 +328,7 @@ def post_expenditure(
     _inventory_purchase: bool = False,
 ) -> Expenditure:
     expenditure = Expenditure.objects.select_for_update().get(pk=expenditure_id)
+    require_expenditure_effect(expenditure, "post")
     if expenditure.accounting_nature == AccountingNature.INVENTORY_PURCHASE and not _inventory_purchase:
         raise ValidationError({"inventory": "Inventory purchases require the explicit atomic lot/payable workflow."})
     if expenditure.status != ExpenditureStatus.DRAFT:
@@ -530,12 +532,14 @@ def record_expenditure_payment(
             raise ValidationError({"idempotency_key": "This payment key is bound to different amount, date or funding splits."})
         return True
     expenditure = Expenditure.objects.get(pk=expenditure_id)
+    require_expenditure_effect(expenditure, "payment")
     if expenditure.accounting_nature == AccountingNature.INVENTORY_PURCHASE and not _inventory_purchase:
         raise ValidationError({"inventory": "Managed inventory payments require the explicit dated settlement workflow."})
     if replay(expenditure):
         return expenditure
     lock_financial_periods(payment_date, field="payment_date")
     expenditure = Expenditure.objects.select_for_update().get(pk=expenditure_id)
+    require_expenditure_effect(expenditure, "payment")
     if expenditure.status != ExpenditureStatus.POSTED:
         raise ValidationError({"detail": "Only posted expenditures can receive payments."})
     if replay(expenditure):
@@ -587,6 +591,8 @@ def record_expenditure_payment(
 @transaction.atomic
 def reverse_expenditure(*, expenditure_id: int, reason: str, user) -> Expenditure:
     expenditure = Expenditure.objects.select_for_update().get(pk=expenditure_id)
+    if managed_expenditures(Expenditure.objects.filter(pk=expenditure.pk)).exists():
+        raise ValidationError({"expenditure": "Managed payables cannot be voided independently of source/payments/stock; retain evidence for controlled correction."})
     if expenditure.accounting_nature == AccountingNature.INVENTORY_PURCHASE:
         raise ValidationError({"inventory": "A stock purchase cannot be voided independently of its stock; a verified correction workflow is required."})
     if expenditure.status != ExpenditureStatus.POSTED:

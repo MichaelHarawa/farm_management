@@ -1,6 +1,6 @@
-"""Writer boundaries for explicitly journaled sales, not historical adoption.
+"""Writer boundaries for explicitly journaled sales and managed spending.
 
-Detect protected history through existing sale/payment/journal tables even with
+Detect protected history through existing source/payment/journal tables even with
 all rollout gates off. Privileged SQL and unbound ORM imports are outside these
 application guarantees. The private boundary is not device/API authorization.
 """
@@ -220,7 +220,11 @@ def _journal_history(rows):
     predicate = Q()
     for prefix in JOURNAL_PREFIXES:
         predicate |= Q(idempotency_key__startswith=prefix) | Q(reversal_of__idempotency_key__startswith=prefix)
-    return rows.filter(predicate)
+    from .expenditure_guards import expenditure_journal_history
+    from .owner_capital_guards import owner_journal_history
+    return rows.filter(predicate
+        | Q(pk__in=expenditure_journal_history(rows.model.objects.using(rows.db).all()).values("pk"))
+        | Q(pk__in=owner_journal_history(rows.model.objects.using(rows.db).all()).values("pk")))
 
 
 def _protected_journal_rows(rows):
@@ -249,14 +253,33 @@ def _lock_journal_rows(rows, target=None):
 
 def _guard_journal_target(instance, using):
     from ..models import JournalEntry
+    from .expenditure_guards import new_expenditure_journal, expenditure_journal_authorized, expenditure_journal_history
+    from .owner_capital_guards import new_owner_journal, owner_journal_authorized, owner_journal_history
     if instance._meta.model_name == 'journalentry':
+        if owner_journal_history(JournalEntry.objects.using(using).filter(pk=instance.reversal_of_id)).exists():
+            raise ValidationError('Managed owner capital requires a source-linked correction, not standalone journal reversal.')
+        if new_owner_journal(instance, using):
+            if not owner_journal_authorized(instance, using):
+                raise ValidationError('Managed capital journals require their atomic contribution command.')
+            return
+        if expenditure_journal_history(JournalEntry.objects.using(using).filter(pk=instance.reversal_of_id)).exists():
+            raise ValidationError('Managed expenditure/payment journals require a source-linked correction, not standalone reversal.')
+        if new_expenditure_journal(instance, using):
+            if not expenditure_journal_authorized(instance, using):
+                raise ValidationError('Managed payable/payment journals require their atomic source command.')
+            return
         if ((instance.idempotency_key or '').startswith(JOURNAL_PREFIXES)
                 or _journal_history(JournalEntry.objects.using(using).filter(pk=instance.reversal_of_id)).exists()):
             if not _posting.get():
                 raise ValidationError('Reserved sale journals require their atomic source command.')
     else:
         parent = _journal_history(JournalEntry.objects.using(using).filter(pk=instance.journal_entry_id)).first()
-        if parent and (not _posting.get() or parent.status != 'draft'):
+        expense_allowed = expenditure_journal_authorized(instance, using)
+        expense_parent = expenditure_journal_history(JournalEntry.objects.using(using).filter(pk=instance.journal_entry_id)).exists()
+        allowed = expense_allowed if expense_parent else _posting.get()
+        if owner_journal_history(JournalEntry.objects.using(using).filter(pk=instance.journal_entry_id)).exists():
+            allowed = owner_journal_authorized(instance, using)
+        if parent and (not allowed or parent.status != 'draft'):
             raise ValidationError('Posted sale journal lines cannot be appended or rebound.')
 
 
@@ -270,7 +293,7 @@ class SaleJournalQuerySet(models.QuerySet):
             # No expression/upsert can reclassify an existing legacy journal.
             if 'idempotency_key' in kwargs:
                 key = kwargs['idempotency_key']
-                if not isinstance(key, str) or key.startswith(JOURNAL_PREFIXES):
+                if not isinstance(key, str) or key.startswith(JOURNAL_PREFIXES + ('financial-expenditure:', 'inventory-purchase:', 'financial-owner-receipt:')):
                     raise ValidationError('Journal key edits cannot reserve financial sale identities.')
             if 'reversal_of' in kwargs or 'reversal_of_id' in kwargs:
                 from ..models import JournalEntry
@@ -278,6 +301,17 @@ class SaleJournalQuerySet(models.QuerySet):
                 original = _parent_id(value) if value is not None else None
                 if _journal_history(JournalEntry.objects.using(self.db).filter(pk=original)).exists():
                     raise ValidationError(MESSAGE)
+            if self.model._meta.model_name == 'journalentry' and {'source_model', 'source_identifier'} & set(kwargs):
+                from .expenditure_guards import new_expenditure_journal
+                from .owner_capital_guards import new_owner_journal
+                for row in rows:
+                    for name in ('source_model', 'source_identifier'):
+                        if name in kwargs:
+                            if not isinstance(kwargs[name], str):
+                                raise ValidationError('Journal source rebinding requires explicit text, not expressions.')
+                            setattr(row, name, kwargs[name])
+                    if new_expenditure_journal(row, self.db) or new_owner_journal(row, self.db):
+                        raise ValidationError('An existing journal cannot be adopted as financial payment evidence.')
             if target is not None:
                 from types import SimpleNamespace
                 _guard_journal_target(SimpleNamespace(_meta=self.model._meta, journal_entry_id=_parent_id(target)), self.db)
@@ -286,7 +320,7 @@ class SaleJournalQuerySet(models.QuerySet):
     def bulk_update(self, objs, fields, **kwargs):
         objs = tuple(objs)
         with transaction.atomic(using=self.db):
-            if {'journal_entry', 'journal_entry_id', 'idempotency_key', 'reversal_of', 'reversal_of_id'} & set(fields):
+            if {'journal_entry', 'journal_entry_id', 'idempotency_key', 'reversal_of', 'reversal_of_id', 'source_model', 'source_identifier'} & set(fields):
                 raise ValidationError('Bulk journal rebinding requires controlled review.')
             if _protected_journal_rows(_lock_journal_rows(self.filter(pk__in=[obj.pk for obj in objs]))):
                 raise ValidationError(MESSAGE)
@@ -297,6 +331,8 @@ class SaleJournalQuerySet(models.QuerySet):
         if len(objs) > 10000 or kwargs.get('update_conflicts'):
             raise ValidationError('Journal evidence must be bounded and cannot upsert history.')
         with transaction.atomic(using=self.db):
+            if _protected_journal_rows(_lock_journal_rows(self.filter(pk__in=[obj.pk for obj in objs if obj.pk is not None]))):
+                raise ValidationError('Journal imports cannot replace managed history through an existing primary key.')
             if self.model._meta.model_name == 'journalline':
                 from ..models import JournalEntry
                 list(JournalEntry.objects.using(self.db).select_for_update().filter(
@@ -332,12 +368,24 @@ class SaleJournalProtectedModel(models.Model):
             old = rows.values().first() if self.pk else None
             if old and _protected_journal_rows(rows):
                 fields = set(kwargs.get('update_fields') or ())
+                from .expenditure_guards import expenditure_journal_authorized, expenditure_journal_history
+                from .owner_capital_guards import owner_journal_authorized, owner_journal_history
+                allowed = (expenditure_journal_authorized(self, using)
+                    if self._meta.model_name == 'journalentry' and expenditure_journal_history(rows).exists()
+                    else _posting.get())
+                if self._meta.model_name == 'journalentry' and owner_journal_history(rows).exists():
+                    allowed = owner_journal_authorized(self, using)
                 if not (self._meta.model_name == 'journalentry' and old['status'] == 'draft'
-                        and self.status == 'posted' and _posting.get() and not kwargs.get('raw')
+                        and self.status == 'posted' and allowed and not kwargs.get('raw')
                         and fields and not fields - {'status', 'posted_by', 'posted_by_id', 'posted_at', 'updated_at'}):
                     raise ValidationError(MESSAGE)
-            elif old and self._meta.model_name == 'journalentry' and (self.idempotency_key or '').startswith(JOURNAL_PREFIXES):
-                raise ValidationError('An existing journal cannot be adopted as sale evidence.')
+            elif old and self._meta.model_name == 'journalentry':
+                from .expenditure_guards import new_expenditure_journal
+                from .owner_capital_guards import new_owner_journal
+                if (self.idempotency_key or '').startswith(JOURNAL_PREFIXES) or new_expenditure_journal(self, using) or new_owner_journal(self, using):
+                    raise ValidationError('An existing journal cannot be adopted as financial evidence.')
+                if self.reversal_of_id != old['reversal_of_id']:
+                    _guard_journal_target(self, using)
             elif not old or self._meta.model_name == 'journalline' or self.reversal_of_id != old['reversal_of_id']:
                 _guard_journal_target(self, using)
             return super().save_base(*args, **kwargs)

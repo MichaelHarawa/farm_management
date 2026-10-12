@@ -30,7 +30,9 @@ from .expenditures import post_expenditure, record_expenditure_payment, validate
 from .financial_values import business_date, exact_decimal, lock_financial_periods
 from .ledger import post_journal
 from .owner_capital import record_owner_contribution
+from .owner_capital_guards import owner_capital_posting_boundary
 from .sale_guards import sale_posting_boundary
+from .expenditure_guards import expenditure_effect_boundary
 
 
 def _canonical(value):
@@ -324,10 +326,11 @@ def record_financial_expenditure(*, submission_id, user, currency, expenditure_d
         payload=dict(currency=currency, expenditure_date=expenditure_date, amount=amount, category_id=str(category_id),
             accounting_nature=accounting_nature, description=description, payee=payee, external_reference=external_reference,
             notes=notes, cost_allocations=costs, funding_allocations=funding_allocations or [], payment_date=payment_date, post=post),
-        roles=FINANCE_WRITE_ROLES, effect=effect)
+        roles=FINANCE_WRITE_ROLES, effect=expenditure_effect_boundary("create")(effect))
     return Expenditure.objects.get(pk=result["expenditure_id"]), created
 
 
+@expenditure_effect_boundary("post")
 def _post_expenditure_effect(*, expenditure, actor, costs, funding_allocations, payment_date, submission_id):
     """Shared source/payable/payment effect; caller holds dated/domain locks.
 
@@ -354,8 +357,9 @@ def _post_expenditure_effect(*, expenditure, actor, costs, funding_allocations, 
         idempotency_key=f"financial-expenditure:{expenditure.pk}", user=actor,
         lines=debit + [{"account": "2000", "credit": expenditure.amount}])
     if funding_allocations:
-        record_expenditure_payment(expenditure_id=expenditure.pk, funding_rows=funding_allocations,
-            payment_group_key=f"financial-initial:{submission_id}", payment_date=payment_date, user=actor)
+        with expenditure_effect_boundary("payment"):
+            record_expenditure_payment(expenditure_id=expenditure.pk, funding_rows=funding_allocations,
+                payment_group_key=f"financial-initial:{submission_id}", payment_date=payment_date, user=actor)
     return journal
 
 
@@ -408,7 +412,8 @@ def record_financial_supplier_payment(*, submission_id, user, currency, expendit
         return {"expenditure_id": str(expenditure_id)}
     result, created = _submission(submission_id=submission_id, command="finance.expenditure.pay", user=user,
         payload=dict(currency=currency, expenditure_id=str(expenditure_id), payment_date=payment_date,
-                     funding_allocations=funding_allocations), roles=FINANCE_WRITE_ROLES, effect=effect)
+                     funding_allocations=funding_allocations), roles=FINANCE_WRITE_ROLES,
+        effect=expenditure_effect_boundary("payment")(effect))
     return Expenditure.objects.get(pk=result["expenditure_id"]), created
 
 
@@ -451,5 +456,6 @@ def record_financial_owner_contribution(*, submission_id, user, currency, owner_
         payload=dict(currency=currency, owner_id=str(owner_id), amount=amount, receipt_date=receipt_date,
             reference=reference, notes=notes, designations=designations or [], designation_date=designation_date,
             funding_source_id=str(funding_source_id) if funding_source_id else None, source_description=source_description),
-        roles=OWNER_CAPITAL_ROLES, effect=effect)
+        roles=OWNER_CAPITAL_ROLES,
+        effect=owner_capital_posting_boundary()(effect))
     return FundingReceipt.objects.get(pk=result["receipt_id"]), created

@@ -6,6 +6,7 @@ from datetime import date, datetime, time
 from decimal import Decimal, InvalidOperation
 
 from django.db import IntegrityError, transaction
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Prefetch, Q, Sum
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
@@ -29,6 +30,8 @@ from ..models import (
     PayrollPaymentStatus,
 )
 from .action_audit import record_finance_action
+from .owner_capital_guards import (managed_owner_receipts, require_owner_capital_command,
+    guard_owner_receipt_creation)
 from .funding_attribution import (
     expenditure_payment_beneficiary_shares,
     payroll_payment_beneficiary_shares,
@@ -140,6 +143,10 @@ def record_owner_contribution(
     key = (idempotency_key or "").strip()
     if not key:
         raise ValidationError({"idempotency_key": "A submission key is required."})
+    try:
+        require_owner_capital_command(key)
+    except DjangoValidationError as error:
+        raise ValidationError({"owner_capital_workflow": error.messages}) from error
     contribution = money(amount)
     if contribution <= ZERO:
         raise ValidationError({"amount": "Owner contribution must be positive."})
@@ -220,6 +227,11 @@ def record_owner_contribution(
             )
 
     try:
+        guard_owner_receipt_creation(FundingReceipt(funding_source=source, idempotency_key=key), source._state.db or "default")
+    except DjangoValidationError as error:
+        raise ValidationError({"owner_source_review": error.messages}) from error
+
+    try:
         with transaction.atomic():
             receipt = FundingReceipt.objects.create(
                 funding_source=source,
@@ -278,6 +290,8 @@ def add_owner_designations(
     designations,
     user,
 ) -> list[OwnerReceiptDesignation]:
+    if managed_owner_receipts(FundingReceipt.objects.filter(pk=receipt_id)).exists():
+        raise ValidationError({"receipt": "Managed capital designations require a versioned, source-linked workflow; ordinary additions are unavailable."})
     receipt = FundingReceipt.objects.select_for_update().select_related(
         "funding_source"
     ).get(pk=receipt_id)
@@ -335,6 +349,8 @@ def add_owner_designations(
 
 @transaction.atomic
 def reverse_owner_designation(*, designation_id: int, reason: str, user):
+    if managed_owner_receipts(FundingReceipt.objects.filter(owner_designations__pk=designation_id)).exists():
+        raise ValidationError({"designation": "Managed capital designations require a controlled source-linked correction."})
     reason = (reason or "").strip()
     if not reason:
         raise ValidationError({"reason": "A reversal reason is required."})
@@ -372,7 +388,8 @@ def reverse_owner_designation(*, designation_id: int, reason: str, user):
 @transaction.atomic
 def reverse_funding_receipt(*, receipt_id: int, reason: str, user):
     from .funding_receipt_guards import MANAGED_PREFIX
-    if FundingReceipt.objects.filter(pk=receipt_id, idempotency_key__startswith=MANAGED_PREFIX).exists():
+    if (FundingReceipt.objects.filter(pk=receipt_id, idempotency_key__startswith=MANAGED_PREFIX).exists()
+            or managed_owner_receipts(FundingReceipt.objects.filter(pk=receipt_id)).exists()):
         raise ValidationError({"receipt": "Managed funding requires a controlled source-linked reversal; the ordinary source-only reversal is unavailable."})
     reason = (reason or "").strip()
     if not reason:

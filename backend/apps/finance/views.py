@@ -1588,6 +1588,11 @@ class OwnerContributionReportView(APIView):
 
 
 class ExpenditureViewSet(viewsets.ModelViewSet):
+    def handle_exception(self, exc):
+        if isinstance(exc, DjangoValidationError):
+            exc = ValidationError(getattr(exc, "message_dict", None) or exc.messages)
+        return super().handle_exception(exc)
+
     """
     CRUD + Post action for expenditures.
     Supports the full funding + cost allocation workflow.

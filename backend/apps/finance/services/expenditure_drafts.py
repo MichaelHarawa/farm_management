@@ -18,6 +18,7 @@ from .expenditures import validate_cost_allocations
 from .financial_capture import (_canonical, _cost_rows, _currency, _fields, _funding_rows,
     _identifier, _post_expenditure_effect, _submission, _text)
 from .financial_values import business_date, exact_decimal, lock_financial_periods
+from .expenditure_guards import expenditure_effect_boundary
 
 
 EDITABLE = frozenset({"expenditure_date", "amount", "category_id", "accounting_nature",
@@ -155,7 +156,8 @@ def update_financial_expenditure_draft(*, submission_id, user, currency, expendi
 
     result, created = _submission(submission_id=submission_id, command="finance.expenditure.update", user=user,
         payload=dict(currency=currency, expenditure_id=str(expenditure_id), expected_version=expected_version,
-            changes=changes, reason=reason), roles=FINANCE_WRITE_ROLES, effect=effect)
+            changes=changes, reason=reason), roles=FINANCE_WRITE_ROLES,
+        effect=expenditure_effect_boundary("edit")(effect))
     return Expenditure.objects.get(pk=result["expenditure_id"]), created
 
 

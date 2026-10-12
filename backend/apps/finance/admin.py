@@ -329,8 +329,22 @@ class BirdDaySnapshotAdmin(admin.ModelAdmin):
     autocomplete_fields = ("accounting_period", "batch")
 
 
+class ManagedExpenditureReadOnlyAdmin:
+    def has_change_permission(self, request, obj=None):
+        from .services.expenditure_guards import protected_expenditure_rows
+        if obj and protected_expenditure_rows(type(obj).objects.filter(pk=obj.pk)):
+            return False
+        return super().has_change_permission(request, obj)
+
+    def has_delete_permission(self, request, obj=None):
+        from .services.expenditure_guards import protected_expenditure_rows
+        if obj and protected_expenditure_rows(type(obj).objects.filter(pk=obj.pk)):
+            return False
+        return super().has_delete_permission(request, obj)
+
+
 @admin.register(CostAllocation)
-class CostAllocationAdmin(admin.ModelAdmin):
+class CostAllocationAdmin(ManagedExpenditureReadOnlyAdmin, admin.ModelAdmin):
     list_display = (
         "accounting_period",
         "batch",
@@ -382,9 +396,21 @@ class FundingSourceAdmin(admin.ModelAdmin):
     search_fields = ("description", "batch__batch_id")
     autocomplete_fields = ("batch",)
 
+    def get_readonly_fields(self, request, obj=None):
+        from .services.owner_capital_guards import managed_owner_sources
+        if obj and managed_owner_sources(FundingSource.objects.filter(pk=obj.pk)).exists():
+            return (*super().get_readonly_fields(request, obj), "source_type", "batch", "owner")
+        return super().get_readonly_fields(request, obj)
+
+    def has_delete_permission(self, request, obj=None):
+        from .services.owner_capital_guards import managed_owner_sources
+        if obj and managed_owner_sources(FundingSource.objects.filter(pk=obj.pk)).exists():
+            return False
+        return super().has_delete_permission(request, obj)
+
 
 @admin.register(Expenditure)
-class ExpenditureAdmin(admin.ModelAdmin):
+class ExpenditureAdmin(ManagedExpenditureReadOnlyAdmin, admin.ModelAdmin):
     list_display = ("expenditure_reference", "expenditure_date", "description", "amount", "status", "payment_status", "origin")
     list_filter = ("status", "payment_status", "origin", "accounting_nature", "farm_module")
     search_fields = ("description", "payee", "reference_number")
@@ -392,7 +418,7 @@ class ExpenditureAdmin(admin.ModelAdmin):
 
 
 @admin.register(FundingAllocation)
-class FundingAllocationAdmin(admin.ModelAdmin):
+class FundingAllocationAdmin(ManagedExpenditureReadOnlyAdmin, admin.ModelAdmin):
     list_display = ("expenditure", "funding_source", "amount", "allocation_date", "classification")
     list_filter = ("classification",)
     autocomplete_fields = ("expenditure", "funding_source", "created_by")
@@ -412,6 +438,18 @@ class FundingReceiptAdmin(admin.ModelAdmin):
     list_filter = ("status", "funding_source__source_type")
     search_fields = ("reference", "funding_source__description")
     readonly_fields = ("status", "reversed_at", "reversed_by", "reversal_reason")
+
+    def has_change_permission(self, request, obj=None):
+        from .services.owner_capital_guards import managed_owner_receipts
+        if obj and managed_owner_receipts(FundingReceipt.objects.filter(pk=obj.pk)).exists():
+            return False
+        return super().has_change_permission(request, obj)
+
+    def has_delete_permission(self, request, obj=None):
+        from .services.owner_capital_guards import managed_owner_receipts
+        if obj and managed_owner_receipts(FundingReceipt.objects.filter(pk=obj.pk)).exists():
+            return False
+        return super().has_delete_permission(request, obj)
 
 
 @admin.register(SalePayment)

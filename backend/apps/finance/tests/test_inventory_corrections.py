@@ -374,9 +374,12 @@ class InventoryCorrectionTests(TestCase):
         # Privileged/import-like unsupported allocation must not double-charge
         # purchase plus issue. It is not permission to create this through UI.
         from apps.finance.models import InventoryLotBinding
-        CostAllocation.objects.create(accounting_period=self.period, batch=self.batch,
+        damage = CostAllocation(accounting_period=self.period, batch=self.batch,
             source_type=AllocationSourceType.EXPENDITURE,
             expenditure=InventoryLotBinding.objects.get(lot=lot).expenditure, allocated_amount=Decimal('100'))
+        with self.assertRaises(DjangoValidationError):
+            damage.save()
+        corrupt_inventory_insert(damage)
         self.assertEqual(monthly_profitability_report(self.period)['production']['active_batch_work_in_progress'], Decimal('20'))
 
     def test_expiry_without_expiry_evidence_is_refused_and_loss_replay_checks_date_location_amount(self):

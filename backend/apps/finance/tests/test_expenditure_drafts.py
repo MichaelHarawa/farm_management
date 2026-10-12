@@ -25,6 +25,7 @@ from apps.finance.services.profitability import available_batch_cash, available_
 from apps.finance.services.reporting import monthly_profitability_report
 from apps.poultry.models import InputCosts
 from .test_financial_capture import fixture, instant, sale_payload
+from .inventory_corruption import corrupt_inventory, corrupt_inventory_insert
 
 
 SETTINGS = dict(MOBILE_SYNC_CAPTURE=False, MOBILE_SYNC_ENABLED=False, MOBILE_SYNC_POULTRY_V2=False)
@@ -257,7 +258,9 @@ class ExpenditureDraftTests(TestCase):
 
     def test_legacy_and_externally_edited_drafts_are_not_silently_adopted(self):
         expense = draft(self)
-        Expenditure.objects.filter(pk=expense.pk).update(notes="External unsupported edit")
+        with self.assertRaises(DjangoValidationError):
+            Expenditure.objects.filter(pk=expense.pk).update(notes="External unsupported edit")
+        corrupt_inventory(Expenditure, expense.pk, notes="External unsupported edit")
         expense.refresh_from_db()
         with self.assertRaises(ValidationError) as error:
             post_financial_expenditure_draft(**posting(self, expense))
@@ -279,7 +282,10 @@ class ExpenditureDraftTests(TestCase):
     def test_draft_creation_receipt_plus_legacy_post_is_not_a_verified_payable(self):
         source = funded_source(self)
         expense = draft(self)
-        post_expenditure(expenditure_id=expense.pk, user=self.user, funding_rows=[], allow_unpaid=True)
+        with self.assertRaises(DjangoValidationError):
+            post_expenditure(expenditure_id=expense.pk, user=self.user, funding_rows=[], allow_unpaid=True)
+        # Privileged source-only posting must still fail payable verification.
+        corrupt_inventory(Expenditure, expense.pk, status="posted")
         with self.assertRaises(ValidationError):
             record_financial_supplier_payment(submission_id=uuid.uuid4(), user=self.user, currency="MWK", expenditure_id=expense.pk,
                 payment_date=date(2026, 1, 22), funding_allocations=[{"funding_source": source.pk, "amount": "10.00"}])
@@ -360,8 +366,11 @@ class ExpenditureDraftTests(TestCase):
     def test_existing_draft_funding_is_refused_without_deleting_or_spending_it(self):
         source = funded_source(self)
         expense = draft(self)
-        FundingAllocation.objects.create(expenditure=expense, funding_source=source, amount=Decimal("10.00"),
-            allocation_date=expense.expenditure_date, created_by=self.user)
+        with self.assertRaises(DjangoValidationError):
+            FundingAllocation.objects.create(expenditure=expense, funding_source=source, amount=Decimal("10.00"),
+                allocation_date=expense.expenditure_date, created_by=self.user)
+        corrupt_inventory_insert(FundingAllocation(expenditure=expense, funding_source=source, amount=Decimal("10.00"),
+            allocation_date=expense.expenditure_date, created_by=self.user))
         before = self.effects(), expenditure_draft_version(expense), available_funding_source_cash(source)
         with self.assertRaises(ValidationError):
             post_financial_expenditure_draft(**posting(self, expense))
@@ -375,11 +384,13 @@ class ExpenditureDraftTests(TestCase):
         original_day, original_amount = expense.expenditure_date, expense.amount
         before = self.effects(), available_funding_source_cash(source)
         for change in [{"amount": Decimal("101.00")}, {"expenditure_date": date(2026, 1, 22)}]:
-            Expenditure.objects.filter(pk=expense.pk).update(**change)
+            with self.assertRaises(DjangoValidationError):
+                Expenditure.objects.filter(pk=expense.pk).update(**change)
+            corrupt_inventory(Expenditure, expense.pk, **change)
             with self.assertRaises(ValidationError):
                 record_financial_supplier_payment(submission_id=uuid.uuid4(), user=self.user, currency="MWK", expenditure_id=expense.pk,
                     payment_date=date(2026, 1, 23), funding_allocations=[{"funding_source": source.pk, "amount": "10.00"}])
-            Expenditure.objects.filter(pk=expense.pk).update(amount=original_amount, expenditure_date=original_day)
+            corrupt_inventory(Expenditure, expense.pk, amount=original_amount, expenditure_date=original_day)
         self.assertEqual((self.effects(), available_funding_source_cash(source)), before)
 
     def test_pre_expense_supplier_payment_is_not_a_guessed_deposit(self):

@@ -1,6 +1,6 @@
 """Keep explicitly posted funding evidence immutable, including when capture is off.
 
-Only the new reserved key namespace is protected. No old receipt is adopted,
+Only explicitly managed loan/owner evidence is protected. No old receipt is adopted,
 converted or rewritten. Privileged SQL remains outside application guarantees.
 """
 from contextlib import contextmanager
@@ -9,6 +9,11 @@ from contextvars import ContextVar
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models, transaction
+from django.db.models import Q
+
+from apps.mobile_sync.writers import model_boundary
+from .owner_capital_guards import (managed_owner_receipts, guard_owner_receipt_creation,
+    guard_owner_receipt_rebinding, lock_funding_rows, _lock_sources, RECEIPT_PREFIX)
 
 
 MANAGED_PREFIX = "financial-funding:"
@@ -41,7 +46,8 @@ def funding_posting_boundary():
 
 
 def _managed(queryset):
-    return queryset.filter(idempotency_key__startswith=MANAGED_PREFIX)
+    return queryset.filter(Q(idempotency_key__startswith=MANAGED_PREFIX)
+        | Q(pk__in=managed_owner_receipts(queryset.model.objects.using(queryset.db).all()).values("pk")))
 
 
 def guard_funding_queryset(queryset, fields=(), *, deleting=False):
@@ -58,6 +64,12 @@ def guard_funding_queryset(queryset, fields=(), *, deleting=False):
             protected = queryset.filter(source_type="batch_collection", batch_id__in=
                 managed_sales(Sales.objects.using(queryset.db).all()).values("batch_id")).exists()
         if not protected:
+            from ..models import FundingAllocation
+            from .expenditure_guards import managed_expenditures
+            from ..models import Expenditure
+            protected = FundingAllocation.objects.filter(funding_source_id__in=queryset.values("pk"),
+                expenditure_id__in=managed_expenditures(Expenditure.objects.using(queryset.db).all()).values("pk")).exists()
+        if not protected:
             from ..models import JournalLine
             protected = JournalLine.objects.filter(funding_source_id__in=queryset.values("pk"),
                 journal_entry__source_model="finance.SaleCostPayment",
@@ -68,26 +80,31 @@ def guard_funding_queryset(queryset, fields=(), *, deleting=False):
 
 class FundingProtectedQuerySet(models.QuerySet):
     def update(self, **kwargs):
-        with transaction.atomic():
-            ids = list(self.select_for_update().order_by("pk").values_list("pk", flat=True)[:10001])
-            if len(ids) > 10000:
-                raise ValidationError("Funding-protected writes require bounded transactions.")
-            rows = self.filter(pk__in=ids)
+        with model_boundary(), transaction.atomic(using=self.db):
+            rows = lock_funding_rows(self, kwargs.get("funding_source_id", kwargs.get("funding_source")))
             guard_funding_queryset(rows, kwargs)
+            guard_owner_receipt_rebinding(rows, kwargs)
             return models.QuerySet.update(rows, **kwargs)
 
     def bulk_update(self, objs, fields, **kwargs):
         objs = tuple(objs)
-        guard_funding_queryset(self.filter(pk__in=[obj.pk for obj in objs]), fields)
-        return super().bulk_update(objs, fields, **kwargs)
+        with model_boundary(), transaction.atomic(using=self.db):
+            if self.model._meta.model_name == "fundingreceipt" and {"funding_source", "funding_source_id", "idempotency_key"} & set(fields):
+                raise ValidationError("Bulk receipt source/identity rebinding requires controlled review.")
+            guard_funding_queryset(lock_funding_rows(self.filter(pk__in=[obj.pk for obj in objs])), fields)
+            return super().bulk_update(objs, fields, **kwargs)
 
     def bulk_create(self, objs, **kwargs):
         objs = tuple(objs)
-        if self.model._meta.model_name != "fundingreceipt":
-            if kwargs.get("update_conflicts"):
-                raise ValidationError("Funding-source upserts cannot bypass economic-binding review.")
-            return super().bulk_create(objs, **kwargs)
-        with transaction.atomic():
+        if len(objs) > 10000 or kwargs.get("update_conflicts"):
+            raise ValidationError("Funding bulk creation must be bounded and cannot upsert evidence.")
+        with model_boundary(), transaction.atomic(using=self.db):
+            guard_funding_queryset(lock_funding_rows(self.filter(pk__in=[obj.pk for obj in objs if obj.pk is not None])), deleting=True)
+            if self.model._meta.model_name != "fundingreceipt":
+                return super().bulk_create(objs, **kwargs)
+            _lock_sources({obj.funding_source_id for obj in objs}, self.db)
+            for obj in objs:
+                guard_owner_receipt_creation(obj, self.db)
             if any((obj.idempotency_key or "").startswith(MANAGED_PREFIX) for obj in objs):
                 raise ValidationError("Managed funding receipts require the atomic financial posting boundary.")
             from ..models import FundingReceipt, FundingSource, FundingSourceType
@@ -100,25 +117,39 @@ class FundingProtectedQuerySet(models.QuerySet):
             return super().bulk_create(objs, **kwargs)
 
     def delete(self):
-        guard_funding_queryset(self, deleting=True)
-        return super().delete()
+        with model_boundary(), transaction.atomic(using=self.db):
+            rows = lock_funding_rows(self)
+            guard_funding_queryset(rows, deleting=True)
+            return models.QuerySet.delete(rows)
 
     def _raw_delete(self, using):
-        guard_funding_queryset(self, deleting=True)
-        return super()._raw_delete(using)
+        with model_boundary(), transaction.atomic(using=using):
+            rows = lock_funding_rows(self.using(using))
+            guard_funding_queryset(rows, deleting=True)
+            return models.QuerySet._raw_delete(rows, using)
 
 
 @contextmanager
 def funding_save_boundary(instance, update_fields=None):
-    with transaction.atomic():
-        rows = type(instance).objects.filter(pk=instance.pk)
-        old = rows.select_for_update().values().first() if instance.pk else None
+    using = instance._state.db or "default"
+    with model_boundary(), transaction.atomic(using=using):
+        rows = lock_funding_rows(type(instance).objects.using(using).filter(pk=instance.pk),
+            instance.funding_source_id if instance._meta.model_name == "fundingreceipt" else None)
+        old = rows.values().first() if instance.pk else None
         if instance._meta.model_name == "fundingreceipt":
-            if old and (old["idempotency_key"] or "").startswith(MANAGED_PREFIX):
+            if old and _managed(rows).exists():
                 raise ValidationError("Posted funding evidence is immutable; controlled source-linked reversal is unavailable.")
+            if old:
+                changes = {}
+                for field in ("idempotency_key", "funding_source_id"):
+                    if getattr(instance, field) != old[field] and (update_fields is None or field in update_fields or field.removesuffix("_id") in update_fields):
+                        changes[field] = getattr(instance, field)
+                guard_owner_receipt_rebinding(rows, changes)
+            else:
+                guard_owner_receipt_creation(instance, using)
             if (instance.idempotency_key or "").startswith(MANAGED_PREFIX) and not _posting.get():
                 raise ValidationError("Managed funding receipts require the atomic financial posting boundary.")
-            if old is None and not _posting.get():
+            if old is None and not _posting.get() and not (instance.idempotency_key or "").startswith(RECEIPT_PREFIX):
                 from ..models import FundingSource, FundingSourceType, FundingReceipt
                 source = FundingSource.objects.select_for_update().filter(pk=instance.funding_source_id).first()
                 if source and ((getattr(settings, "FINANCE_FUNDING_RECEIPTS", False)
@@ -130,4 +161,13 @@ def funding_save_boundary(instance, update_fields=None):
                 if (update_fields is None or field.name in update_fields or field.attname in update_fields)
                 and getattr(instance, field.attname) != old[field.attname]]
             guard_funding_queryset(rows, changed)
+        yield
+
+
+@contextmanager
+def funding_delete_boundary(instance):
+    using = instance._state.db or "default"
+    with model_boundary(), transaction.atomic(using=using):
+        rows = lock_funding_rows(type(instance).objects.using(using).filter(pk=instance.pk))
+        guard_funding_queryset(rows, deleting=True)
         yield

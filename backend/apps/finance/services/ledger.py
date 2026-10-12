@@ -137,6 +137,12 @@ def post_journal(
 
 @transaction.atomic
 def reverse_journal(entry: JournalEntry, *, posting_date, reason: str, user=None):
+    from .owner_capital_guards import owner_journal_history
+    if owner_journal_history(JournalEntry.objects.filter(pk=entry.pk)).exists():
+        raise ValidationError("Managed owner capital requires a controlled source-linked correction; standalone journal reversal is unavailable.")
+    from .expenditure_guards import expenditure_journal_history
+    if expenditure_journal_history(JournalEntry.objects.filter(pk=entry.pk)).exists():
+        raise ValidationError("Managed payable/payment journals require a controlled source-linked correction.")
     from .sale_guards import is_managed_sale_journal
     if is_managed_sale_journal(entry.pk):
         raise ValidationError("Posted sale/cash journals require a controlled source-linked correction.")
