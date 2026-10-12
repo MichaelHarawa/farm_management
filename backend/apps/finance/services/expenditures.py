@@ -27,7 +27,7 @@ from ..models import (
     PeriodStatus,
 )
 from ..permissions import has_owner_capital_access
-from .profitability import available_funding_source_cash
+from .cash_funding import lock_cash_sources, validate_cash_totals
 from .ledger import post_journal
 from .action_audit import record_finance_action
 from .financial_values import exact_decimal, business_date, lock_financial_periods
@@ -124,7 +124,7 @@ def validate_cost_allocations(expenditure: Expenditure, rows) -> list[tuple[int,
 
 
 def _validate_payment_rows(
-    rows, expected_total: Decimal, *, allow_less: bool, user=None
+    rows, expected_total: Decimal, *, allow_less: bool, user=None, payment_date=None
 ) -> list[dict]:
     if not isinstance(rows, list) or not rows:
         raise ValidationError({"funding_allocations": "Select at least one payment source."})
@@ -152,18 +152,7 @@ def _validate_payment_rows(
         raise ValidationError(
             {"funding_allocations": f"Payment allocations {qualifier} {expected_total}; received {total}."}
         )
-    sources = {
-        source.pk: source
-        # PostgreSQL cannot apply FOR UPDATE to the nullable side of the outer
-        # join produced by select_related("batch"). Lock the cash-source rows
-        # themselves; the batch label can be loaded lazily for error messages.
-        for source in FundingSource.objects.select_for_update().filter(pk__in=source_totals).order_by("pk")
-    }
-    missing = set(source_totals).difference(sources)
-    if missing:
-        raise ValidationError(
-            {"funding_allocations": f"Unknown funding source: {', '.join(map(str, sorted(missing)))}."}
-        )
+    sources = lock_cash_sources(source_totals)
     owner_only = {
         FundingClassification.OWNER_CAPITAL_RETURN,
         FundingClassification.OWNER_DRAWING,
@@ -185,16 +174,7 @@ def _validate_payment_rows(
             raise ValidationError(
                 {"funding_allocations": "Owner payment classifications require an owner-capital source."}
             )
-    for source_id, required in source_totals.items():
-        available = available_funding_source_cash(sources[source_id])
-        if required > available:
-            raise ValidationError(
-                {
-                    "funding_allocations": (
-                        f"{sources[source_id]} has {available} available, less than the requested {required}."
-                    )
-                }
-            )
+    validate_cash_totals(source_totals, sources, day=payment_date)
     return normalized
 
 
@@ -548,7 +528,11 @@ def record_expenditure_payment(
     if outstanding <= ZERO:
         raise ValidationError({"detail": "This expenditure is already fully paid."})
     normalized = _validate_payment_rows(
-        funding_rows, outstanding, allow_less=True, user=user
+        funding_rows, outstanding, allow_less=True, user=user,
+        # Only the explicit new command boundary applies the dated rule. Do
+        # not reinterpret historical salary/expenditure cash dates on rollout.
+        payment_date=payment_date if managed_expenditures(
+            Expenditure.objects.filter(pk=expenditure.pk)).exists() else None,
     )
     _create_funding_rows(
         expenditure,

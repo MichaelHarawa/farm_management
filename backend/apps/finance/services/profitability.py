@@ -4,6 +4,7 @@ from decimal import Decimal
 from typing import Iterable
 
 from django.conf import settings
+from django.db import transaction
 from rest_framework.exceptions import ValidationError
 
 
@@ -327,20 +328,27 @@ def selling_cost_total(batch: Batch) -> Decimal:
             )
 
 
+@transaction.atomic
 def ensure_batch_funding_source(batch: Batch) -> FundingSource:
     """
     Auto create (or get) a BATCH_COLLECTION FundingSource for the batch.
     Never store manual balance; computed from cash_collected - used.
-    Safe to call multiple times.
+    Safe to call multiple times, including when legacy aliases already exist.
+    Use the oldest label consistently; never merge/rewrite aliases or receipts.
     """
-    fs, created = FundingSource.objects.get_or_create(
-        source_type=FundingSourceType.BATCH_COLLECTION,
-        batch=batch,
-        defaults={
-            "description": f"Batch {batch.batch_id} sales collections",
-        },
-    )
-    return fs
+    sources = FundingSource.objects.filter(source_type=FundingSourceType.BATCH_COLLECTION,
+        batch=batch).order_by("pk")
+    existing = sources.first()
+    if existing is not None:
+        return existing
+    # There is deliberately no uniqueness constraint forbidding existing aliases.
+    # Serialize only first-source creation, then recheck after waiting. Payment
+    # callers already lock this batch; existing families take no new batch lock.
+    Batch.objects.select_for_update().get(pk=batch.pk)
+    existing = sources.first()
+    return existing if existing is not None else FundingSource.objects.create(
+        source_type=FundingSourceType.BATCH_COLLECTION, batch=batch,
+        description=f"Batch {batch.batch_id} sales collections")
 
 
 def _build_batch_profitability(

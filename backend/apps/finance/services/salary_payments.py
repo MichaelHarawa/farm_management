@@ -20,7 +20,6 @@ from ..models import (
     ExpenditurePaymentStatus,
     ExpenditureStatus,
     FinancePaymentStatus,
-    FundingSource,
     FundingSourceType,
     PayrollEntry,
     PayrollLiability,
@@ -31,7 +30,7 @@ from ..models import (
 )
 from ..permissions import has_owner_capital_access
 from .action_audit import record_finance_action
-from .profitability import available_funding_source_cash
+from .cash_funding import lock_cash_sources, validate_cash_totals
 
 
 ZERO = Decimal("0.00")
@@ -236,9 +235,7 @@ def record_salary_payment(*, payroll_entry_id: int, amount, payment_date, paymen
         totals[source_id] = totals.get(source_id, ZERO) + row_amount
     if sum(totals.values(), ZERO) != amount:
         raise ValidationError({"funding_allocations": "Funding allocations must equal the payment amount."})
-    sources = {s.pk: s for s in FundingSource.objects.select_for_update().filter(pk__in=totals)}
-    if set(sources) != set(totals):
-        raise ValidationError({"funding_allocations": "A selected funding source does not exist."})
+    sources = lock_cash_sources(totals)
     owner_source_ids = [
         source_id
         for source_id, source in sources.items()
@@ -248,10 +245,9 @@ def record_salary_payment(*, payroll_entry_id: int, amount, payment_date, paymen
         raise PermissionDenied(
             "Only administrators and directors can assign owner-capital cash."
         )
-    for source_id, required in totals.items():
-        available = available_funding_source_cash(sources[source_id])
-        if required > available:
-            raise ValidationError({"funding_allocations": f"{sources[source_id]} has only {available} available."})
+    # Salary's existing date/status policy is unchanged, but source aliases
+    # must reserve the same batch cash as supplier and selling-cost payments.
+    validate_cash_totals(totals, sources)
     payment = PayrollPayment.objects.create(
         payroll_entry=entry,
         amount=amount,

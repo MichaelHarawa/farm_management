@@ -1,5 +1,4 @@
 """Unregistered Phase6 sale-cost settlement; never adopt historical liabilities."""
-from collections import defaultdict
 from decimal import Decimal
 
 from django.conf import settings
@@ -9,13 +8,12 @@ from rest_framework.exceptions import ValidationError
 
 from apps.mobile_sync.projections import checksum
 from apps.poultry.models import Batch, PaymentStatus, Sales, SaleSellingCost
-from ..models import (ExpenditureStatus, FinancialCommandReceipt, FundingAllocation,
-    FundingClassification, FundingReceipt, FundingReceiptStatus, FundingSource,
-    FundingSourceType, JournalEntry, JournalStatus, PayrollPaymentFunding,
-    PayrollPaymentStatus, SaleCostPayment, SalePayment, SalePaymentStatus)
+from ..models import (FinancialCommandReceipt, FundingClassification, FundingSource,
+    FundingSourceType, JournalEntry, JournalStatus, SaleCostPayment)
 from ..permissions import FINANCE_WRITE_ROLES
 from .action_audit import record_finance_action
 from .expenditures import _validate_payment_rows
+from .cash_funding import dated_source_cash as _dated_source_cash
 from .financial_capture import _canonical, _currency, _funding_rows, _identifier, _submission, _text
 from .financial_values import business_date, exact_decimal, lock_financial_periods
 from .ledger import post_journal
@@ -135,35 +133,6 @@ def _verified_liability(cost):
     raise ValidationError({"selling_cost": "Original versioned sale-cost/payable evidence does not match; controlled review is required."})
 
 
-def _dated_source_cash(source, day):
-    """Conservative dated funding: incoming to this day minus ALL committed uses.
-
-    Later cash is not available to a backdated payment. Subtracting future uses
-    also reserves their confirmed cash; this never reorders historical payments.
-    """
-    if source.source_type == FundingSourceType.BATCH_COLLECTION:
-        scope = {"funding_source__source_type": FundingSourceType.BATCH_COLLECTION,
-                 "funding_source__batch_id": source.batch_id}
-        received = SalePayment.objects.filter(sale__batch_id=source.batch_id,
-            sale__payment_status__in=[PaymentStatus.PAID, PaymentStatus.PARTIAL, PaymentStatus.UNPAID],
-            status=SalePaymentStatus.POSTED, payment_date__date__lte=day).aggregate(total=Sum("amount"))["total"] or ZERO
-    else:
-        scope = {"funding_source_id": source.pk}
-        received = FundingReceipt.objects.filter(funding_source=source, status=FundingReceiptStatus.POSTED,
-            receipt_date__date__lte=day).aggregate(total=Sum("amount"))["total"] or ZERO
-    expense = FundingAllocation.objects.filter(**scope, expenditure__status=ExpenditureStatus.POSTED).aggregate(total=Sum("amount"))["total"] or ZERO
-    payroll = PayrollPaymentFunding.objects.filter(**scope, payment__status=PayrollPaymentStatus.POSTED).aggregate(total=Sum("amount"))["total"] or ZERO
-    costs = SaleCostPayment.objects.filter(**scope).aggregate(total=Sum("amount"))["total"] or ZERO
-    if getattr(settings, "FINANCE_SALE_COST_REVERSALS", False):
-        from ..models import SaleCostPaymentReversal
-        costs -= SaleCostPaymentReversal.objects.filter(**scope, refund_date__lte=day).aggregate(total=Sum("amount"))["total"] or ZERO
-    reversed_funding = ZERO
-    if getattr(settings, "FINANCE_FUNDING_REVERSALS", False):
-        from ..models import FundingReceiptReversal
-        reversed_funding = FundingReceiptReversal.objects.filter(funding_source=source).aggregate(total=Sum("amount"))["total"] or ZERO
-    return received - expense - payroll - costs - reversed_funding
-
-
 def record_sale_cost_payment(*, submission_id, user, currency, selling_cost_id,
                              payment_date, funding_allocations, payee, payment_method,
                              external_reference="", notes=""):
@@ -235,22 +204,8 @@ def record_sale_cost_payment(*, submission_id, user, currency, selling_cost_id,
             reserved_paid -= SaleCostPaymentReversal.objects.filter(payment__selling_cost=cost,
                 refund_date__lte=day).aggregate(total=Sum("amount"))["total"] or ZERO
         outstanding = cost.amount - reserved_paid
-        normalized = _validate_payment_rows(funding, outstanding, allow_less=True, user=actor)
-        totals = defaultdict(lambda: ZERO)
-        for row in normalized:
-            totals[row["funding_source"]] += row["amount"]
-        sources = {source.pk: source for source in FundingSource.objects.filter(pk__in=totals)}
-        # Aliased batch sources share one cash pool, not separate balances.
-        pool_totals = defaultdict(lambda: ZERO)
-        pool_sources = {}
-        for pk, amount in totals.items():
-            source = sources[pk]
-            pool = ("batch", source.batch_id) if source.source_type == FundingSourceType.BATCH_COLLECTION else ("source", pk)
-            pool_totals[pool] += amount
-            pool_sources[pool] = source
-        for pool, amount in pool_totals.items():
-            if amount > _dated_source_cash(pool_sources[pool], day):
-                raise ValidationError({"funding_allocations": "Confirmed dated cash is insufficient; later receipts cannot fund this event."})
+        normalized = _validate_payment_rows(funding, outstanding, allow_less=True,
+            user=actor, payment_date=day)
         ids, journals, versions = [], [], []
         for index, row in enumerate(normalized):
             payment = SaleCostPayment(selling_cost=cost, funding_source_id=row["funding_source"],
