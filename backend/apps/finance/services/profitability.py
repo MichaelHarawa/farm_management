@@ -60,6 +60,7 @@ from apps.poultry.services.batch_lifecycle import BirdBalance, calculate_bird_ba
 from .bird_days import calculate_batch_bird_days
 from .funding_attribution import expenditure_payment_beneficiary_shares
 from .warnings import finance_warning
+from .financial_values import accounting_calendar, business_date
 
 
 ZERO = Decimal("0.00")
@@ -663,9 +664,9 @@ def _management_overhead_by_batch(batches: list[Batch]) -> dict[int, dict]:
     if not batches:
         return result
 
-    earliest = min(batch.entry_date.date() for batch in batches)
+    earliest = min(business_date(batch.entry_date) for batch in batches)
     latest = max(
-        (batch.closed_at.date() if batch.closed_at else timezone.localdate())
+        (business_date(batch.closed_at) if batch.closed_at else timezone.localdate())
         for batch in batches
     )
     periods = AccountingPeriod.objects.filter(
@@ -1029,6 +1030,7 @@ def _attach_management_costs(rows: list[dict], batches: list[Batch]) -> list[dic
     return rows
 
 
+@accounting_calendar
 def batch_profitability(batch: Batch) -> dict:
     direct_cost = (
         input_cost_total(batch)
@@ -1315,6 +1317,7 @@ def _portfolio_profitability_rows(batches: list[Batch]) -> list[dict]:
     return rows
 
 
+@accounting_calendar
 def batch_survivor_cost_basis(batches: list[Batch]) -> dict[int, dict]:
     """Return the canonical production-cost basis used by customer analysis.
 
@@ -1335,6 +1338,7 @@ def batch_survivor_cost_basis(batches: list[Batch]) -> dict[int, dict]:
     }
 
 
+@accounting_calendar
 def batch_portfolio_report(batches: Iterable[Batch]) -> dict:
     """Aggregate lifecycle management profitability for selected poultry batches.
 

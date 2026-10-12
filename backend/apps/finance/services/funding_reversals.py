@@ -47,7 +47,8 @@ def _verified_receipt(receipt):
     fields = {"currency", "funding_source_id", "source_version", "amount", "receipt_date", "counterparty",
         "payment_method", "reference", "notes", "source_type", "receipt_id", "journal_id"}
     source = receipt.funding_source
-    if (not isinstance(result, dict) or set(result) != fields or result["receipt_id"] != str(receipt.pk)
+    proof_fields = {"cash_version", "cash_anchor"}
+    if (not isinstance(result, dict) or set(result) not in (fields, fields | proof_fields) or result["receipt_id"] != str(receipt.pk)
             or result["currency"] != "MWK" or result["amount"] != str(receipt.amount)
             or result["receipt_date"] != _canonical(receipt.receipt_date)
             or result["reference"] != receipt.reference or result["notes"] != receipt.notes
@@ -57,7 +58,10 @@ def _verified_receipt(receipt):
             or source.batch_id is not None or source.owner_id is not None
             or receipt.status != FundingReceiptStatus.POSTED):
         raise ValidationError({"receipt": "Original source/economic evidence changed; controlled review is required."})
-    payload = {key: value for key, value in result.items() if key not in {"receipt_id", "journal_id"}}
+    if proof_fields.issubset(result):
+        from .cash_evidence import require_cash_receipt
+        require_cash_receipt(receipt)
+    payload = {key: value for key, value in result.items() if key not in {"receipt_id", "journal_id"} | proof_fields}
     request = {key: value for key, value in payload.items() if key != "source_type"}
     if (checksum(payload) != receipt.request_fingerprint or anchor.request_hash != checksum({
             "actor": str(anchor.actor_id), "command": anchor.command, "payload": request})):

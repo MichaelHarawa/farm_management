@@ -174,6 +174,9 @@ def _validate_payment_rows(
             raise ValidationError(
                 {"funding_allocations": "Owner payment classifications require an owner-capital source."}
             )
+    if payment_date is not None:
+        from .cash_evidence import require_managed_incoming_cash
+        require_managed_incoming_cash(sources.values())
     validate_cash_totals(source_totals, sources, day=payment_date)
     return normalized
 

@@ -20,6 +20,7 @@ from apps.poultry.models import (
 )
 
 from ..models import AccountingPeriod, BirdDaySnapshot, PeriodStatus
+from .financial_values import accounting_calendar, business_date
 
 
 CALCULATION_VERSION = "bird-days-v1"
@@ -48,17 +49,18 @@ def _event_totals_by_date(model, date_field: str, quantity_field: str, filters):
 
 def _batch_end_date(batch: Batch, period: AccountingPeriod) -> date:
     if batch.status == BatchStatus.CLOSED and batch.closed_at:
-        return min(batch.closed_at.date(), period.period_end)
+        return min(business_date(batch.closed_at), period.period_end)
     if period.status == PeriodStatus.OPEN:
         return min(period.period_end, timezone.localdate())
     return period.period_end
 
 
+@accounting_calendar
 def calculate_batch_bird_days(
     batch: Batch,
     period: AccountingPeriod,
 ) -> dict[str, Decimal | int | date]:
-    start = max(batch.entry_date.date(), period.period_start)
+    start = max(business_date(batch.entry_date), period.period_start)
     end = _batch_end_date(batch, period)
 
     if start > end:
@@ -177,6 +179,7 @@ def calculate_batch_bird_days(
     }
 
 
+@accounting_calendar
 def recalculate_bird_day_snapshots(
     period: AccountingPeriod,
 ) -> list[BirdDaySnapshot]:

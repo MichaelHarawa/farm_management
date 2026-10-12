@@ -5,12 +5,29 @@ Call dated locks inside an atomic transaction, before batch/source/lot locks.
 """
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
+from functools import wraps
 
 from django.db.models import Q
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
 from ..models import AccountingPeriod, PeriodStatus
+
+
+def accounting_calendar(function):
+    """Evaluate a synchronous, eager financial calculation in its posting calendar.
+
+    Resolve the configured timezone per call, not at import time. This encloses
+    SQL compilation/evaluation as well as localdate(), and restores the caller's
+    display timezone even on failure. Do not use on lazy queryset/generator or
+    async entrypoints: their work would escape this context. This does not
+    authorize changing a deployment's established accounting timezone.
+    """
+    @wraps(function)
+    def wrapped(*args, **kwargs):
+        with timezone.override(timezone.get_default_timezone()):
+            return function(*args, **kwargs)
+    return wrapped
 
 
 def exact_decimal(value, *, field="amount", scale=2, max_digits=14, positive=False):

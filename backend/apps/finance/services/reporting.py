@@ -68,6 +68,7 @@ from .profitability import (
 )
 from .warnings import finance_warning
 from .inventory_reporting import stock_returns, stock_losses, movement_cost
+from .financial_values import accounting_calendar, business_date
 
 
 ZERO = Decimal("0.00")
@@ -136,6 +137,7 @@ def _management_cogs(period: AccountingPeriod) -> Decimal:
     return money(cogs)
 
 
+@accounting_calendar
 def _calculate_monthly_profitability_report(period: AccountingPeriod) -> dict:
     sales = _period_sales(period)
     revenue_rows = sales.values("product_type").annotate(total=Sum(_sales_expression()))
@@ -1085,6 +1087,7 @@ def monthly_profitability_report(period: AccountingPeriod) -> dict:
     return report
 
 
+@accounting_calendar
 def dashboard_warnings(period: AccountingPeriod | None = None) -> list[dict[str, str]]:
     thresholds = getattr(settings, "FINANCE_WARNING_THRESHOLDS", {})
     high_mortality_rate = Decimal(str(thresholds.get("high_mortality_rate", "8.0")))
@@ -1109,7 +1112,7 @@ def dashboard_warnings(period: AccountingPeriod | None = None) -> list[dict[str,
                 }
             )
         if (
-            batch.expected_maturity_date.date() < today
+            business_date(batch.expected_maturity_date) < today
             and not batch.sales_row.exclude(
                 payment_status=PaymentStatus.CANCELLED
             ).exists()
@@ -1381,6 +1384,7 @@ def dashboard_warnings(period: AccountingPeriod | None = None) -> list[dict[str,
     return [finance_warning(**warning) for warning in warnings]
 
 
+@accounting_calendar
 def dashboard_indicators(filters=None) -> dict:
     filters = filters or {}
     requested_period = filters.get("period") if hasattr(filters, "get") else None
@@ -1520,7 +1524,7 @@ def dashboard_indicators(filters=None) -> dict:
         selected_batches,
         total_attributed_cost=portfolio["summary"]["total_attributed_cost"],
     )
-    entry_dates = {batch.pk: batch.entry_date.date() for batch in selected_batches}
+    entry_dates = {batch.pk: business_date(batch.entry_date) for batch in selected_batches}
     batch_codes = {batch.pk: batch.batch_id for batch in selected_batches}
     trend_rows = (
         Sales.objects.filter(
@@ -1534,7 +1538,7 @@ def dashboard_indicators(filters=None) -> dict:
         lambda: {"quantity": 0, "revenue": ZERO}
     )
     for sale in trend_rows:
-        key = (sale.batch_id, sale.sale_date.date())
+        key = (sale.batch_id, business_date(sale.sale_date))
         trend[key]["quantity"] += sale.quantity_sold
         trend[key]["revenue"] += sale.sale_total
     sales_trend = []
@@ -1628,6 +1632,7 @@ def dashboard_indicators(filters=None) -> dict:
     }
 
 
+@accounting_calendar
 def receivables_report(filters=None) -> dict:
     filters = filters or {}
     selected_status = filters.get("status", "open") if hasattr(filters, "get") else "open"
@@ -1687,7 +1692,7 @@ def receivables_report(filters=None) -> dict:
             "receivable_follow_up_name": sale.receivable_follow_up_name,
             "sale_date": sale.sale_date,
             "due_date": sale.due_date,
-            "age_days": max((today - sale.sale_date.date()).days, 0),
+            "age_days": max((today - business_date(sale.sale_date)).days, 0),
             "days_overdue": max((today - sale.due_date).days, 0) if sale.due_date else 0,
             "sale_total": sale.sale_total,
             "amount_paid": sale.amount_paid,
