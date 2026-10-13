@@ -44,6 +44,15 @@ def _capture(*, currency, invoice_group_id, invoice_version, payment_date, total
     group_id = _uuid(invoice_group_id, "invoice_group_id")
     if not isinstance(invoice_version, str) or not re.fullmatch(r"[0-9a-f]{64}", invoice_version):
         raise ValidationError({"invoice_version": "Retain the original accepted invoice version."})
+    payment = _payment_capture(currency=currency, payment_date=payment_date,
+        total_payment_amount=total_payment_amount, lines=lines, notes=notes)
+    return dict(currency=currency, invoice_group_id=str(group_id), invoice_version=invoice_version,
+        **{key: value for key, value in payment.items() if key != "currency"})
+
+
+def _payment_capture(*, currency, payment_date, total_payment_amount, lines, notes):
+    """Shared exact observed payment normalization, without a guessed parent."""
+    _currency(currency)
     day = business_date(payment_date, field="payment_date")
     if day > timezone.localdate():
         raise ValidationError({"payment_date": "Record the actual payment date, not a future event."})
@@ -66,8 +75,8 @@ def _capture(*, currency, invoice_group_id, invoice_version, payment_date, total
         total = exact_decimal(total_payment_amount, positive=True, field="total_payment_amount")
         if sum((line["amount"] for line in observed), Decimal("0.00")) != total:
             raise ValidationError({"total_payment_amount": "Payment total must equal the explicit line amounts exactly; never infer a split."})
-    return dict(currency=currency, invoice_group_id=str(group_id), invoice_version=invoice_version,
-        payment_date=day, total_payment_amount=total, lines=observed, notes=_text(notes, "notes", 4000))
+    return dict(currency=currency, payment_date=day, total_payment_amount=total,
+        lines=observed, notes=_text(notes, "notes", 4000))
 
 
 def _invoice(group_id, version):
