@@ -115,10 +115,12 @@ def _version(expenditure, journal, *, submission_id, command, actor_id, result):
         _refuse()
     inventory = None
     if stock:
-        binding = InventoryLotBinding.objects.select_related("lot").filter(expenditure=expenditure).first()
+        binding = InventoryLotBinding.objects.select_related("lot", "item").filter(expenditure=expenditure).first()
         if binding is None or result.get("lot_id") != str(binding.lot_id):
             _refuse()
         lot = binding.lot
+        from .inventory_units import require_quantity_definition
+        require_quantity_definition(result.get("stock_quantity_evidence"), binding.item, lot.quantity_purchased)
         receipts = list(StockMovement.objects.filter(lot=lot, movement_type=StockMovementType.RECEIPT).order_by("pk")[:2])
         if len(receipts) != 1:
             _refuse()
@@ -161,7 +163,7 @@ def seal_payable_result(result, *, submission_id, command, actor_id, request_has
     return sealed
 
 
-def verified_payable(expenditure):
+def verified_payable(expenditure, *, _invoice_group=True):
     """One intact accepted posting plus exact current original evidence."""
     key = f"inventory-purchase:{expenditure.pk}" if expenditure.accounting_nature == AccountingNature.INVENTORY_PURCHASE else f"financial-expenditure:{expenditure.pk}"
     journal = JournalEntry.objects.filter(idempotency_key=key).first()
@@ -179,6 +181,9 @@ def verified_payable(expenditure):
                 command=receipt.command, actor_id=receipt.actor_id, request_hash=receipt.request_hash)):
         return False
     try:
+        if _invoice_group:
+            from .inventory_invoices import require_invoice_membership
+            require_invoice_membership(receipt)
         return result["payable_version"] == _version(expenditure, journal, submission_id=receipt.pk,
             command=receipt.command, actor_id=receipt.actor_id, result=result)
     except ValidationError:

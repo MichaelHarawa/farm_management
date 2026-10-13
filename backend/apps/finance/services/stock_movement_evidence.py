@@ -126,6 +126,11 @@ def _version(movement, *, submission_id, command, actor_id, result):
         if Counter((line.account.code, line.debit, line.credit, line.batch_id,
                 line.funding_source_id) for line in lines) != Counter(expected):
             _refuse()
+    from .inventory_units import require_quantity_definition
+    counted = kind == StockMovementType.ADJUSTMENT
+    require_quantity_definition(result.get("stock_quantity_evidence"), movement.item,
+        evidence.counted_quantity if counted else movement.quantity,
+        field="counted_quantity" if counted else "quantity")
     return checksum({"basis": "phase6-original-stock-movement-v1",
         "movement": _row(movement, {"updated_at"}),
         "usage": _row(usage, {"locked", "updated_at"}) if usage else None,

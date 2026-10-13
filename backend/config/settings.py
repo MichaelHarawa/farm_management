@@ -252,6 +252,11 @@ MOBILE_SYNC_POULTRY_V2 = env_bool("MOBILE_SYNC_POULTRY_V2", False)
 # Internal Phase6 domain foundation only; not a financial sync capability.
 # Apply additive migrations in an isolated deployment before opting in.
 FINANCE_POULTRY_STOCK_LINKAGE = env_bool("FINANCE_POULTRY_STOCK_LINKAGE", False)
+# Private item-specific conversion definitions; not mobile master publication.
+# Requires the existing financial receipt schema; leave off on the source farm.
+FINANCE_INVENTORY_UNIT_CONVERSIONS = env_bool("FINANCE_INVENTORY_UNIT_CONVERSIONS", False)
+# Private unpaid multi-item invoice capture; not a public financial capability.
+FINANCE_INVENTORY_INVOICES = env_bool("FINANCE_INVENTORY_INVOICES", False)
 # Internal Phase6 settlement/report foundation, not a public/mobile capability.
 # Enable only on an explicitly migrated deployment; never disable after payments.
 FINANCE_SALE_COST_SETTLEMENT = env_bool("FINANCE_SALE_COST_SETTLEMENT", False)

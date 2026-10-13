@@ -17,7 +17,7 @@ from rest_framework.exceptions import ValidationError
 from apps.poultry.models import Batch
 from apps.poultry.services.batch_lifecycle import assert_batch_in_production
 from ..models import (AccountingNature, AllocationMethod, ConsumableItem,
-    ConsumableUsage, ConsumableUsageScope, Expenditure, ExpenditureCategory,
+    ConsumableUsage, ConsumableUsageScope, Expenditure, ExpenditureCategory, FinancialCommandReceipt,
     ExpenditurePaymentStatus, FinancePaymentStatus, InventoryCostingMethod,
     InventoryLocation, InventoryLocationStock, InventoryLotBinding, InventoryValuePool, InventoryMovementEvidence,
     SharedConsumableLot, StockMovement, StockMovementType)
@@ -203,24 +203,29 @@ def _claim_invoice(key):
     lock_id = int.from_bytes(hashlib.sha256(b"farm-stock-invoice-v1:" + key.encode()).digest()[:8], "big", signed=True)
     with connection.cursor() as cursor:
         cursor.execute("SELECT pg_advisory_xact_lock(%s)", [lock_id])
-    if InventoryLotBinding.objects.filter(invoice_key=key).exists():
+    from .inventory_invoices import COMMAND as INVOICE_COMMAND
+    if (InventoryLotBinding.objects.filter(invoice_key=key).exists()
+            or FinancialCommandReceipt.objects.filter(command=INVOICE_COMMAND, result__invoice_key=key).exists()):
         raise ValidationError({"possible_duplicate": "This supplier invoice already has a managed stock purchase; review the original evidence."})
 
 
 def record_inventory_purchase(*, submission_id, user, currency, item_id, location_id,
                               category_id, purchase_date, quantity, total_purchase_cost,
                               supplier, invoice_reference="", expiry_date=None, notes="",
-                              funding_allocations=None, payment_date=None, quantity_unit=None):
+                              funding_allocations=None, payment_date=None, quantity_unit=None, unit_conversion_id=None):
     _currency(currency)
     item_id, location_id = _identifier(item_id, "item_id"), _identifier(location_id, "location_id")
     category_id = _identifier(category_id, "category_id")
     purchase_date = _day(purchase_date, "purchase_date")
     quantity = stock_quantity(quantity)
     quantity_unit = captured_unit(quantity_unit)
+    units = unit_payload(quantity_unit, unit_conversion_id)
     total_purchase_cost = exact_decimal(total_purchase_cost, positive=True, field="total_purchase_cost")
     supplier = _required_text(supplier, "supplier", 160)
     invoice_reference = _text(invoice_reference, "invoice_reference", 120)
     invoice_key = _invoice_key(supplier, invoice_reference)
+    from .inventory_invoices import purchase_invoice_context
+    invoice_payload, binding_invoice_key, grouped = purchase_invoice_context(submission_id, invoice_key, user.pk)
     notes = _text(notes, "notes", 4000)
     expiry_date = business_date(expiry_date, field="expiry_date") if expiry_date is not None else None
     if expiry_date is not None and expiry_date < purchase_date:
@@ -238,9 +243,11 @@ def record_inventory_purchase(*, submission_id, user, currency, item_id, locatio
     @inventory_posting_boundary()
     def effect(actor):
         periods = lock_financial_periods(purchase_date, *([payment_date] if funding_allocations else []))
-        _claim_invoice(invoice_key)
+        if not grouped:
+            _claim_invoice(invoice_key)
         item = _item(item_id)
-        base, unit_evidence = base_quantity(quantity, quantity_unit, item)
+        base, unit_evidence = base_quantity(quantity, quantity_unit, item,
+            unit_conversion_id=units.get("unit_conversion_id"))
         pool = _pool(item, purchase_date, create=True)
         location = _location(location_id)
         category = ExpenditureCategory.objects.filter(pk=category_id, is_active=True, requires_item_details=True).first()
@@ -269,7 +276,7 @@ def record_inventory_purchase(*, submission_id, user, currency, item_id, locatio
             storage_location=location.name, created_by=actor, notes=notes)
         lot.full_clean()
         lot.save()
-        binding = InventoryLotBinding.objects.create(lot=lot, item=item, expenditure=expenditure, invoice_key=invoice_key)
+        binding = InventoryLotBinding.objects.create(lot=lot, item=item, expenditure=expenditure, invoice_key=binding_invoice_key)
         InventoryLocationStock.objects.create(binding=binding, location=location, quantity=base)
         movement = _movement(kind=StockMovementType.RECEIPT, day=purchase_date, item=item, lot=lot,
             destination=location, quantity=base, cost=total_purchase_cost,
@@ -289,24 +296,25 @@ def record_inventory_purchase(*, submission_id, user, currency, item_id, locatio
                     _inventory_purchase=True)
             _sync_lot_payment(lot, expenditure)
         return quantity_result({"lot_id": str(lot.pk), "expenditure_id": str(expenditure.pk),
-                "movement_id": str(movement.pk), "journal_id": str(journal.pk)}, unit_evidence)
+                "movement_id": str(movement.pk), "journal_id": str(journal.pk), **invoice_payload}, unit_evidence)
 
     result, created = _submission(submission_id=submission_id, command="inventory.receipt.record", user=user,
         payload=dict(currency=currency, item_id=str(item_id), location_id=str(location_id), category_id=str(category_id),
             purchase_date=purchase_date, quantity=quantity, total_purchase_cost=total_purchase_cost,
             supplier=supplier, invoice_reference=invoice_reference, expiry_date=expiry_date, notes=notes,
-            funding_allocations=funding_allocations, payment_date=payment_date, **unit_payload(quantity_unit)),
+            funding_allocations=funding_allocations, payment_date=payment_date, **units, **invoice_payload),
         roles=FINANCE_WRITE_ROLES, effect=effect)
     return SharedConsumableLot.objects.get(pk=result["lot_id"]), created
 
 
 def record_inventory_issue(*, submission_id, user, lot_id, location_id, usage_date,
                            quantity, task_or_purpose, batch_id=None, usage_scope=ConsumableUsageScope.BATCH_DIRECT,
-                           quantity_unit=None):
+                           quantity_unit=None, unit_conversion_id=None):
     lot_id, location_id = _identifier(lot_id, "lot_id"), _identifier(location_id, "location_id")
     batch_id = _identifier(batch_id, "batch_id") if batch_id is not None else None
     quantity = stock_quantity(quantity)
     quantity_unit = captured_unit(quantity_unit)
+    units = unit_payload(quantity_unit, unit_conversion_id)
     usage_date = _day(usage_date, "usage_date")
     task_or_purpose = _required_text(task_or_purpose, "task_or_purpose", 255)
     if usage_scope not in {ConsumableUsageScope.BATCH_DIRECT, ConsumableUsageScope.ADMINISTRATION}:
@@ -318,18 +326,18 @@ def record_inventory_issue(*, submission_id, user, lot_id, location_id, usage_da
         return _issue_effect(actor=actor, submission_id=submission_id, lot_id=lot_id,
             location_id=location_id, usage_date=usage_date, quantity=quantity,
             task_or_purpose=task_or_purpose, batch_id=batch_id, usage_scope=usage_scope,
-            quantity_unit=quantity_unit)
+            quantity_unit=quantity_unit, unit_conversion_id=units.get("unit_conversion_id"))
 
     result, created = _submission(submission_id=submission_id, command="inventory.issue.record", user=user,
         payload=dict(lot_id=str(lot_id), location_id=str(location_id), usage_date=usage_date,
             quantity=quantity, task_or_purpose=task_or_purpose, batch_id=str(batch_id) if batch_id else None,
-            usage_scope=usage_scope, **unit_payload(quantity_unit)), roles=FINANCE_WRITE_ROLES, effect=effect)
+            usage_scope=usage_scope, **units), roles=FINANCE_WRITE_ROLES, effect=effect)
     return ConsumableUsage.objects.get(pk=result["usage_id"]), created
 
 
 @inventory_posting_boundary()
 def _issue_effect(*, actor, submission_id, lot_id, location_id, usage_date, quantity,
-                  task_or_purpose, batch_id, usage_scope, quantity_unit=None):
+                  task_or_purpose, batch_id, usage_scope, quantity_unit=None, unit_conversion_id=None):
     """Validated issue effect; call only inside a permanent submission boundary.
 
     Composites reuse this effect, not a second command/receipt or guessed cost.
@@ -353,7 +361,7 @@ def _issue_effect(*, actor, submission_id, lot_id, location_id, usage_date, quan
     if binding is None:
         raise ValidationError({"legacy_reconciliation": "Unlinked legacy lots are unavailable until explicitly reconciled."})
     item = _item(binding.item_id)
-    quantity, unit_evidence = base_quantity(quantity, quantity_unit, item)
+    quantity, unit_evidence = base_quantity(quantity, quantity_unit, item, unit_conversion_id=unit_conversion_id)
     pool = _pool(item, usage_date)
     location = _location(location_id)
     lot = SharedConsumableLot.objects.select_for_update().get(pk=lot_id)

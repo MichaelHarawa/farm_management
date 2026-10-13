@@ -69,12 +69,13 @@ def _journal(movement, user, *, returning=False):
 
 
 def record_inventory_return(*, submission_id, user, original_issue_id, location_id,
-                            movement_date, quantity, reason, quantity_unit=None):
+                            movement_date, quantity, reason, quantity_unit=None, unit_conversion_id=None):
     original_issue_id = _identifier(original_issue_id, "original_issue_id")
     location_id = _identifier(location_id, "location_id")
     movement_date = _day(movement_date, "movement_date")
     quantity = stock_quantity(quantity)
     quantity_unit = captured_unit(quantity_unit)
+    units = unit_payload(quantity_unit, unit_conversion_id)
     reason = _required_text(reason, "reason", 255)
 
     @inventory_posting_boundary()
@@ -103,7 +104,8 @@ def record_inventory_return(*, submission_id, user, original_issue_id, location_
                 or original.usage.batch_id != original.batch_id):
             raise ValidationError({"original_issue": "The original cost beneficiary needs reconciliation."})
         binding, item, pool, lot, locations = _stock(original.lot_id, movement_date, [location_id])
-        base, unit_evidence = base_quantity(quantity, quantity_unit, item)
+        base, unit_evidence = base_quantity(quantity, quantity_unit, item,
+            unit_conversion_id=units.get("unit_conversion_id"))
         if original.item_id != item.pk or original.usage.consumable_lot_id != lot.pk:
             raise ValidationError({"original_issue": "Original item/lot evidence needs reconciliation."})
         # Re-read original immutable evidence only after the item mutex. Every
@@ -133,13 +135,13 @@ def record_inventory_return(*, submission_id, user, original_issue_id, location_
 
     result, created = _submission(submission_id=submission_id, user=user, command="inventory.return.record",
         payload=dict(original_issue_id=str(original_issue_id), location_id=str(location_id),
-            movement_date=movement_date, quantity=quantity, reason=reason, **unit_payload(quantity_unit)),
+            movement_date=movement_date, quantity=quantity, reason=reason, **units),
         roles=FINANCE_WRITE_ROLES, effect=effect)
     return StockMovement.objects.get(pk=result["movement_id"]), created
 
 
 def record_inventory_transfer(*, submission_id, user, lot_id, from_location_id, to_location_id,
-                              movement_date, quantity, reason, quantity_unit=None):
+                              movement_date, quantity, reason, quantity_unit=None, unit_conversion_id=None):
     lot_id = _identifier(lot_id, "lot_id")
     from_location_id = _identifier(from_location_id, "from_location_id")
     to_location_id = _identifier(to_location_id, "to_location_id")
@@ -148,13 +150,15 @@ def record_inventory_transfer(*, submission_id, user, lot_id, from_location_id, 
     movement_date = _day(movement_date, "movement_date")
     quantity = stock_quantity(quantity)
     quantity_unit = captured_unit(quantity_unit)
+    units = unit_payload(quantity_unit, unit_conversion_id)
     reason = _required_text(reason, "reason", 255)
 
     @inventory_posting_boundary()
     def effect(actor):
         lock_financial_periods(movement_date)
         binding, item, pool, lot, locations = _stock(lot_id, movement_date, [from_location_id, to_location_id])
-        base, unit_evidence = base_quantity(quantity, quantity_unit, item)
+        base, unit_evidence = base_quantity(quantity, quantity_unit, item,
+            unit_conversion_id=units.get("unit_conversion_id"))
         if lot.expiry_date and movement_date > lot.expiry_date:
             raise ValidationError({"expiry_date": "Expired stock requires expiry review, not an ordinary transfer."})
         source = _location_stock(binding, locations[from_location_id])
@@ -176,13 +180,13 @@ def record_inventory_transfer(*, submission_id, user, lot_id, from_location_id, 
 
     result, created = _submission(submission_id=submission_id, user=user, command="inventory.transfer.record",
         payload=dict(lot_id=str(lot_id), from_location_id=str(from_location_id), to_location_id=str(to_location_id),
-            movement_date=movement_date, quantity=quantity, reason=reason, **unit_payload(quantity_unit)),
+            movement_date=movement_date, quantity=quantity, reason=reason, **units),
         roles=FINANCE_WRITE_ROLES, effect=effect)
     return StockMovement.objects.get(pk=result["movement_id"]), created
 
 
 def _loss(*, submission_id, user, lot_id, location_id, movement_date, quantity, reason, kind,
-          counted_quantity=None, expected_revision=None, quantity_unit=None):
+          counted_quantity=None, expected_revision=None, quantity_unit=None, unit_conversion_id=None):
     lot_id = _identifier(lot_id, "lot_id")
     location_id = _identifier(location_id, "location_id")
     movement_date = _day(movement_date, "movement_date")
@@ -190,6 +194,7 @@ def _loss(*, submission_id, user, lot_id, location_id, movement_date, quantity, 
     adjustment = kind == StockMovementType.ADJUSTMENT
     quantity = stock_quantity(quantity) if not adjustment else None
     quantity_unit = captured_unit(quantity_unit)
+    units = unit_payload(quantity_unit, unit_conversion_id)
     if adjustment:
         counted_quantity = exact_decimal(counted_quantity, scale=4, max_digits=14, field="counted_quantity")
         expected_revision = _identifier(expected_revision, "expected_revision")
@@ -199,7 +204,8 @@ def _loss(*, submission_id, user, lot_id, location_id, movement_date, quantity, 
         lock_financial_periods(movement_date)
         binding, item, pool, lot, locations = _stock(lot_id, movement_date, [location_id])
         base, unit_evidence = base_quantity(counted_quantity if adjustment else quantity,
-            quantity_unit, item, field="counted_quantity" if adjustment else "quantity", positive=not adjustment)
+            quantity_unit, item, field="counted_quantity" if adjustment else "quantity", positive=not adjustment,
+            unit_conversion_id=units.get("unit_conversion_id"))
         if adjustment and pool.revision != expected_revision:
             raise ValidationError({"expected_revision": "Stock changed since this count; preserve the count for review."})
         expired = lot.expiry_date and movement_date > lot.expiry_date
@@ -233,23 +239,28 @@ def _loss(*, submission_id, user, lot_id, location_id, movement_date, quantity, 
     result, created = _submission(submission_id=submission_id, user=user, command=f"inventory.{kind}.record",
         payload=dict(lot_id=str(lot_id), location_id=str(location_id), movement_date=movement_date,
             quantity=quantity, reason=reason, counted_quantity=counted_quantity, expected_revision=expected_revision,
-            **unit_payload(quantity_unit)),
+            **units),
         roles=FINANCE_WRITE_ROLES if kind == StockMovementType.WASTE else FINANCE_MANAGEMENT_ROLES, effect=effect)
     return StockMovement.objects.get(pk=result["movement_id"]), created
 
 
-def record_inventory_waste(*, submission_id, user, lot_id, location_id, movement_date, quantity, reason, quantity_unit=None):
+def record_inventory_waste(*, submission_id, user, lot_id, location_id, movement_date, quantity, reason,
+                           quantity_unit=None, unit_conversion_id=None):
     return _loss(submission_id=submission_id, user=user, lot_id=lot_id, location_id=location_id,
-        movement_date=movement_date, quantity=quantity, reason=reason, kind=StockMovementType.WASTE, quantity_unit=quantity_unit)
+        movement_date=movement_date, quantity=quantity, reason=reason, kind=StockMovementType.WASTE,
+        quantity_unit=quantity_unit, unit_conversion_id=unit_conversion_id)
 
 
-def record_inventory_expiry(*, submission_id, user, lot_id, location_id, movement_date, quantity, reason, quantity_unit=None):
+def record_inventory_expiry(*, submission_id, user, lot_id, location_id, movement_date, quantity, reason,
+                            quantity_unit=None, unit_conversion_id=None):
     return _loss(submission_id=submission_id, user=user, lot_id=lot_id, location_id=location_id,
-        movement_date=movement_date, quantity=quantity, reason=reason, kind=StockMovementType.EXPIRY, quantity_unit=quantity_unit)
+        movement_date=movement_date, quantity=quantity, reason=reason, kind=StockMovementType.EXPIRY,
+        quantity_unit=quantity_unit, unit_conversion_id=unit_conversion_id)
 
 
 def record_inventory_count_loss(*, submission_id, user, lot_id, location_id, movement_date,
-                                counted_quantity, expected_revision, reason, quantity_unit=None):
+                                counted_quantity, expected_revision, reason, quantity_unit=None, unit_conversion_id=None):
     return _loss(submission_id=submission_id, user=user, lot_id=lot_id, location_id=location_id,
         movement_date=movement_date, quantity=None, reason=reason, kind=StockMovementType.ADJUSTMENT,
-        counted_quantity=counted_quantity, expected_revision=expected_revision, quantity_unit=quantity_unit)
+        counted_quantity=counted_quantity, expected_revision=expected_revision, quantity_unit=quantity_unit,
+        unit_conversion_id=unit_conversion_id)

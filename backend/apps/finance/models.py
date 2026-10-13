@@ -3858,6 +3858,9 @@ class FinancialReceiptQuerySet(models.QuerySet):
     def delete(self):
         raise ValidationError("Financial deduplication receipts cannot be deleted.")
 
+    def _raw_delete(self, using):
+        raise ValidationError("Financial deduplication receipts cannot be deleted.")
+
 
 class FinancialCommandReceipt(TimestampedModel):
     """Permanent accepted-effect deduplication; independent of sync retention.
@@ -3886,6 +3889,16 @@ class FinancialCommandReceipt(TimestampedModel):
 
     def delete(self, *args, **kwargs):
         raise ValidationError("Financial deduplication receipts cannot be deleted.")
+
+    def save_base(self, raw=False, force_insert=False, force_update=False, using=None, update_fields=None):
+        # Fixture/raw import and a direct save_base must not overwrite retained
+        # command results or adopt an incomplete definition as accepted history.
+        if not self._state.adding or raw or force_update or update_fields is not None:
+            raise ValidationError("Accepted financial receipts and their identity are immutable.")
+        if self.completed_at is None or not self.result:
+            raise ValidationError("Only completed atomic financial effects may create a receipt.")
+        return super().save_base(raw=False, force_insert=True, force_update=False,
+            using=using, update_fields=None)
 
 
 class FundingReversalQuerySet(FinancialReceiptQuerySet):
