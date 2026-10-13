@@ -148,6 +148,9 @@ def _submission(*, submission_id, command, user, payload, roles, effect):
     from .cash_evidence import seal_cash_result
     result = seal_cash_result(result, submission_id=submission_id, command=command,
         actor_id=actor.pk, request_hash=fingerprint)
+    from .stock_movement_evidence import seal_stock_result
+    result = seal_stock_result(result, submission_id=submission_id, command=command,
+        actor_id=actor.pk, request_hash=fingerprint)
     receipt = FinancialCommandReceipt.objects.create(submission_id=submission_id, command=command,
         actor=actor, request_hash=fingerprint, result=result, completed_at=timezone.now())
     return receipt.result, True

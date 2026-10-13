@@ -86,6 +86,8 @@ def _pool(item, day, *, create=False):
     if day < pool.last_movement_date:
         raise ValidationError({"stock_chronology": "Earlier stock dates require review; the original date must not be changed automatically."})
     _require_pool_purchase_proof(pool)
+    from .stock_movement_evidence import require_pool_movement_proof
+    require_pool_movement_proof(pool)
     _check_pool(pool)
     return pool
 
