@@ -28,6 +28,7 @@ from .financial_capture import _currency, _funding_rows, _identifier, _submissio
 from .financial_values import business_date, exact_decimal, lock_financial_periods
 from .ledger import post_journal
 from .inventory_guards import inventory_posting_boundary
+from .inventory_units import base_quantity, captured_unit, quantity_result, unit_payload
 
 ZERO = Decimal("0.00")
 CENT = Decimal("0.01")
@@ -209,12 +210,13 @@ def _claim_invoice(key):
 def record_inventory_purchase(*, submission_id, user, currency, item_id, location_id,
                               category_id, purchase_date, quantity, total_purchase_cost,
                               supplier, invoice_reference="", expiry_date=None, notes="",
-                              funding_allocations=None, payment_date=None):
+                              funding_allocations=None, payment_date=None, quantity_unit=None):
     _currency(currency)
     item_id, location_id = _identifier(item_id, "item_id"), _identifier(location_id, "location_id")
     category_id = _identifier(category_id, "category_id")
     purchase_date = _day(purchase_date, "purchase_date")
     quantity = stock_quantity(quantity)
+    quantity_unit = captured_unit(quantity_unit)
     total_purchase_cost = exact_decimal(total_purchase_cost, positive=True, field="total_purchase_cost")
     supplier = _required_text(supplier, "supplier", 160)
     invoice_reference = _text(invoice_reference, "invoice_reference", 120)
@@ -238,6 +240,7 @@ def record_inventory_purchase(*, submission_id, user, currency, item_id, locatio
         periods = lock_financial_periods(purchase_date, *([payment_date] if funding_allocations else []))
         _claim_invoice(invoice_key)
         item = _item(item_id)
+        base, unit_evidence = base_quantity(quantity, quantity_unit, item)
         pool = _pool(item, purchase_date, create=True)
         location = _location(location_id)
         category = ExpenditureCategory.objects.filter(pk=category_id, is_active=True, requires_item_details=True).first()
@@ -258,25 +261,25 @@ def record_inventory_purchase(*, submission_id, user, currency, item_id, locatio
                 allow_unpaid=True, _inventory_purchase=True)
         with localcontext() as context:
             context.prec = 40
-            unit_cost = exact_decimal((total_purchase_cost / quantity).quantize(Decimal("0.000001")), scale=6, max_digits=16, field="unit_cost")
+            unit_cost = exact_decimal((total_purchase_cost / base).quantize(Decimal("0.000001")), scale=6, max_digits=16, field="unit_cost")
         lot = SharedConsumableLot(item=item.name, category=item.category, purchase_date=purchase_date,
-            supplier=supplier, invoice_reference=invoice_reference, quantity_purchased=quantity,
+            supplier=supplier, invoice_reference=invoice_reference, quantity_purchased=base,
             unit_of_measurement=item.base_unit, total_purchase_cost=total_purchase_cost,
-            unit_cost=unit_cost, quantity_available=quantity, expiry_date=expiry_date,
+            unit_cost=unit_cost, quantity_available=base, expiry_date=expiry_date,
             storage_location=location.name, created_by=actor, notes=notes)
         lot.full_clean()
         lot.save()
         binding = InventoryLotBinding.objects.create(lot=lot, item=item, expenditure=expenditure, invoice_key=invoice_key)
-        InventoryLocationStock.objects.create(binding=binding, location=location, quantity=quantity)
+        InventoryLocationStock.objects.create(binding=binding, location=location, quantity=base)
         movement = _movement(kind=StockMovementType.RECEIPT, day=purchase_date, item=item, lot=lot,
-            destination=location, quantity=quantity, cost=total_purchase_cost,
+            destination=location, quantity=base, cost=total_purchase_cost,
             key=f"inventory-receipt:{submission_id}", user=actor, reference=invoice_reference)
         with expenditure_effect_boundary("post"):
             journal = post_journal(posting_date=purchase_date, description=f"Inventory purchase {expenditure.expenditure_reference}",
                 source_model="finance.Expenditure", source_identifier=expenditure.pk,
                 idempotency_key=f"inventory-purchase:{expenditure.pk}", user=actor,
                 lines=[{"account": "1200", "debit": total_purchase_cost}, {"account": "2000", "credit": total_purchase_cost}])
-        pool.quantity += quantity
+        pool.quantity += base
         pool.carrying_value += total_purchase_cost
         _advance(pool, purchase_date)
         if funding_allocations:
@@ -285,22 +288,25 @@ def record_inventory_purchase(*, submission_id, user, currency, item_id, locatio
                     payment_group_key=f"inventory-initial:{submission_id}", payment_date=payment_date, user=actor,
                     _inventory_purchase=True)
             _sync_lot_payment(lot, expenditure)
-        return {"lot_id": str(lot.pk), "expenditure_id": str(expenditure.pk),
-                "movement_id": str(movement.pk), "journal_id": str(journal.pk)}
+        return quantity_result({"lot_id": str(lot.pk), "expenditure_id": str(expenditure.pk),
+                "movement_id": str(movement.pk), "journal_id": str(journal.pk)}, unit_evidence)
 
     result, created = _submission(submission_id=submission_id, command="inventory.receipt.record", user=user,
         payload=dict(currency=currency, item_id=str(item_id), location_id=str(location_id), category_id=str(category_id),
             purchase_date=purchase_date, quantity=quantity, total_purchase_cost=total_purchase_cost,
             supplier=supplier, invoice_reference=invoice_reference, expiry_date=expiry_date, notes=notes,
-            funding_allocations=funding_allocations, payment_date=payment_date), roles=FINANCE_WRITE_ROLES, effect=effect)
+            funding_allocations=funding_allocations, payment_date=payment_date, **unit_payload(quantity_unit)),
+        roles=FINANCE_WRITE_ROLES, effect=effect)
     return SharedConsumableLot.objects.get(pk=result["lot_id"]), created
 
 
 def record_inventory_issue(*, submission_id, user, lot_id, location_id, usage_date,
-                           quantity, task_or_purpose, batch_id=None, usage_scope=ConsumableUsageScope.BATCH_DIRECT):
+                           quantity, task_or_purpose, batch_id=None, usage_scope=ConsumableUsageScope.BATCH_DIRECT,
+                           quantity_unit=None):
     lot_id, location_id = _identifier(lot_id, "lot_id"), _identifier(location_id, "location_id")
     batch_id = _identifier(batch_id, "batch_id") if batch_id is not None else None
     quantity = stock_quantity(quantity)
+    quantity_unit = captured_unit(quantity_unit)
     usage_date = _day(usage_date, "usage_date")
     task_or_purpose = _required_text(task_or_purpose, "task_or_purpose", 255)
     if usage_scope not in {ConsumableUsageScope.BATCH_DIRECT, ConsumableUsageScope.ADMINISTRATION}:
@@ -311,18 +317,19 @@ def record_inventory_issue(*, submission_id, user, lot_id, location_id, usage_da
     def effect(actor):
         return _issue_effect(actor=actor, submission_id=submission_id, lot_id=lot_id,
             location_id=location_id, usage_date=usage_date, quantity=quantity,
-            task_or_purpose=task_or_purpose, batch_id=batch_id, usage_scope=usage_scope)
+            task_or_purpose=task_or_purpose, batch_id=batch_id, usage_scope=usage_scope,
+            quantity_unit=quantity_unit)
 
     result, created = _submission(submission_id=submission_id, command="inventory.issue.record", user=user,
         payload=dict(lot_id=str(lot_id), location_id=str(location_id), usage_date=usage_date,
             quantity=quantity, task_or_purpose=task_or_purpose, batch_id=str(batch_id) if batch_id else None,
-            usage_scope=usage_scope), roles=FINANCE_WRITE_ROLES, effect=effect)
+            usage_scope=usage_scope, **unit_payload(quantity_unit)), roles=FINANCE_WRITE_ROLES, effect=effect)
     return ConsumableUsage.objects.get(pk=result["usage_id"]), created
 
 
 @inventory_posting_boundary()
 def _issue_effect(*, actor, submission_id, lot_id, location_id, usage_date, quantity,
-                  task_or_purpose, batch_id, usage_scope):
+                  task_or_purpose, batch_id, usage_scope, quantity_unit=None):
     """Validated issue effect; call only inside a permanent submission boundary.
 
     Composites reuse this effect, not a second command/receipt or guessed cost.
@@ -346,6 +353,7 @@ def _issue_effect(*, actor, submission_id, lot_id, location_id, usage_date, quan
     if binding is None:
         raise ValidationError({"legacy_reconciliation": "Unlinked legacy lots are unavailable until explicitly reconciled."})
     item = _item(binding.item_id)
+    quantity, unit_evidence = base_quantity(quantity, quantity_unit, item)
     pool = _pool(item, usage_date)
     location = _location(location_id)
     lot = SharedConsumableLot.objects.select_for_update().get(pk=lot_id)
@@ -380,5 +388,5 @@ def _issue_effect(*, actor, submission_id, lot_id, location_id, usage_date, quan
     pool.quantity -= quantity
     pool.carrying_value -= cost
     _advance(pool, usage_date)
-    return {"usage_id": str(usage.pk), "movement_id": str(movement.pk),
-            "journal_id": str(journal.pk) if journal else None, "recognized_cost": str(cost)}
+    return quantity_result({"usage_id": str(usage.pk), "movement_id": str(movement.pk),
+            "journal_id": str(journal.pk) if journal else None, "recognized_cost": str(cost)}, unit_evidence)
