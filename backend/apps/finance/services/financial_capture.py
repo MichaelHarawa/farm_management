@@ -110,6 +110,14 @@ def _cost_rows(value):
     return costs
 
 
+def _lock_submission(submission_id):
+    """Private intent mutex; composite children claim it before domain locks."""
+    lock_id = int.from_bytes(hashlib.sha256(b"farm-financial-intent-v1:" + submission_id.bytes).digest()[:8], "big", signed=True)
+    with connection.cursor() as cursor:
+        cursor.execute("SET LOCAL lock_timeout = '5s'")
+        cursor.execute("SELECT pg_advisory_xact_lock(%s)", [lock_id])
+
+
 @sync_atomic
 @transaction.atomic
 def _submission(*, submission_id, command, user, payload, roles, effect):
@@ -127,10 +135,7 @@ def _submission(*, submission_id, command, user, payload, roles, effect):
     # intent mutex, periods, batches/sources, then append the permanent receipt.
     # No committed placeholder exists, and a rollback releases the mutex. Hash
     # collisions can only serialize unrelated intents, never authorize a replay.
-    lock_id = int.from_bytes(hashlib.sha256(b"farm-financial-intent-v1:" + submission_id.bytes).digest()[:8], "big", signed=True)
-    with connection.cursor() as cursor:
-        cursor.execute("SET LOCAL lock_timeout = '5s'")
-        cursor.execute("SELECT pg_advisory_xact_lock(%s)", [lock_id])
+    _lock_submission(submission_id)
     actor = get_user_model().objects.get(pk=user.pk)
     if not permits(actor, roles):
         raise PermissionDenied("Current role cannot record this financial event.")
