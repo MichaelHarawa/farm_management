@@ -1,9 +1,14 @@
 from django.urls import path
 from .views import (DeviceView, RevokeDeviceView, CapabilitiesView, BootstrapView,
                     BootstrapPageView, ChangesView, PushView, OperationView, OnlinePoultryView)
+from .financial_views import (FinancialReadCapabilitiesView, SupplierPaymentStatusView,
+                             SupplierPaymentSummaryView)
 
 app_name = "mobile_sync"
 urlpatterns = [
+    path("finance/capabilities", FinancialReadCapabilitiesView.as_view(), name="finance-read-capabilities"),
+    path("finance/supplier-payments/<uuid:operation_id>/status", SupplierPaymentStatusView.as_view(), name="supplier-payment-status"),
+    path("finance/supplier-payments/<uuid:operation_id>/summary", SupplierPaymentSummaryView.as_view(), name="supplier-payment-summary"),
     path("poultry-online", OnlinePoultryView.as_view(), name="poultry-online"),
     path("devices", DeviceView.as_view(), name="devices"),
     path("devices/<uuid:device_id>/revoke", RevokeDeviceView.as_view(), name="revoke"),
