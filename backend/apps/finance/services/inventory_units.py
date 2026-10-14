@@ -41,7 +41,7 @@ def base_quantity(quantity, unit, item, *, field="quantity", positive=True, unit
     definition = None
     if reference is not None:
         require_setup_enabled()
-        definition, multiplier = read_inventory_unit(reference, item, unit)
+        definition, multiplier = read_inventory_unit(reference, item, unit, require_current=True)
     elif unit == item.base_unit:
         multiplier = Decimal("1")
     elif (unit, item.base_unit) == ("g", "kg"):

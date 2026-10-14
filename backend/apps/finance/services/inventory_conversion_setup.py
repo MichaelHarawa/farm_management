@@ -100,7 +100,13 @@ def configure_inventory_unit(*, submission_id, user, item_id, quantity_unit, bas
         payload=payload, roles=FINANCE_MANAGEMENT_ROLES, effect=effect)
 
 
-def read_inventory_unit(reference, item, unit):
+def read_inventory_unit(reference, item, unit, *, require_current=False):
+    """Retain historical definitions; new captures require the current tip."""
+    from .inventory_conversion_supersession import read_definition_chain
+    return read_definition_chain(reference, item, unit, require_current=require_current)
+
+
+def _read_original_inventory_unit(reference, item, unit):
     """Under item mutex. Proof reads remain valid after the setup flag is off.
 
     New custom effects check the flag separately. No lookup touches receipt
