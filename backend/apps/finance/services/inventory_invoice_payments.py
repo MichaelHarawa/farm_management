@@ -21,7 +21,7 @@ from .financial_capture import (_canonical, _currency, _fields, _funding_rows,
     _lock_submission, _submission, _text, record_financial_supplier_payment)
 from .financial_values import business_date, exact_decimal, lock_financial_periods
 from .inventory_invoices import (COMMAND as INVOICE_COMMAND, MAX_LINES, _child_id as purchase_child_id,
-    _refuse, _snapshot, require_invoice_membership)
+    _refuse, _snapshot, locked_invoice_payment_proof, require_invoice_membership)
 from .payable_evidence import _row
 
 
@@ -140,22 +140,22 @@ def record_inventory_invoice_payment(*, submission_id, user, currency, invoice_g
             .order_by("pk").values_list("pk", flat=True))
         if set(locked) != set(expenditures.values()):
             _refuse()
-        parent = _invoice(capture["invoice_group_id"], capture["invoice_version"])
-        rows = [row for line in capture["lines"] for row in line["funding_allocations"]]
-        _validate_payment_rows(rows, capture["total_payment_amount"], allow_less=False,
-            user=actor, payment_date=capture["payment_date"])
-        settlements = []
-        for line in sorted(capture["lines"], key=lambda value: value["invoice_line_index"]):
-            index = line["invoice_line_index"]
-            child_id = _child_id(submission_id, index)
-            _, created = record_financial_supplier_payment(submission_id=child_id, user=actor, currency=currency,
-                expenditure_id=expenditures[index], payment_date=capture["payment_date"],
-                funding_allocations=line["funding_allocations"])
-            if not created:
-                raise ValidationError({"inventory_invoice_payment": "A planned child was not created atomically."})
-            receipt = FinancialCommandReceipt.objects.get(pk=child_id)
-            settlements.append(dict(invoice_line_index=index, receipt=_snapshot(receipt),
-                effects=_effects(expenditures[index], child_id)))
+        with locked_invoice_payment_proof(parent) as parent:
+            rows = [row for line in capture["lines"] for row in line["funding_allocations"]]
+            _validate_payment_rows(rows, capture["total_payment_amount"], allow_less=False,
+                user=actor, payment_date=capture["payment_date"])
+            settlements = []
+            for line in sorted(capture["lines"], key=lambda value: value["invoice_line_index"]):
+                index = line["invoice_line_index"]
+                child_id = _child_id(submission_id, index)
+                _, created = record_financial_supplier_payment(submission_id=child_id, user=actor, currency=currency,
+                    expenditure_id=expenditures[index], payment_date=capture["payment_date"],
+                    funding_allocations=line["funding_allocations"])
+                if not created:
+                    raise ValidationError({"inventory_invoice_payment": "A planned child was not created atomically."})
+                receipt = FinancialCommandReceipt.objects.get(pk=child_id)
+                settlements.append(dict(invoice_line_index=index, receipt=_snapshot(receipt),
+                    effects=_effects(expenditures[index], child_id)))
         result = dict(capture=_canonical(capture), original_invoice=_snapshot(parent), settlements=settlements)
         result["payment_version"] = checksum({"basis": "phase6-inventory-invoice-payment-v1", "result": result})
         fingerprint = checksum({"actor": str(actor.pk), "command": COMMAND, "payload": _canonical(capture)})

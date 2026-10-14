@@ -13,10 +13,11 @@ import re
 import uuid
 
 from django.conf import settings
+from django.db import connection
 from rest_framework.exceptions import ValidationError
 
 from apps.mobile_sync.projections import checksum
-from ..models import FinancialCommandReceipt, InventoryLotBinding
+from ..models import Expenditure, FinancialCommandReceipt, InventoryLotBinding
 from ..permissions import FINANCE_WRITE_ROLES
 from .financial_capture import _canonical, _currency, _fields, _identifier, _submission, _text
 from .financial_values import business_date, exact_decimal, lock_financial_periods
@@ -27,6 +28,7 @@ COMMAND = "inventory.invoice.record"
 MAX_LINES = 50
 MESSAGE = "Original multi-item supplier invoice evidence is missing, ambiguous or changed; preserve the whole invoice for controlled review."
 _building = ContextVar("inventory_invoice_building", default=None)
+_payment_membership = ContextVar("inventory_invoice_payment_membership", default=None)
 
 
 def _refuse():
@@ -52,6 +54,72 @@ def _snapshot(receipt):
     return {"operation_id": str(receipt.pk), "actor_id": str(receipt.actor_id),
         "request_hash": receipt.request_hash, "completed_at": _canonical(receipt.completed_at),
         "result": receipt.result}
+
+
+def _payment_transaction():
+    if connection.vendor != "postgresql" or not connection.in_atomic_block:
+        _refuse()
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT txid_current()")
+        return cursor.fetchone()[0]
+
+
+def _payment_membership_proven(receipt):
+    scope = _payment_membership.get()
+    if scope is None or str(receipt.pk) not in scope["children"]:
+        return False
+    if (id(connection.connection) != scope["connection_id"]
+            or tuple(connection.savepoint_ids[:len(scope["savepoint_ids"])]) != scope["savepoint_ids"]
+            or _payment_transaction() != scope["transaction_id"]
+            or checksum({"command": receipt.command, "receipt": _snapshot(receipt)})
+            != scope["children"][str(receipt.pk)]):
+        _refuse()
+    return True
+
+
+@contextmanager
+def locked_invoice_payment_proof(parent):
+    """Reuse membership only during this locked invoice's settlement loop.
+
+    Reprove the COMPLETE invoice after locking every original payable, including
+    unselected siblings. Retain immutable child-receipt digests, connection and
+    PostgreSQL transaction/savepoint identity; never a caller-supplied 'verified'
+    boolean. Reuse cannot outlive the savepoint owning the original row locks.
+    Each selected payable STILL runs its own full source/GL/version proof and
+    current outstanding/cash checks. Ordinary original-evidence writers are
+    immutable/guarded. Privileged SQL during this trusted scope remains outside
+    application guarantees, just as it is outside the writer boundary.
+    """
+    token = _payment_membership.set(None)  # Nested entry must reprove, not borrow.
+    try:
+        transaction_id = _payment_transaction()
+        current = FinancialCommandReceipt.objects.filter(pk=parent.pk, command=COMMAND,
+            completed_at__isnull=False).first()
+        if parent.command != COMMAND or current is None or _snapshot(current) != _snapshot(parent):
+            _refuse()
+        try:
+            children = current.result["children"]
+            if not isinstance(children, list) or not 2 <= len(children) <= MAX_LINES:
+                _refuse()
+            payable_ids = {int(child["result"]["expenditure_id"]) for child in children}
+        except (KeyError, TypeError, ValueError):
+            _refuse()
+        locked = list(Expenditure.objects.select_for_update().filter(pk__in=payable_ids)
+            .order_by("pk").values_list("pk", flat=True))
+        if len(payable_ids) != len(children) or set(locked) != payable_ids:
+            _refuse()
+        first = FinancialCommandReceipt.objects.filter(pk=_child_id(current.pk, 0),
+            command="inventory.receipt.record", completed_at__isnull=False).first()
+        if first is None:
+            _refuse()
+        require_invoice_membership(first)  # All sibling sources and whole GL, NOW.
+        _payment_membership.set(dict(connection_id=id(connection.connection),
+            transaction_id=transaction_id, savepoint_ids=tuple(connection.savepoint_ids),
+            children={child["operation_id"]: checksum({"command": "inventory.receipt.record", "receipt": child})
+                for child in children}))
+        yield current
+    finally:
+        _payment_membership.reset(token)
 
 
 @contextmanager
@@ -189,6 +257,8 @@ def require_invoice_membership(receipt):
         # while its final parent receipt is not yet committed. Not a read adapter.
         if str(receipt.actor_id) != scope["actor_id"] or position >= scope["line_count"]:
             _refuse()
+        return
+    if _payment_membership_proven(receipt):
         return
     parent = FinancialCommandReceipt.objects.filter(pk=group_id, command=COMMAND,
         completed_at__isnull=False, actor_id=receipt.actor_id).first()
