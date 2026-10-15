@@ -255,6 +255,13 @@ MOBILE_SYNC_FINANCIAL_READS = env_bool("MOBILE_SYNC_FINANCIAL_READS", False)
 # Private Phase6 command bridge only. No HTTP upload route/registry/profile is
 # enabled by this flag; positive references/publication/native gates remain.
 MOBILE_SYNC_FINANCIAL_COMMANDS = env_bool("MOBILE_SYNC_FINANCIAL_COMMANDS", False)
+# Private authorized funding-reference preparation only; no upload/pack grant.
+MOBILE_SYNC_FINANCIAL_REFERENCES = env_bool("MOBILE_SYNC_FINANCIAL_REFERENCES", False)
+# Private UUID envelope/receipt linkage candidate; still no public upload route.
+MOBILE_SYNC_FINANCIAL_UUID_COMMANDS = env_bool("MOBILE_SYNC_FINANCIAL_UUID_COMMANDS", False)
+# Private global reference capture only, after mobile_sync0003 + explicit baseline.
+# Does NOT enable financial packs, offline access or command uploads.
+MOBILE_SYNC_FINANCIAL_PUBLICATION = env_bool("MOBILE_SYNC_FINANCIAL_PUBLICATION", False)
 # Internal Phase6 domain foundation only; not a financial sync capability.
 # Apply additive migrations in an isolated deployment before opting in.
 FINANCE_POULTRY_STOCK_LINKAGE = env_bool("FINANCE_POULTRY_STOCK_LINKAGE", False)

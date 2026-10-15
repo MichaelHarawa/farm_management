@@ -3,9 +3,15 @@ from .views import (DeviceView, RevokeDeviceView, CapabilitiesView, BootstrapVie
                     BootstrapPageView, ChangesView, PushView, OperationView, OnlinePoultryView)
 from .financial_views import (FinancialReadCapabilitiesView, SupplierPaymentStatusView,
                              SupplierPaymentSummaryView)
+from .reference_views import (ReferenceCapabilitiesView, FundingReferenceCatalogView,
+                             InvoiceReferenceCatalogView, InvoiceReferenceDetailView)
 
 app_name = "mobile_sync"
 urlpatterns = [
+    path("finance/references/capabilities", ReferenceCapabilitiesView.as_view(), name="finance-reference-capabilities"),
+    path("finance/references/funding", FundingReferenceCatalogView.as_view(), name="finance-reference-funding"),
+    path("finance/references/invoices", InvoiceReferenceCatalogView.as_view(), name="finance-reference-invoices"),
+    path("finance/references/invoices/<uuid:invoice_id>", InvoiceReferenceDetailView.as_view(), name="finance-reference-invoice-detail"),
     path("finance/capabilities", FinancialReadCapabilitiesView.as_view(), name="finance-read-capabilities"),
     path("finance/supplier-payments/<uuid:operation_id>/status", SupplierPaymentStatusView.as_view(), name="supplier-payment-status"),
     path("finance/supplier-payments/<uuid:operation_id>/summary", SupplierPaymentSummaryView.as_view(), name="supplier-payment-summary"),

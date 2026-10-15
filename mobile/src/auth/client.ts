@@ -1,5 +1,6 @@
 import { tokenPairSchema } from '../protocol';
 import { byteLength } from '../sync/protocol';
+import { isFinancialReferencePath } from '../finance/reference-paths';
 
 export class ApiError extends Error {
   constructor(readonly status: number, readonly code: string, readonly retryAfterMs = 0) { super(code); }
@@ -9,7 +10,8 @@ export interface CredentialStore {
   read(): Promise<Credentials | null>;
   write(value: Credentials, isCurrent?: () => boolean): Promise<void>;
 }
-export type Transport = (path: string, body?: unknown, access?: string) => Promise<unknown>;
+export interface TransportOptions { readonly financialReferences: 1 }
+export type Transport = (path: string, body?: unknown, access?: string, options?: TransportOptions) => Promise<unknown>;
 
 // Access JWTs live only in memory. Durable rotation intent closes the crash/lost-response gap.
 export class AuthClient {
@@ -73,11 +75,25 @@ export class AuthClient {
     if (!['/auth/me', '/mobile-sync/capabilities','/mobile-sync/bootstrap','/mobile-sync/push','/mobile-sync/poultry-online'].includes(path) &&
       !/^\/mobile-sync\/(?:bootstrap\/[0-9a-f-]{36}\/pages\?cursor=[A-Za-z0-9%_.~-]+|changes\?cursor=[A-Za-z0-9%_.~-]+&limit=\d+|operations\/[0-9a-f-]{36})$/.test(path)) throw new ApiError(403, 'route_unavailable');
     if (path.length > 50000) throw new ApiError(400,'invalid_cursor');
+    return this.authorizedRequest(path, body);
+  }
+
+  /** Explicit foreground read surface. Generic request() still blocks finance. */
+  async readFinancialReference(path: string): Promise<unknown> {
+    if (this.locked) throw new ApiError(401, 'session_locked');
+    if (!isFinancialReferencePath(path)) throw new ApiError(403, 'route_unavailable');
+    return this.authorizedRequest(path, undefined, { financialReferences: 1 });
+  }
+
+  private async authorizedRequest(path: string, body?: unknown, options?: TransportOptions): Promise<unknown> {
+    if (this.locked) throw new ApiError(401, 'session_locked');
     const generation = this.generation;
+    const send = (access: string | null) => options ? this.transport(path, undefined, access ?? undefined, options) :
+      this.transport(path, body, access ?? undefined);
     if (!this.access) await this.refresh();
     const sent = this.access;
     try {
-      const result = await this.transport(path, body, sent ?? undefined);
+      const result = await send(sent);
       if (generation !== this.generation) throw new ApiError(401, 'session_locked');
       return result;
     } catch (error) {
@@ -88,7 +104,7 @@ export class AuthClient {
       if (this.access === sent) await this.refresh();
       // Retry exactly once; another 401 requires sign-in, not another rotation.
       try {
-        const result = await this.transport(path, body, this.access ?? undefined);
+        const result = await send(this.access);
         if (generation !== this.generation) throw new ApiError(401, 'session_locked');
         return result;
       }
@@ -104,13 +120,19 @@ export class AuthClient {
 }
 
 export function httpTransport(base: string, poultryVersion: 1|2 = 1): Transport {
-  return async (path, body, access) => {
+  return async (path, body, access, options) => {
+    const financial = options !== undefined;
+    if (financial && (options.financialReferences !== 1 || body !== undefined || !isFinancialReferencePath(path))) {
+      throw new ApiError(403, 'route_unavailable');
+    }
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 30_000);
     try {
       const response = await fetch(`${base}${path}`, { method: body === undefined ? 'GET' : 'POST',
+        ...(financial ? { cache: 'no-store' } : {}),
         signal: controller.signal, redirect: 'error', headers: { 'Content-Type': 'application/json',
-          ...(poultryVersion === 2 ? { 'X-Mobile-Poultry-Version': '2' } : {}), ...(access ? { Authorization: `Bearer ${access}` } : {}) },
+          ...(financial ? { 'X-Mobile-Finance-Version': '1', 'X-Mobile-Finance-References-Version': '1', 'Cache-Control': 'no-store' } :
+            poultryVersion === 2 ? { 'X-Mobile-Poultry-Version': '2' } : {}), ...(access ? { Authorization: `Bearer ${access}` } : {}) },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
       if (!response.ok) {
         // Deliberately do not echo arbitrary server error text, request bodies or JWTs.
@@ -119,6 +141,10 @@ export function httpTransport(base: string, poultryVersion: 1|2 = 1): Transport 
         if (errorText.length < 8192) {
           try { const supplied = JSON.parse(errorText).code;
             if (['resync_required','scope_reset_required','snapshot_not_found','snapshot_pack_mismatch','snapshot_limit','operation_not_found','unsupported_protocol'].includes(supplied)) code = supplied;
+            if (financial && ['financial_reference_reads_disabled', 'funding_catalog_not_prepared', 'funding_catalog_changed',
+              'funding_catalog_limit', 'funding_reference_review_required', 'financial_reference_scope_changed',
+              'invoice_reference_unavailable', 'invoice_reference_changed', 'invoice_catalog_changed',
+              'invoice_reference_limit', 'invoice_reference_review_required', 'invoice_reference_scope_changed'].includes(supplied)) code = supplied;
           } catch { /* Only allowlisted codes, never arbitrary error content. */ }
         }
         const retry = response.headers.get('Retry-After');

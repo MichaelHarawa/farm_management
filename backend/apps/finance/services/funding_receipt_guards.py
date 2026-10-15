@@ -84,6 +84,8 @@ class FundingProtectedQuerySet(models.QuerySet):
             rows = lock_funding_rows(self, kwargs.get("funding_source_id", kwargs.get("funding_source")))
             guard_funding_queryset(rows, kwargs)
             guard_owner_receipt_rebinding(rows, kwargs)
+            from apps.mobile_sync.reference_publication import touch_sources
+            touch_sources(rows)
             return models.QuerySet.update(rows, **kwargs)
 
     def bulk_update(self, objs, fields, **kwargs):
@@ -101,6 +103,11 @@ class FundingProtectedQuerySet(models.QuerySet):
         with model_boundary(), transaction.atomic(using=self.db):
             guard_funding_queryset(lock_funding_rows(self.filter(pk__in=[obj.pk for obj in objs if obj.pk is not None])), deleting=True)
             if self.model._meta.model_name != "fundingreceipt":
+                from apps.mobile_sync.reference_publication import enabled, _state
+                if enabled():
+                    _state(self.db)
+                    from apps.mobile_sync.errors import SyncError
+                    raise SyncError("financial_publication_bulk_unavailable", "Use explicit source saves; bulk creation cannot bypass financial publication.")
                 return super().bulk_create(objs, **kwargs)
             _lock_sources({obj.funding_source_id for obj in objs}, self.db)
             for obj in objs:
@@ -126,6 +133,8 @@ class FundingProtectedQuerySet(models.QuerySet):
         with model_boundary(), transaction.atomic(using=using):
             rows = lock_funding_rows(self.using(using))
             guard_funding_queryset(rows, deleting=True)
+            from apps.mobile_sync.reference_publication import touch_sources
+            touch_sources(rows)
             return models.QuerySet._raw_delete(rows, using)
 
 

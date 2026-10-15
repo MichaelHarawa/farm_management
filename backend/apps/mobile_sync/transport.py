@@ -103,7 +103,9 @@ def create_bootstrap(user, device, packs):
         batch_ids = {source_pk: str(entity_uuid) for source_pk, entity_uuid in batches}
         pages, page, row_count = [], [], 0
         page_bytes = total_bytes = 0
-        for scanned, entity in enumerate(SyncEntity.objects.filter(stream=stream, deleted=False).order_by("entity_type", "pk").iterator(chunk_size=500), 1):
+        profile = operational_profile(pack_version(packs))
+        for scanned, entity in enumerate(SyncEntity.objects.filter(stream=stream, deleted=False,
+                entity_type__in=profile.entities).order_by("entity_type", "pk").iterator(chunk_size=500), 1):
             if scanned > settings.MOBILE_SYNC_SNAPSHOT_ROWS or time.monotonic() - started > 20:
                 raise SyncError("snapshot_budget_exceeded", "Snapshot scan exceeds supported request budget.", 413)
             if not included(entity, packs, batch_ids.get(entity.batch_pk)):

@@ -74,7 +74,7 @@ class SyncChange(ImmutableMetadata):
     transaction_count = models.PositiveIntegerField()
     entity_type = models.CharField(max_length=40)
     entity_uuid = models.UUIDField()
-    batch_uuid = models.UUIDField()
+    batch_uuid = models.UUIDField(null=True, blank=True)
     revision = models.PositiveBigIntegerField()
     kind = models.CharField(max_length=24)
     payload = models.JSONField(default=dict)
@@ -83,9 +83,28 @@ class SyncChange(ImmutableMetadata):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        constraints = [models.UniqueConstraint(fields=["stream", "sequence"], name="sync_change_sequence")]
+        constraints = [models.UniqueConstraint(fields=["stream", "sequence"], name="sync_change_sequence"),
+            models.CheckConstraint(condition=(
+                models.Q(entity_type__in=["finance.funding_selection", "finance.invoice_reference"], batch_uuid__isnull=True,
+                    in_current_pack=False, kind__in=["upsert", "tombstone"])
+                | (~models.Q(entity_type__in=["finance.funding_selection", "finance.invoice_reference"]) & models.Q(batch_uuid__isnull=False))),
+                name="sync_change_global_reference")]
         indexes = [models.Index(fields=["stream", "created_at"], name="sync_change_retention")]
         ordering = ["sequence"]
+
+
+class FinancialPublicationBinding(ImmutableMetadata):
+    """Permanent server-only audience/source binding, not a wire projection.
+
+    Separate table keeps old operational queries compatible on an unmigrated,
+    publication-disabled deployment. No business source is backfilled/adopted.
+    """
+    entity = models.OneToOneField(SyncEntity, on_delete=models.PROTECT, related_name="financial_binding")
+    source_identity = models.CharField(max_length=64)
+    audience_actor = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT)
+    requires_owner_access = models.BooleanField(default=False)
+    profile_version = models.PositiveSmallIntegerField(default=1)
+    anchor = models.CharField(max_length=64)
 
 
 class SyncOperationReceipt(ImmutableMetadata):

@@ -180,6 +180,9 @@ def publish_batches(state):
             entity.payload = {}
             entity.save()
             pending.append((entity, batch_uuid, "tombstone", {}, entity.in_current_pack))
+    if getattr(settings, "MOBILE_SYNC_FINANCIAL_PUBLICATION", False):
+        from .reference_publication import collect
+        pending.extend(collect(state))
     if len(pending) > settings.MOBILE_SYNC_GROUP_ROWS or sum(len(canonical(item[3]).encode()) + 1024 for item in pending) > settings.MOBILE_SYNC_GROUP_BYTES:
         raise SyncError("transaction_too_large", "Mutation exceeds bounded sync transaction budget.", 413)
     changes = []
