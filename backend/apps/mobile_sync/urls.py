@@ -5,9 +5,11 @@ from .financial_views import (FinancialReadCapabilitiesView, SupplierPaymentStat
                              SupplierPaymentSummaryView)
 from .reference_views import (ReferenceCapabilitiesView, FundingReferenceCatalogView,
                              InvoiceReferenceCatalogView, InvoiceReferenceDetailView)
+from .storage_views import FinancialStorageGrantView
 
 app_name = "mobile_sync"
 urlpatterns = [
+    path("finance/storage/grant", FinancialStorageGrantView.as_view(), name="finance-storage-grant"),
     path("finance/references/capabilities", ReferenceCapabilitiesView.as_view(), name="finance-reference-capabilities"),
     path("finance/references/funding", FundingReferenceCatalogView.as_view(), name="finance-reference-funding"),
     path("finance/references/invoices", InvoiceReferenceCatalogView.as_view(), name="finance-reference-invoices"),

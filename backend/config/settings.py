@@ -262,6 +262,10 @@ MOBILE_SYNC_FINANCIAL_UUID_COMMANDS = env_bool("MOBILE_SYNC_FINANCIAL_UUID_COMMA
 # Private global reference capture only, after mobile_sync0003 + explicit baseline.
 # Does NOT enable financial packs, offline access or command uploads.
 MOBILE_SYNC_FINANCIAL_PUBLICATION = env_bool("MOBILE_SYNC_FINANCIAL_PUBLICATION", False)
+# Private online reference-pack transport only; no native cache or upload grant.
+MOBILE_SYNC_FINANCIAL_REFERENCE_PACKS = env_bool("MOBILE_SYNC_FINANCIAL_REFERENCE_PACKS", False)
+# Private local evidence authorization only; no reference cache or upload grant.
+MOBILE_SYNC_FINANCIAL_STORAGE = env_bool("MOBILE_SYNC_FINANCIAL_STORAGE", False)
 # Internal Phase6 domain foundation only; not a financial sync capability.
 # Apply additive migrations in an isolated deployment before opting in.
 FINANCE_POULTRY_STOCK_LINKAGE = env_bool("FINANCE_POULTRY_STOCK_LINKAGE", False)
