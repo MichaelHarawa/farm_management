@@ -65,3 +65,42 @@ test('stale failure and denial callbacks cannot close or overwrite a newer accou
   assert.deepEqual(second.events, []);
   assert.throws(() => lifecycle.publish(first, oldGeneration), /session_locked/);
 });
+
+test('sensitive resource locks synchronously and operational SQL closes even if sensitive close fails', async () => {
+  const events: string[] = [];
+  const session = { ...resource('supervisor'), sensitive: {
+    lock() { events.push('sensitive_locked'); }, async close() { events.push('sensitive_closed'); throw new Error('sensitive_close_failed'); },
+  } };
+  const lifecycle = new SessionLifecycle<typeof session>(() => {});
+  lifecycle.publish(session, 0);
+  const retired = lifecycle.retire(0, async () => { events.push('persisted'); });
+  assert.deepEqual(events, ['sensitive_locked']);
+  await assert.rejects(retired, /sensitive_close_failed/);
+  assert.deepEqual(events, ['sensitive_locked', 'persisted', 'sensitive_closed']);
+  assert.deepEqual(session.events, ['locked', 'closed']);
+});
+
+test('persisted denial resolves before an in-flight resource can close, while next account waits for full retirement', async () => {
+  const closing = deferred<void>();
+  const session = { ...resource('supervisor'), sensitive: { lock() {}, async close() { await closing.promise; } } };
+  const lifecycle = new SessionLifecycle<typeof session>(() => {});
+  lifecycle.publish(session, 0);
+  let persisted = false;
+  await lifecycle.retireAfterPersistence(0, async () => { persisted = true; });
+  assert.equal(persisted, true); assert.equal(lifecycle.current, null);
+  let settled = false;
+  const waiter = lifecycle.settled().then(() => { settled = true; });
+  await Promise.resolve(); assert.equal(settled, false);
+  closing.resolve(); await waiter;
+  assert.deepEqual(session.events, ['locked', 'closed']);
+});
+
+test('failed or stale persistence denial cannot hang or act on a new account', async () => {
+  const lifecycle = new SessionLifecycle<ReturnType<typeof resource>>(() => {});
+  const first = resource('first'); lifecycle.publish(first, 0);
+  await assert.rejects(lifecycle.retireAfterPersistence(0, async () => { throw new Error('secure_pointer_failed'); }), /secure_pointer_failed/);
+  await lifecycle.settled();
+  const second = resource('second'); lifecycle.publish(second, lifecycle.generation);
+  await lifecycle.retireAfterPersistence(0, async () => assert.fail('Stale callback must not persist'));
+  assert.equal(lifecycle.current, second); assert.deepEqual(second.events, []);
+});

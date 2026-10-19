@@ -12,12 +12,16 @@ import { sessionErrorMessage, type SessionStage } from './errors';
 import { SessionLifecycle } from './lifecycle';
 import { vault, type SessionPointer } from './vault';
 import { selectedTestBackend, testBackendA, testBackendAvailable, testBackendB } from '../test/backend-policy';
+import { createNativeFinancialCompartment, denyNativeFinancialAccess } from '../finance/native';
+import type { FinancialCompartment } from '../finance/compartment';
+import type { FinancialEvidence } from '../finance/evidence-store';
+import { publishPrivateFinancialSession, requireFinancialSessionOwner, sameFinancialOrigin, type FinancialReentryOrigin } from './financial-reentry';
 
 const extra = Constants.expoConfig?.extra;
 const compiledSettings = validateSettings(String(extra?.environment ?? ''), String(extra?.apiBaseUrl ?? ''), !__DEV__ && !localAcceptance);
 const testControls = testBackendAvailable(compiledSettings, localAcceptance);
 interface CachedSession { user: CurrentUser; capabilities: Capabilities }
-interface OpenSession extends CachedSession { repository: Repository; pointer: SessionPointer; client: AuthClient }
+interface OpenSession extends CachedSession { repository: Repository; pointer: SessionPointer; client: AuthClient; sensitive?: FinancialCompartment }
 interface State { ready: boolean; busy: boolean; error: string | null; session: OpenSession | null }
 interface ContextValue extends State {
   settings: typeof compiledSettings;
@@ -30,6 +34,12 @@ interface ContextValue extends State {
   lock(): Promise<void>;
   revalidate(): Promise<void>;
   authorizeSync(): Promise<Capabilities>;
+  authorizeFinancialEvidence(): Promise<void>;
+  unlockFinancialEvidence(): Promise<void>;
+  financialEvidencePage(after: string | null, owner: object): Promise<{ evidence: FinancialEvidence[]; next: string | null }>;
+  captureFinancialEvidence(value: unknown, owner: object): Promise<FinancialEvidence>;
+  financialEvidenceOwnerCurrent(owner: object): boolean;
+  financialEvidenceOpen: boolean;
 }
 const Context = createContext<ContextValue | null>(null);
 export function useSession() { const value = useContext(Context); if (!value) throw new Error('Session provider required'); return value; }
@@ -45,6 +55,22 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [lifecycle] = useState(() => new SessionLifecycle<OpenSession>((session) => setState((s) => ({ ...s, session }))));
   const running = useRef(false);
   const stage = useRef<SessionStage | undefined>(undefined);
+
+  const denyFinancial = useCallback(async (pointer: SessionPointer, session?: OpenSession | null) => {
+    const sensitive = session?.sensitive;
+    sensitive?.invalidate();
+    try { await denyNativeFinancialAccess({ environment: compiledSettings.environment, apiBaseUrl: pointer.base }, pointer.identity); }
+    finally {
+      try { await sensitive?.deny(); }
+      finally { await sensitive?.close(); if (session) session.sensitive = undefined; }
+    }
+  }, []);
+  const denyAuthorization = useCallback(async (pointer: SessionPointer, session?: OpenSession | null) => {
+    session?.sensitive?.invalidate();
+    pointer.offlineAllowed = false;
+    try { await vault.writePointer(pointer); }
+    finally { await denyFinancial(pointer, session); } // Independent denial still runs if the main pointer write fails.
+  }, [denyFinancial]);
 
   const close = useCallback(() => {
     const now = Date.now();
@@ -68,9 +94,11 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   }
   function clientFor(pointer: SessionPointer, repository: Repository, generation: number) {
     return new AuthClient(httpTransport(pointer.base, phase5Pilot ? 2 : 1), vault.credentials(pointer.partition), async () => {
-      await lifecycle.retire(generation, async (previous) => {
+      await lifecycle.retireAfterPersistence(generation, async (previous) => {
         try {
-          await vault.writePointer({ ...pointer, offlineAllowed: false });
+          previous?.sensitive?.invalidate();
+          try { await vault.writePointer({ ...pointer, offlineAllowed: false }); }
+          finally { await denyNativeFinancialAccess({ environment: compiledSettings.environment, apiBaseUrl: pointer.base }, pointer.identity); }
           await repository.invalidateScope();
         } finally {
           // A denied initial sign-in has not published a session yet.
@@ -90,7 +118,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       await close();
       const generation = lifecycle.generation;
       const old = await vault.readPointer();
-      if (old) await vault.writePointer({ ...old, offlineAllowed: false });
+      if (old) await denyAuthorization(old);
       stage.current = 'sign_in_request';
       // A LAN backend may be reachable without validated public internet.
       // The bounded HTTP request, not Android's network hint, is authority.
@@ -131,10 +159,13 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       } finally { if (!handedOff) await repository.db.close(); }
     });
   }
-  async function unlock() {
-    await action(async (generation) => {
+  async function reopenCached(generation: number, expected?: FinancialReentryOrigin): Promise<OpenSession> {
       const pointer = await vault.readPointer();
       if (!pointer || pointer.base !== settings.apiBaseUrl || !pointer.offlineAllowed) throw new Error('sign_in_required');
+      // A private finance handoff may reopen ONLY the exact original account,
+      // backend, deployment, device and operational partition, before any PIN/SQL.
+      if (expected && !sameFinancialOrigin(expected, pointer)) throw new Error('original_identity_mismatch');
+      if (!lifecycle.isCurrent(generation) || lifecycle.current) throw new Error('session_locked');
       const stored = await vault.credentials(pointer.partition).read();
       if (!stored || stored.rotation !== 'ready') throw new Error('sign_in_required');
       const access = offlineAccess(pointer.clock, Date.now());
@@ -154,8 +185,50 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         stage.current = 'save_session';
         pointer.clock.highWaterMs = Math.max(pointer.clock.highWaterMs, Date.now());
         await vault.writePointer(pointer);
-        await publish({ ...cached, repository, pointer, client: clientFor(pointer, repository, generation) }, generation);
+        return { ...cached, repository, pointer, client: clientFor(pointer, repository, generation) };
       } catch (error) { await repository.db.close(); throw error; }
+  }
+  async function unlock() {
+    await action(async (generation) => {
+      const opened = await reopenCached(generation);
+      try { await publish(opened, generation); }
+      catch (error) { opened.client.lock(); await opened.repository.db.close(); throw error; }
+    });
+  }
+  async function enterFinancialEvidence(mode: 'online' | 'cached') {
+    await action(async () => {
+      const original = lifecycle.current, originalGeneration = lifecycle.generation;
+      if (!original || !original.pointer.offlineAllowed || AppState.currentState !== 'active') throw new Error('session_locked');
+      const origin = { base: original.pointer.base, partition: original.pointer.partition, identity: { ...original.pointer.identity } };
+      // Retire first: UI data disappears, HTTP is fenced, sync is cancelled and
+      // both old SQL handles close BEFORE another private system prompt.
+      await close();
+      const generation = originalGeneration + 1;
+      if (!lifecycle.isCurrent(generation) || lifecycle.current) throw new Error('session_locked');
+      if (mode === 'online') await denyNativeFinancialAccess({ environment: settings.environment, apiBaseUrl: origin.base }, origin.identity);
+      const current = () => lifecycle.isCurrent(generation) && lifecycle.current === null && AppState.currentState === 'active';
+      await publishPrivateFinancialSession(origin, {
+        current,
+        reopen: () => reopenCached(generation, origin),
+        async prepare(opened) {
+          stage.current = mode === 'online' ? 'financial_online' : 'financial_cached';
+          opened.sensitive = createNativeFinancialCompartment({ environment: settings.environment, apiBaseUrl: origin.base },
+            opened.pointer.identity, opened.capabilities.stream_epoch, opened.client,
+            () => lifecycle.isCurrent(generation) && (lifecycle.current === null || lifecycle.current === opened) &&
+              opened.pointer.offlineAllowed && offlineAccess(opened.pointer.clock, Date.now()).allowed && AppState.currentState === 'active');
+          if (mode === 'online') await opened.sensitive.authorizeOnline();
+          else await opened.sensitive.unlockCached();
+        },
+        async publish(opened) {
+          if (!offlineAccess(opened.pointer.clock, Date.now()).allowed) throw new Error('sign_in_required');
+          await publish(opened, generation);
+        },
+        async dispose(opened) {
+          opened.client.lock();
+          try { await denyFinancial(opened.pointer, opened); }
+          finally { await opened.repository.db.close(); }
+        },
+      });
     });
   }
   async function signOut() {
@@ -167,7 +240,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         const pointer = previous?.pointer ?? await vault.readPointer();
         if (!pointer) return;
         pointer.offlineAllowed = false;
-        await vault.writePointer(pointer);
+        await denyAuthorization(pointer, previous);
         const credentials = vault.credentials(pointer.partition);
         const stored = await credentials.read();
         await credentials.write({ refresh: '', rotation: 'reauthenticate' });
@@ -184,7 +257,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       if (!testBackendAvailable(settings, testControls)) throw new Error('test_backend_unavailable');
       await close();
       const previous = await vault.readPointer();
-      if (previous) await vault.writePointer({ ...previous, offlineAllowed: false });
+      if (previous) await denyAuthorization(previous);
       const next = selectedTestBackend(settings.apiBaseUrl === testBackendA ? testBackendB : testBackendA, compiledSettings, testControls);
       await vault.writeTestBackend(next.apiBaseUrl);
       setSettings(next);
@@ -198,7 +271,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         // Disable cached restart before checking. Every failure, including
         // transport/schema errors, closes the previous visible authorization.
         session.pointer.offlineAllowed = false;
-        await vault.writePointer(session.pointer);
+        await denyAuthorization(session.pointer, session);
         if (forceRefresh) {
           if (!testBackendAvailable(settings, testControls) || session.user.username !== 'mobile-test-worker') throw new Error('test_backend_unavailable');
           await session.client.refresh(); // Real Django rotation; no fabricated transport response.
@@ -222,7 +295,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     if (!session || running.current) throw new Error('session_locked');
     running.current=true;
     try { return await lifecycle.failClosed(generation,async () => {
-      session.pointer.offlineAllowed=false; await vault.writePointer(session.pointer);
+      session.pointer.offlineAllowed=false; await denyAuthorization(session.pointer, session);
       const user=userSchema.parse(await session.client.read('/auth/me'));
       const capabilities=capabilitiesSchema.parse(await session.client.read('/mobile-sync/capabilities'));
       if (!lifecycle.isCurrent(generation) || lifecycle.current!==session || user.id!==session.pointer.identity.actorId ||
@@ -237,7 +310,40 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       session.user=user;session.capabilities=capabilities;setState((s)=>({...s}));
       return capabilities;
     }); } finally { running.current=false; }
-  },[lifecycle]);
+  },[lifecycle, denyAuthorization]);
+  function financialEvidenceOwnerCurrent(owner: object) {
+    const session = lifecycle.current;
+    return session !== null && session === owner && session.pointer.offlineAllowed &&
+      offlineAccess(session.pointer.clock, Date.now()).allowed && AppState.currentState === 'active' &&
+      session.sensitive?.isOpen === true;
+  }
+  async function financialWork<T>(owner: object, work: (compartment: FinancialCompartment) => Promise<T>): Promise<T> {
+    // Reject a stale caller synchronously, before any awaited IO or access to a
+    // replacement account's compartment. Matching UUIDs alone are insufficient.
+    const session = requireFinancialSessionOwner(lifecycle.current, owner), generation = lifecycle.generation;
+    if (running.current || !session.pointer.offlineAllowed || AppState.currentState !== 'active') throw new Error('session_locked');
+    const outerAccess = offlineAccess(session.pointer.clock, Date.now());
+    if (!outerAccess.allowed) {
+      await lifecycle.retire(generation, async previous => {
+        await denyAuthorization(session.pointer, previous);
+      });
+      throw new Error(outerAccess.reason);
+    }
+    running.current = true;
+    setState(s => ({ ...s, busy: true, error: null }));
+    try {
+      session.sensitive ??= createNativeFinancialCompartment({ environment: settings.environment, apiBaseUrl: session.pointer.base },
+        session.pointer.identity, session.capabilities.stream_epoch, session.client,
+        () => lifecycle.isCurrent(generation) && lifecycle.current === session && session.pointer.offlineAllowed &&
+          offlineAccess(session.pointer.clock, Date.now()).allowed && AppState.currentState === 'active');
+      const result = await work(session.sensitive);
+      if (!lifecycle.isCurrent(generation) || lifecycle.current !== session) throw new Error('session_locked');
+      return result;
+    } catch (error) {
+      if (lifecycle.isCurrent(generation)) setState(s => ({ ...s, error: sessionErrorMessage(error) }));
+      throw error;
+    } finally { running.current = false; setState(s => ({ ...s, busy: false })); }
+  }
   useEffect(() => {
     if (!testControls) return;
     let active = true;
@@ -256,11 +362,12 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       const now = Date.now();
       if (!offlineAccess(session.pointer.clock, now).allowed) {
         await lifecycle.retire(generation, async () => {
-          await vault.writePointer({ ...session.pointer, offlineAllowed: false });
+          await denyAuthorization(session.pointer, session);
         });
         return;
       }
       await lifecycle.failClosed(generation, async () => {
+        if (!running.current && session.sensitive?.isOpen && !session.sensitive.isBusy) await session.sensitive.checkpoint();
         checkpoint(session.pointer, now);
         await vault.writePointer(session.pointer);
       });
@@ -270,7 +377,14 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       if (value !== 'active' && lifecycle.current) void close().catch(() => {});
     });
     return () => { clearInterval(timer); subscription.remove(); };
-  }, [close, lifecycle]);
+  }, [close, lifecycle, denyAuthorization]);
   return <Context.Provider value={{ ...state, settings, testControls, signIn, unlock, signOut, lock: close,
-    revalidate: () => revalidate(), authorizeSync, switchTestBackend, testRefresh: () => revalidate(true) }}>{children}</Context.Provider>;
+    revalidate: () => revalidate(), authorizeSync, switchTestBackend, testRefresh: () => revalidate(true),
+    authorizeFinancialEvidence: () => enterFinancialEvidence('online'),
+    unlockFinancialEvidence: () => enterFinancialEvidence('cached'),
+    financialEvidencePage: (after, owner) => financialWork(owner, compartment => compartment.page(after)),
+    captureFinancialEvidence: (value, owner) => financialWork(owner, compartment => compartment.capture(value)),
+    financialEvidenceOwnerCurrent,
+    financialEvidenceOpen: state.session?.sensitive?.isOpen ?? false,
+  }}>{children}</Context.Provider>;
 }

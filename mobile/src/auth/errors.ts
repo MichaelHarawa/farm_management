@@ -4,6 +4,7 @@ const stages = {
   sign_in_request: 'Django sign-in', device_registration: 'device registration',
   encrypted_store: 'encrypted local storage', current_user: 'current-user validation',
   capabilities: 'capability validation', save_session: 'secure session persistence',
+  financial_online: 'current online financial authorization', financial_cached: 'cached financial authorization',
 } as const;
 export type SessionStage = keyof typeof stages;
 
@@ -15,7 +16,9 @@ export function sessionErrorMessage(error: unknown, stage?: SessionStage): strin
     'mobile_backend_not_ready', 'clock_rollback', 'offline_window_expired',
     'online_sign_in_required', 'device_lock_required', 'device_unlock_cancelled'];
   let message = 'Could not open the session. Check the connection, credentials, device unlock and backend readiness. Existing local work is retained.';
-  if (error instanceof Error && allowed.includes(error.message)) message = error.message;
+  if (error instanceof Error && error.message === 'financial_storage_reauthentication_required') {
+    message = 'Financial evidence needs fresh online authorization. Original local work is retained.';
+  } else if (error instanceof Error && allowed.includes(error.message)) message = error.message;
   else if (error instanceof ApiError && [400, 401, 403, 404, 409, 429, 500, 503].includes(error.status)) {
     message = `Backend request failed (HTTP ${error.status}). Check credentials, device access and backend readiness. Existing local work is retained.`;
   }

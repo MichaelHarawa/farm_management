@@ -3,7 +3,7 @@ import { useSession } from '../../src/auth/session';
 import { Body, Button, Card, Screen } from '../../src/components/ui';
 import { NativeAccountCheck } from '../../src/components/native-account-check';
 import { NativePoultryCheck } from '../../src/components/native-poultry-check';
-import { developmentChecksEnabled,phase4Pilot } from '../../src/build-mode.native';
+import { developmentChecksEnabled,phase4Pilot,phase6Evidence } from '../../src/build-mode.native';
 export default function More() {
   const { session, busy, lock, signOut, settings, testControls, switchTestBackend, testRefresh } = useSession();
   return <Screen title="More"><Card title="Account & deployment"><Body>{session?.user.username} • {settings.environment}</Body>
@@ -12,6 +12,7 @@ export default function More() {
     <Button disabled={busy} title="Sign out / switch account" onPress={() => { void signOut(); }} />
     {phase4Pilot&&<Button disabled={busy} title="Phase4 native acceptance checks" onPress={()=>router.push('/native-sync-check')}/>}
     <NativePoultryCheck />
+    {phase6Evidence && <Button disabled={busy} title="Phase6 financial evidence access checks" onPress={() => router.push('/financial-evidence-check')} />}
     {developmentChecksEnabled && <NativeAccountCheck />}
     {testControls && <Card title="Synthetic backend acceptance controls">
       <Body>Only the two owned test APIs on ports7071/7072. Switching locks the current session and requires online sign-in; original encrypted work is retained. Refresh calls Django and may require reauthentication.</Body>

@@ -2,8 +2,8 @@
 
 External capture + frozen resolution + inner/domain receipts commit together.
 Replay proves the ORIGINAL linkage; it does not resolve today's sources again.
-No route, capabilities, financial pack, native upload or API authentication here.
-Upstream callers must supply already cryptographically validated JWTs.
+The separate default-off HTTP adapter supplies validated JWTs; this module is
+still not API authentication, a capability, financial pack or native scheduler.
 """
 from copy import deepcopy
 from datetime import timedelta

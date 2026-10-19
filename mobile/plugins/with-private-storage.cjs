@@ -103,8 +103,9 @@ class FarmBuildInfoModule(context: ReactApplicationContext) : ReactContextBaseJa
     // application-owned synthetic probes require an explicit native test flag.
     const phase4 = config.extra.phase4Pilot === true;
     const phase5 = config.extra.phase5Pilot === true;
+    const phase6 = config.extra.phase6Evidence === true;
     const acceptanceAllowed = config.extra.environment === 'development' && config.android.package === 'com.farmmanagement.mobile.dev' &&
-      config.extra.apiBaseUrl === `http://10.0.2.2:${phase5 ? '7074' : phase4 ? '7073' : '7071'}/api/v1` && config.extra.localAcceptance === true && !(phase4 && phase5);
+      config.extra.apiBaseUrl === `http://10.0.2.2:${phase6 ? '7075' : phase5 ? '7074' : phase4 ? '7073' : '7071'}/api/v1` && config.extra.localAcceptance === true && [phase4, phase5, phase6].filter(Boolean).length <= 1;
     const acceptanceBlock = `
 // FARM_LOCAL_ACCEPTANCE
 android {
@@ -114,7 +115,7 @@ android {
    debuggable false
    jniDebuggable false
    signingConfig signingConfigs.debug
-   applicationIdSuffix '.acceptance${phase5 ? '.phase5' : phase4 ? '.phase4' : ''}'
+   applicationIdSuffix '.acceptance${phase6 ? '.phase6' : phase5 ? '.phase5' : phase4 ? '.phase4' : ''}'
    versionNameSuffix '-offline-test'
    matchingFallbacks = ['release']
    resValue 'string', 'app_name', 'Farm Management (offline test)'

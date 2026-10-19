@@ -1,6 +1,7 @@
 export interface SessionResource {
   client: { lock(): void };
   repository: { db: { close(): Promise<void> } };
+  sensitive?: { lock(): void; close(): Promise<void> };
 }
 
 // A late callback may retire only its generation, never a newly opened account.
@@ -30,12 +31,17 @@ export class SessionLifecycle<T extends SessionResource> {
     const previous = this.current;
     this.current = null;
     previous?.client.lock();
+    const sensitive = previous?.sensitive;
+    sensitive?.lock();
     this.changed(null);
     // Detach synchronously, even if secure persistence is slow or fails. Auth
     // actions await settled() before reading any cached session pointer.
     const task = this.pending.then(async () => {
       try { await cleanup?.(previous); }
-      finally { await previous?.repository.db.close(); }
+      finally {
+        try { await sensitive?.close(); }
+        finally { await previous?.repository.db.close(); }
+      }
     });
     this.pending = task.catch(() => {});
     return task;
@@ -48,5 +54,20 @@ export class SessionLifecycle<T extends SessionResource> {
       catch { /* Preserve the authorization failure; local work is retained. */ }
       throw error;
     }
+  }
+
+  /** Auth denial may originate INSIDE a sensitive resource's current request.
+   * Resolve after durable denial, not after closing that same in-flight request.
+   * settled() still waits for ALL resource closes before a new account opens.
+   */
+  retireAfterPersistence(generation: number, persist: (previous: T | null) => Promise<void>): Promise<void> {
+    if (!this.isCurrent(generation)) return Promise.resolve();
+    return new Promise<void>((resolve, reject) => {
+      const retirement = this.retire(generation, async previous => {
+        try { await persist(previous); resolve(); }
+        catch (error) { reject(error); throw error; }
+      });
+      void retirement.catch(reject);
+    });
   }
 }

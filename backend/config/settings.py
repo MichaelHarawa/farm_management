@@ -257,8 +257,12 @@ MOBILE_SYNC_FINANCIAL_READS = env_bool("MOBILE_SYNC_FINANCIAL_READS", False)
 MOBILE_SYNC_FINANCIAL_COMMANDS = env_bool("MOBILE_SYNC_FINANCIAL_COMMANDS", False)
 # Private authorized funding-reference preparation only; no upload/pack grant.
 MOBILE_SYNC_FINANCIAL_REFERENCES = env_bool("MOBILE_SYNC_FINANCIAL_REFERENCES", False)
-# Private UUID envelope/receipt linkage candidate; still no public upload route.
+# Private UUID envelope/receipt linkage; this flag alone enables no HTTP route.
 MOBILE_SYNC_FINANCIAL_UUID_COMMANDS = env_bool("MOBILE_SYNC_FINANCIAL_UUID_COMMANDS", False)
+# Explicit HTTP command/status surfaces, independently opted in only on an
+# accepted isolated deployment. Neither flag enables native scheduling/packs.
+MOBILE_SYNC_FINANCIAL_COMMAND_API = env_bool("MOBILE_SYNC_FINANCIAL_COMMAND_API", False)
+MOBILE_SYNC_FINANCIAL_COMMAND_STATUS_API = env_bool("MOBILE_SYNC_FINANCIAL_COMMAND_STATUS_API", False)
 # Private global reference capture only, after mobile_sync0003 + explicit baseline.
 # Does NOT enable financial packs, offline access or command uploads.
 MOBILE_SYNC_FINANCIAL_PUBLICATION = env_bool("MOBILE_SYNC_FINANCIAL_PUBLICATION", False)

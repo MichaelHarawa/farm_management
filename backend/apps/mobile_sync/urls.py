@@ -6,9 +6,13 @@ from .financial_views import (FinancialReadCapabilitiesView, SupplierPaymentStat
 from .reference_views import (ReferenceCapabilitiesView, FundingReferenceCatalogView,
                              InvoiceReferenceCatalogView, InvoiceReferenceDetailView)
 from .storage_views import FinancialStorageGrantView
+from .command_views import FinancialCommandSubmitView, FinancialCommandStatusView, FinancialCommandCapabilitiesView
 
 app_name = "mobile_sync"
 urlpatterns = [
+    path("finance/commands", FinancialCommandSubmitView.as_view(), name="finance-command-submit"),
+    path("finance/commands/capabilities", FinancialCommandCapabilitiesView.as_view(), name="finance-command-capabilities"),
+    path("finance/commands/<uuid:operation_id>", FinancialCommandStatusView.as_view(), name="finance-command-status"),
     path("finance/storage/grant", FinancialStorageGrantView.as_view(), name="finance-storage-grant"),
     path("finance/references/capabilities", ReferenceCapabilitiesView.as_view(), name="finance-reference-capabilities"),
     path("finance/references/funding", FundingReferenceCatalogView.as_view(), name="finance-reference-funding"),

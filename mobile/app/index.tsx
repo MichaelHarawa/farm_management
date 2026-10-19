@@ -3,7 +3,7 @@ import { Redirect, router } from 'expo-router';
 import { useForm, Controller } from 'react-hook-form';
 import { KeyboardAvoidingView } from 'react-native';
 import { useSession } from '../src/auth/session';
-import { developmentChecksEnabled,phase4Pilot,phase5Pilot } from '../src/build-mode.native';
+import { developmentChecksEnabled,phase4Pilot,phase5Pilot,phase6Evidence } from '../src/build-mode.native';
 import { Button, Card, Body, ErrorMessage, Field, Loading, Screen } from '../src/components/ui';
 export default function SignIn() {
   const { ready, session, busy, error, signIn, unlock, settings, testControls, switchTestBackend } = useSession();
@@ -12,8 +12,8 @@ export default function SignIn() {
   const { control, handleSubmit, resetField, formState: { errors } } = useForm({ defaultValues: { username: '', password: '' } });
   if (session) return <Redirect href="/(tabs)/today" />;
   return <KeyboardAvoidingView style={{ flex: 1 }} behavior="height"><Screen title="Your farm, in the field">
-    <Body>{settings.environment.toUpperCase()} • {phase5Pilot?'Phase5 synthetic daily poultry pilot':phase4Pilot?'Phase4 synthetic operational pilot':'Android foundation'}</Body>
-    {(phase4Pilot||phase5Pilot)&&<Body>Separate test backend: {settings.apiBaseUrl}. No farm financial upload is enabled.</Body>}
+    <Body>{settings.environment.toUpperCase()} • {phase6Evidence?'Phase6 synthetic financial evidence access':phase5Pilot?'Phase5 synthetic daily poultry pilot':phase4Pilot?'Phase4 synthetic operational pilot':'Android foundation'}</Body>
+    {(phase4Pilot||phase5Pilot||phase6Evidence)&&<Body>Separate test backend: {settings.apiBaseUrl}. No farm financial upload is enabled.</Body>}
     {testControls && <><Body>Test backend: {settings.apiBaseUrl}</Body>
       <Button disabled={!ready || busy} title="Switch synthetic test backend" onPress={() => { void switchTestBackend(); }} /></>}
     {developmentChecksEnabled && <Button disabled={busy} title="Development: native storage checks" onPress={() => router.push('/native-storage-check')} />}

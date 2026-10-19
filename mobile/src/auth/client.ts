@@ -1,7 +1,11 @@
-import { tokenPairSchema } from '../protocol';
+import { tokenPairSchema, type StoreIdentity } from '../protocol';
 import { byteLength } from '../sync/protocol';
 import { isFinancialReferencePath } from '../finance/reference-paths';
 import { financialStorageGrantPath, financialStorageOptions, mobileAccessBinding, type MobileAccessBinding } from '../finance/storage-transport';
+import { financialCommandRoot, financialCommandIdentity, financialCommandOptions, financialCommandResponseBytes,
+  financialCommandStatusPath, financialCommandCapabilitiesPath, isFinancialCommandRequest } from '../finance/command-transport';
+import { parseFinancialUUIDEnvelope } from '../finance/uuid-commands';
+import { parseFinancialCommandCapabilities } from '../finance/command-capabilities';
 
 export class ApiError extends Error {
   constructor(readonly status: number, readonly code: string, readonly retryAfterMs = 0) { super(code); }
@@ -11,9 +15,11 @@ export interface CredentialStore {
   read(): Promise<Credentials | null>;
   write(value: Credentials, isCurrent?: () => boolean): Promise<void>;
 }
-export type TransportOptions = { readonly financialReferences: 1 } | { readonly financialStorage: 1; readonly requestId: string };
+export type TransportOptions = { readonly financialReferences: 1 } | { readonly financialStorage: 1; readonly requestId: string } |
+  { readonly financialCommands: 1 };
 export type Transport = (path: string, body?: unknown, access?: string, options?: TransportOptions) => Promise<unknown>;
-export interface FinancialStorageHTTPRead { response: unknown; binding: MobileAccessBinding }
+export interface FinancialBoundHTTPRead { response: unknown; binding: MobileAccessBinding }
+export type FinancialStorageHTTPRead = FinancialBoundHTTPRead;
 
 // Access JWTs live only in memory. Durable rotation intent closes the crash/lost-response gap.
 export class AuthClient {
@@ -93,16 +99,39 @@ export class AuthClient {
     return await this.authorizedRequest(financialStorageGrantPath, undefined, options) as FinancialStorageHTTPRead;
   }
 
-  private async authorizedRequest(path: string, body?: unknown, options?: TransportOptions): Promise<unknown> {
+  /** Explicit only; no screen, queue, reconnect or auto-sync calls this method. */
+  async submitFinancialCommands(value: unknown, identity: StoreIdentity): Promise<FinancialBoundHTTPRead> {
+    const expected = Object.freeze(financialCommandIdentity.parse(identity));
+    const envelope = parseFinancialUUIDEnvelope(value, expected); // Deep copy BEFORE refresh/await.
+    return await this.authorizedRequest(financialCommandRoot, envelope, { financialCommands: 1 }, expected) as FinancialBoundHTTPRead;
+  }
+
+  async recoverFinancialCommand(operationId: string, identity: StoreIdentity): Promise<FinancialBoundHTTPRead> {
+    const expected = Object.freeze(financialCommandIdentity.parse(identity));
+    return await this.authorizedRequest(financialCommandStatusPath(operationId), undefined,
+      { financialCommands: 1 }, expected) as FinancialBoundHTTPRead;
+  }
+
+  /** Foreground discovery only. Never caches a role or enables a native scheduler. */
+  async readFinancialCommandCapabilities(identity: StoreIdentity) {
+    const expected = Object.freeze(financialCommandIdentity.parse(identity));
+    const value = await this.authorizedRequest(financialCommandCapabilitiesPath, undefined,
+      { financialCommands: 1 }, expected) as FinancialBoundHTTPRead;
+    return parseFinancialCommandCapabilities(value.response, value.binding, expected);
+  }
+
+  private async authorizedRequest(path: string, body?: unknown, options?: TransportOptions, expected?: StoreIdentity): Promise<unknown> {
     if (this.locked) throw new ApiError(401, 'session_locked');
     const generation = this.generation;
     const send = async (access: string | null) => {
       let binding: MobileAccessBinding | undefined;
-      if (options && 'financialStorage' in options) {
+      if (options && ('financialStorage' in options || 'financialCommands' in options)) {
         try { binding = mobileAccessBinding(access ?? ''); }
-        catch { throw new ApiError(401, 'financial_storage_bound_access_required'); }
+        catch { throw new ApiError(401, 'financialCommands' in options ? 'financial_command_bound_access_required' : 'financial_storage_bound_access_required'); }
+        if (expected && (binding.actorId !== expected.actorId || binding.deviceId !== expected.deviceId ||
+            binding.deploymentId !== expected.deploymentId)) throw new ApiError(403, 'financial_command_identity_mismatch');
       }
-      const response = options ? await this.transport(path, undefined, access ?? undefined, options) :
+      const response = options ? await this.transport(path, options && 'financialCommands' in options ? body : undefined, access ?? undefined, options) :
         await this.transport(path, body, access ?? undefined);
       return binding ? { response, binding } : response;
     };
@@ -140,8 +169,10 @@ export function httpTransport(base: string, poultryVersion: 1|2 = 1): Transport 
     const financial = options !== undefined;
     const storage = options && typeof options === 'object' && 'financialStorage' in options;
     const reference = options && typeof options === 'object' && 'financialReferences' in options;
-    if (financial && (body !== undefined || (storage ? !financialStorageOptions.safeParse(options).success || path !== financialStorageGrantPath :
-      !reference || Object.keys(options).length !== 1 || options.financialReferences !== 1 || !isFinancialReferencePath(path)))) {
+    const command = options && typeof options === 'object' && 'financialCommands' in options;
+    if (financial && (command ? !financialCommandOptions.safeParse(options).success || !isFinancialCommandRequest(path, body) :
+      body !== undefined || (storage ? !financialStorageOptions.safeParse(options).success || path !== financialStorageGrantPath :
+        !reference || Object.keys(options).length !== 1 || options.financialReferences !== 1 || !isFinancialReferencePath(path)))) {
       throw new ApiError(403, 'route_unavailable');
     }
     const controller = new AbortController();
@@ -152,6 +183,7 @@ export function httpTransport(base: string, poultryVersion: 1|2 = 1): Transport 
         signal: controller.signal, redirect: 'error', headers: { 'Content-Type': 'application/json',
           ...(storage ? { 'X-Mobile-Finance-Version': '1', 'X-Mobile-Finance-Storage-Version': '1',
             'X-Mobile-Finance-Storage-Request': options.requestId, 'Cache-Control': 'no-store' } :
+            command ? { 'X-Mobile-Finance-Version': '1', 'X-Mobile-Finance-Command-Version': '2', 'Cache-Control': 'no-store' } :
             financial ? { 'X-Mobile-Finance-Version': '1', 'X-Mobile-Finance-References-Version': '1', 'Cache-Control': 'no-store' } :
             poultryVersion === 2 ? { 'X-Mobile-Poultry-Version': '2' } : {}), ...(access ? { Authorization: `Bearer ${access}` } : {}) },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
@@ -168,6 +200,9 @@ export function httpTransport(base: string, poultryVersion: 1|2 = 1): Transport 
               'invoice_reference_limit', 'invoice_reference_review_required', 'invoice_reference_scope_changed'].includes(supplied)) code = supplied;
             if (storage && ['financial_bridge_disabled', 'financial_storage_scope_changed', 'device_revoked', 'permission_denied',
               'device_required', 'foreign_actor', 'malformed_request', 'retry_later'].includes(supplied)) code = supplied;
+            if (command && ['financial_bridge_disabled', 'financial_response_unavailable', 'financial_receipt_review_required',
+              'device_revoked', 'device_required', 'foreign_actor', 'foreign_device', 'foreign_environment',
+              'permission_denied', 'malformed_request', 'request_too_large', 'retry_later'].includes(supplied)) code = supplied;
           } catch { /* Only allowlisted codes, never arbitrary error content. */ }
         }
         const retry = response.headers.get('Retry-After');
@@ -176,9 +211,9 @@ export function httpTransport(base: string, poultryVersion: 1|2 = 1): Transport 
         throw new ApiError(response.status,code,retryAfterMs);
       }
       if (response.status === 204) return null;
-      const maximum = storage ? 8192 : 1024*1024;
-      if (storage && !/(?:^|,)\s*no-store\s*(?:,|$)/i.test(response.headers.get('Cache-Control') ?? '')) {
-        throw new Error('financial_storage_cache_policy_required');
+      const maximum = storage ? 8192 : command ? financialCommandResponseBytes : 1024*1024;
+      if ((storage || command) && !/(?:^|,)\s*no-store\s*(?:,|$)/i.test(response.headers.get('Cache-Control') ?? '')) {
+        throw new Error(command ? 'financial_command_cache_policy_required' : 'financial_storage_cache_policy_required');
       }
       if (Number(response.headers.get('Content-Length')) > maximum) throw new Error('response_too_large');
       const text = await response.text();

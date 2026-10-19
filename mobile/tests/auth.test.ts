@@ -5,6 +5,7 @@ import { offlineAccess } from '../src/auth/offline';
 import { validateSettings } from '../src/config';
 import { sessionErrorMessage } from '../src/auth/errors';
 import { serializedCredentials } from '../src/auth/credential-store';
+import { financialErrorMessage } from '../src/finance/errors';
 test('session diagnostics use only safe codes/statuses and fixed development stages', () => {
   const secret = 'private-token-and-key-do-not-display';
   assert.doesNotMatch(sessionErrorMessage(new Error(secret), 'encrypted_store'), new RegExp(secret));
@@ -12,6 +13,23 @@ test('session diagnostics use only safe codes/statuses and fixed development sta
   assert.match(sessionErrorMessage(new ApiError(401, secret), 'sign_in_request'), /HTTP 401/);
   assert.doesNotMatch(sessionErrorMessage(new ApiError(401, secret)), /private-token|Step:/);
   assert.equal(sessionErrorMessage(new Error('device_unlock_cancelled')), 'device_unlock_cancelled');
+});
+test('financial denial has one fixed actionable message at financial and sign-in boundaries', () => {
+  const error = new Error('financial_storage_reauthentication_required');
+  const expected = 'Financial evidence needs fresh online authorization. Original local work is retained.';
+  assert.equal(sessionErrorMessage(error), expected);
+  assert.equal(financialErrorMessage(error), expected);
+  assert.equal(sessionErrorMessage(error, 'financial_cached'), `${expected} Step: cached financial authorization.`);
+  assert.equal(sessionErrorMessage(new Error('device_unlock_cancelled'), 'financial_online'),
+    'device_unlock_cancelled Step: current online financial authorization.');
+});
+test('financial stage diagnostics never render unknown error text or trust arbitrary message objects', () => {
+  for (const error of [new Error('financial_storage_reauthentication_required PRIVATE-token'),
+    { message: 'financial_storage_reauthentication_required' }, new Error('PRIVATE SELECT key')]) {
+    assert.doesNotMatch(sessionErrorMessage(error, 'financial_cached'), /PRIVATE|SELECT/);
+    assert.doesNotMatch(financialErrorMessage(error), /PRIVATE|SELECT/);
+    assert(!sessionErrorMessage(error).startsWith('Financial evidence needs fresh'));
+  }
 });
 test('concurrent 401s share one rotation; refresh persisted before resumed reads', async () => {
   let stored: Credentials = { refresh: 'old-refresh', rotation: 'ready' }; let rotations = 0; let reads = 0;

@@ -24,6 +24,7 @@ export default function NativeStorageCheck() {
   return <Screen title="Native storage checks"><Card title="Development only • session locked">
     <Body>Uses a newly owned synthetic database, never a user’s farm records. Normal/restart preparation asks for device unlock twice, missing-key recovery three times, and restart verification once. No uploads run.</Body>
     <Body>{probe}</Body>
+    {phase5Pilot && <Button disabled={checking || busy} title="Financial scratch storage checks" onPress={() => router.push('/native-financial-check')} />}
     <Button disabled={checking || busy} title="Run SQLCipher storage probe" onPress={() => run(() => runNativeStorageProbe())} />
     {phase5Pilot&&<Button disabled={checking || busy} title="Run Phase5 schema2 upgrade probe" onPress={()=>run(runNativePoultryUpgradeProbe)}/>}
     <Button disabled={checking || busy} title="Run PIN-only missing-key probe" onPress={() => run(runNativeMissingKeyProbe)} />

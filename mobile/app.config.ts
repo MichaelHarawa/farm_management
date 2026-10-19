@@ -6,16 +6,20 @@ const settings = validateSettings(process.env.APP_ENV ?? 'development', process.
 const localAcceptance = process.env.MOBILE_LOCAL_ACCEPTANCE === '1';
 const phase4Pilot = process.env.MOBILE_PHASE4_PILOT === '1';
 const phase5Pilot = process.env.MOBILE_PHASE5_PILOT === '1';
+const phase6Evidence = process.env.MOBILE_PHASE6_EVIDENCE === '1';
+if ([phase4Pilot, phase5Pilot, phase6Evidence].filter(Boolean).length > 1 || (phase6Evidence && !localAcceptance)) {
+  throw new Error('Financial evidence acceptance requires its own isolated build.');
+}
 if (phase5Pilot && (!localAcceptance || phase4Pilot)) throw new Error('Phase 5 requires its own isolated acceptance build.');
 if (phase4Pilot && !localAcceptance) throw new Error('Phase 4 pilot requires the isolated local acceptance build.');
-if (localAcceptance && (settings.environment !== 'development' || settings.apiBaseUrl !== `http://10.0.2.2:${phase5Pilot ? '7074' : phase4Pilot ? '7073' : '7071'}/api/v1` || process.env.MOBILE_RELEASE === '1')) {
+if (localAcceptance && (settings.environment !== 'development' || settings.apiBaseUrl !== `http://10.0.2.2:${phase6Evidence ? '7075' : phase5Pilot ? '7074' : phase4Pilot ? '7073' : '7071'}/api/v1` || process.env.MOBILE_RELEASE === '1')) {
   throw new Error('Offline acceptance is restricted to the separate local synthetic backend build.');
 }
 const config: ExpoConfig = {
   name: `Farm Management${settings.environment === 'production' ? '' : ` (${settings.environment})`}`,
   slug: 'farm-management-mobile', version: '0.3.0', scheme: 'farm-management', platforms: ['android'],
   android: { package: `com.farmmanagement.mobile${settings.environment === 'production' ? '' : settings.environment === 'staging' ? '.staging' : '.dev'}`, allowBackup: false },
-  extra: { ...settings, localAcceptance, phase4Pilot, phase5Pilot },
+  extra: { ...settings, localAcceptance, phase4Pilot, phase5Pilot, phase6Evidence },
   plugins: ['expo-router', '@react-native-community/datetimepicker', ['expo-secure-store', { configureAndroidBackup: false }],
     ['expo-sqlite', { useSQLCipher: true }],
     ['expo-build-properties', { android: { minSdkVersion: 24, compileSdkVersion: 36, targetSdkVersion: 36 } }],
