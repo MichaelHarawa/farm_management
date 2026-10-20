@@ -18,6 +18,7 @@ from .models import(
     Mortality,
     FeedUsage,
     FlockAdjustment,
+    BirdStockTake,
     DrugsVaccination,
 )
 
@@ -617,6 +618,32 @@ class FeedUsageSerializer(serializers.ModelSerializer):
             return ""
 
         return obj.created_by.get_full_name() or obj.created_by.username
+
+class BirdStockTakeSerializer(serializers.ModelSerializer):
+    variance = serializers.IntegerField(read_only=True)
+    shortage = serializers.IntegerField(read_only=True)
+    recorded_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = BirdStockTake
+        fields = (
+            "id", "batch", "request_id", "counted_at", "expected_live_birds",
+            "physical_count", "variance", "shortage", "reason", "notes",
+            "adjustment", "recorded_by", "recorded_by_name", "created_at",
+        )
+        read_only_fields = fields
+
+    def get_recorded_by_name(self, obj):
+        return obj.recorded_by.get_full_name() or obj.recorded_by.username
+
+
+class RecordBirdStockTakeSerializer(serializers.Serializer):
+    request_id = serializers.UUIDField()
+    expected_live_birds = serializers.IntegerField(min_value=0, max_value=2147483647)
+    physical_count = serializers.IntegerField(min_value=0, max_value=2147483647)
+    reason = serializers.CharField(max_length=255, required=False, allow_blank=True, default="")
+    notes = serializers.CharField(max_length=5000, required=False, allow_blank=True, default="")
+
 
 class FlockAdjustmentSerializer(serializers.ModelSerializer):
     class Meta:

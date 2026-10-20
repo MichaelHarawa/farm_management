@@ -28,6 +28,7 @@ const ACTION_PATH_MAP: Record<string, string> = {
   sales: "sales",
   "weight-samples": "weight_samples",
   "forecast-assumptions": "forecast-assumptions",
+  "stock-takes": "stock-takes",
 };
 
 function toBackendPath(segments: string[]): string | null {

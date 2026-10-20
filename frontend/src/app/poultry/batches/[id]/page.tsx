@@ -12,6 +12,7 @@ import {
   getBatchInputCosts,
   getBatchMortality,
   getBatchFlockAdjustments,
+  getBatchStockTakes,
   getBatchSales,
   getBatchVaccinations,
   getPoultryBatch,
@@ -52,6 +53,7 @@ type BatchDetailPageProps = {
 const batchDetailTabs: BatchDetailTab[] = [
   "overview",
   "flock",
+  "stock",
   "costs",
   "sales",
   "mortality",
@@ -141,12 +143,14 @@ export default async function BatchDetailPage({
     sellByRecommendation,
     vaccinations,
     flockAdjustments,
+    stockTakes,
   ] = await Promise.all([
     getBatchFeedUsage(batchId, returnTo),
     getBatchFeedMetrics(batchId, returnTo),
     getBatchSellByRecommendation(batchId, returnTo),
     getBatchVaccinations(batchId, returnTo),
     getBatchFlockAdjustments(batchId, returnTo),
+    getBatchStockTakes(batchId, returnTo),
   ]);
 
   // Dynamic import here guarantees that "next/headers" is only touched inside a Server Component.
@@ -176,6 +180,10 @@ export default async function BatchDetailPage({
       sales={sales}
       mortalities={mortalities}
       flockAdjustments={flockAdjustments}
+      stockTakes={stockTakes}
+      canRecordStockTake={Boolean(user && (user.is_superuser || user.roles.some(
+        (role) => ["admin", "director", "farm_manager", "farm_supervisor"].includes(role.slug)
+      )))}
       feedUsages={feedUsages}
       feedMetrics={feedMetrics}
       sellByRecommendation={sellByRecommendation}

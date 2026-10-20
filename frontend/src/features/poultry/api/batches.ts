@@ -15,6 +15,7 @@ import type {
   PoultryFeedUsage,
   PoultryMortality,
   PoultryFlockAdjustment,
+  BirdStockTakeSummary,
   PoultrySale,
   SellByRecommendation,
   PoultryVaccination,
@@ -32,6 +33,12 @@ function normalizeList<T>(
   }
 
   return data.results;
+}
+
+export async function getBatchStockTakes(id: number, returnTo: string): Promise<BirdStockTakeSummary> {
+  return authenticatedBackendFetch<BirdStockTakeSummary>(
+    poultryApiPaths.stockTakes(id), { returnTo, cache: "no-store" }
+  );
 }
 
 export async function getPoultryBatches(

@@ -477,6 +477,32 @@ export type CreateFeedUsagePayload = {
   reported_by_name: string;
 };
 
+export type BirdStockTake = {
+  id: number;
+  batch: number;
+  request_id: string;
+  counted_at: string;
+  expected_live_birds: number;
+  physical_count: number;
+  variance: number;
+  shortage: number;
+  reason: string;
+  notes: string;
+  adjustment: number | null;
+  recorded_by: number;
+  recorded_by_name: string;
+  created_at: string;
+};
+
+export type BirdStockTakeSummary = {
+  expected_live_birds: number;
+  records: BirdStockTake[];
+};
+
+export type RecordBirdStockTakePayload = Pick<
+  BirdStockTake, "request_id" | "expected_live_birds" | "physical_count" | "reason" | "notes"
+>;
+
 export type PoultryWeightSample = {
   id: number;
   batch: number;

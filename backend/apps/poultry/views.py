@@ -22,6 +22,7 @@ from apps.finance.services.expenditures import (
 from apps.poultry.services.batch_lifecycle import (
     assert_batch_accepts_cost,
     assert_batch_in_production,
+    calculate_bird_balance,
     create_mortality_with_lifecycle,
     create_sale_with_lifecycle,
     recalculate_batch_status,
@@ -39,6 +40,7 @@ from apps.poultry.services.growth import (
     latest_growth_status,
 )
 from apps.poultry.services.dashboard import poultry_dashboard
+from apps.poultry.services.stock_taking import record_stock_take
 from apps.poultry.services.operations import (register_batch, mark_delivered as mark_batch_delivered,
     confirm_delivery as confirm_batch_delivery, record_treatment, record_weight)
 
@@ -65,6 +67,8 @@ from .serializers import(
     MortalitySerializer,
     FeedUsageSerializer,
     FlockAdjustmentSerializer,
+    BirdStockTakeSerializer,
+    RecordBirdStockTakeSerializer,
     DrugsVaccinationSerializer,
 )
 
@@ -365,6 +369,24 @@ class BatchViewset(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retrie
             self.get_serializer(adjustment).data,
             status=status.HTTP_201_CREATED,
         )
+
+    @action(detail=True, methods=["get", "post"], url_path="stock-takes")
+    def stock_takes(self, request, pk=None):
+        batch = self.get_object()
+        if request.method == "GET":
+            return Response({
+                "expected_live_birds": calculate_bird_balance(batch).remaining_live_birds,
+                "records": BirdStockTakeSerializer(
+                    batch.stock_takes.select_related("recorded_by"), many=True,
+                ).data,
+            })
+        serializer = RecordBirdStockTakeSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        record = operational_write(
+            record_stock_take, batch_id=batch.pk, recorded_by=request.user,
+            **serializer.validated_data,
+        )
+        return Response(BirdStockTakeSerializer(record).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["get", "post"], url_path="drugs_vaccine")
     def drugs_vaccine(self, request, pk=None):

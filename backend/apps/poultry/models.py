@@ -754,6 +754,42 @@ class FlockAdjustment(SyncTrackedModel):
         return f"{self.batch.batch_id}: {self.quantity_change:+d} on {self.effective_at}"
 
 
+class BirdStockTake(models.Model):
+    """Historical physical-count evidence; corrections use a new count."""
+
+    batch = models.ForeignKey(Batch, on_delete=models.PROTECT, related_name="stock_takes")
+    request_id = models.UUIDField()
+    counted_at = models.DateTimeField()
+    expected_live_birds = models.PositiveIntegerField()
+    physical_count = models.PositiveIntegerField()
+    reason = models.CharField(max_length=255, blank=True, default="")
+    notes = models.TextField(blank=True, default="")
+    adjustment = models.OneToOneField(
+        FlockAdjustment, on_delete=models.PROTECT, null=True, blank=True,
+        related_name="stock_take",
+    )
+    recorded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="bird_stock_takes",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-counted_at", "-pk"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["batch", "request_id"], name="unique_batch_stock_take_request",
+            ),
+        ]
+
+    @property
+    def variance(self):
+        return self.physical_count - self.expected_live_birds
+
+    @property
+    def shortage(self):
+        return max(-self.variance, 0)
+
+
 class DrugsVaccination(SyncTrackedModel):
     batch = models.ForeignKey(
     Batch,

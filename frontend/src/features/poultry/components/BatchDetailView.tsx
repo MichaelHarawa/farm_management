@@ -16,6 +16,7 @@ import type {
   PoultryFeedUsage,
   PoultryMortality,
   PoultryFlockAdjustment,
+  BirdStockTakeSummary,
   PoultrySale,
   PoultryVaccination,
   SellByRecommendation,
@@ -33,6 +34,8 @@ import { AddFeedUsageForm } from "./AddFeedUsageForm";
 import { AddVaccinationForm } from "./AddVaccinationForm";
 import { AddWeightSampleForm } from "./AddWeightSampleForm";
 import { GrowthTab } from "./GrowthTab";
+import { StockTakingTab } from "./StockTakingTab";
+import { saleSellingCostTotal } from "../utils/selling-costs";
 
 type BatchDetailViewProps = {
   batch: PoultryBatch;
@@ -42,6 +45,8 @@ type BatchDetailViewProps = {
   sales: PoultrySale[];
   mortalities: PoultryMortality[];
   flockAdjustments: PoultryFlockAdjustment[];
+  stockTakes: BirdStockTakeSummary;
+  canRecordStockTake: boolean;
   feedUsages: PoultryFeedUsage[];
   feedMetrics: PoultryFeedMetrics;
   vaccinations: PoultryVaccination[];
@@ -53,6 +58,7 @@ type BatchDetailViewProps = {
 export type BatchDetailTab =
   | "overview"
   | "flock"
+  | "stock"
   | "costs"
   | "sales"
   | "mortality"
@@ -97,6 +103,7 @@ const tabs: Array<{
 }> = [
   { id: "overview", label: "Overview", sidebarLabel: "Overview" },
   { id: "flock", label: "Flock", sidebarLabel: "Flock activity" },
+  { id: "stock", label: "Stock taking", sidebarLabel: "Stock taking" },
   { id: "costs", label: "Costs", sidebarLabel: "Input costs" },
   { id: "sales", label: "Sales", sidebarLabel: "Sales" },
   { id: "mortality", label: "Mortality", sidebarLabel: "Mortality" },
@@ -478,6 +485,8 @@ export function BatchDetailView({
   sales,
   mortalities,
   flockAdjustments,
+  stockTakes,
+  canRecordStockTake,
   feedUsages,
   feedMetrics,
   sellByRecommendation,
@@ -545,10 +554,11 @@ export function BatchDetailView({
     const grossProfit =
       decimalToNumber(profitabilityReport?.batch_gross_profit) ??
       totalSales - totalInputCosts;
+    const localSellingCosts = saleSellingCostTotal(sales);
     const managementNetPosition =
-      decimalToNumber(profitabilityReport?.management_net_position) ?? grossProfit;
+      decimalToNumber(profitabilityReport?.management_net_position) ?? grossProfit - localSellingCosts;
     const fullAttributedCost =
-      decimalToNumber(profitabilityReport?.total_attributed_cost) ?? totalInputCosts;
+      decimalToNumber(profitabilityReport?.total_attributed_cost) ?? totalInputCosts + localSellingCosts;
     const collectionRate =
       decimalToNumber(profitabilityReport?.collection_rate_percent);
     const reportCostPerBird =
@@ -802,6 +812,12 @@ export function BatchDetailView({
             />
           ) : null}
 
+          {activeTab === "stock" ? (
+            <StockTakingTab batchId={batch.id} initialData={stockTakes}
+              canRecord={canRecordStockTake}
+              blocked={operationalBlocked || batch.status === "closed" || Boolean(batch.profitability_finalized_at)} />
+          ) : null}
+
           {activeTab === "costs" ? (
             <CostsTab
               inputCosts={inputCosts}
@@ -961,6 +977,12 @@ export function BatchDetailView({
 }
 
 function getPageHeader(activeTab: BatchDetailTab, batch: PoultryBatch) {
+  if (activeTab === "stock") {
+    return {
+      title: "Stock taking",
+      description: "Compare recorded live birds with a physical count and record shortages.",
+    };
+  }
   if (activeTab === "flock") {
     return {
       title: "Flock activity",
@@ -1862,10 +1884,7 @@ type SalesTabProps = {
 };
 
 function SalesTab({ batch, sales, metrics, followUpSale }: SalesTabProps) {
-  const totalSellingCosts = sales.reduce(
-    (total, sale) => total + Number(sale.total_selling_cost || 0),
-    0
-  );
+  const totalSellingCosts = saleSellingCostTotal(sales);
   return (
     <div className="mt-8 grid gap-8">
       <div className="grid gap-6 md:grid-cols-2 2xl:grid-cols-4">

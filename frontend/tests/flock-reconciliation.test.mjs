@@ -1,6 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { isValidBirdSale, reconcileFlock } from "../src/features/poultry/utils/flock-reconciliation.ts";
+import { saleSellingCostTotal } from "../src/features/poultry/utils/selling-costs.ts";
+
+test("selling costs include unpaid sales and exclude cancelled sales", () => {
+  assert.equal(saleSellingCostTotal([
+    { payment_status: "paid", total_selling_cost: 1200 },
+    { payment_status: "unpaid", total_selling_cost: 300 },
+    { payment_status: "cancelled", total_selling_cost: 700 },
+  ]), 1500);
+});
 
 const baseline = { initialBirds: 100, sales: [], mortality: 2, adjustments: [] };
 

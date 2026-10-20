@@ -26,6 +26,7 @@ from apps.poultry.models import (
     PaymentStatus,
     ProductType,
     Sales,
+    SaleSellingCost,
 )
 from apps.poultry.services.feed_metrics import bird_days_between, live_birds_at
 from apps.poultry.services.growth import (
@@ -189,6 +190,20 @@ def _period_costs(batch_ids: list[int], start: date, end: date):
         recognized_on = row.purchase_date.date()
         per_batch[row.batch_id] += amount
         per_category[_cost_category(f"{row.category} {row.item}")] += amount
+        per_bucket[_bucket_date(recognized_on, mode)] += amount
+
+    # Sale costs are recognized once with the sale, regardless of settlement.
+    # Their cash payments are not a second batch expense.
+    selling_costs = SaleSellingCost.objects.filter(
+        sale__batch_id__in=batch_ids,
+        sale__sale_date__date__gte=start,
+        sale__sale_date__date__lte=end,
+    ).exclude(sale__payment_status=PaymentStatus.CANCELLED).select_related("sale")
+    for row in selling_costs:
+        amount = _money(row.amount)
+        recognized_on = timezone.localdate(row.sale.sale_date)
+        per_batch[row.sale.batch_id] += amount
+        per_category["selling_and_distribution"] += amount
         per_bucket[_bucket_date(recognized_on, mode)] += amount
 
     return per_batch, per_category, per_bucket

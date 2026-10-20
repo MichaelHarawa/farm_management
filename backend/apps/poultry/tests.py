@@ -19,6 +19,7 @@ from .services.feed_metrics import (
     record_feed_usage, sell_by_recommendation,
 )
 from apps.finance.services.profitability import (
+    batch_portfolio_report,
     batch_profitability,
     portfolio_expenditure_funding_mix,
 )
@@ -200,7 +201,13 @@ class SaleSellingCostTests(TestCase):
         self.assertEqual(sale.selling_costs.count(), 2)
         self.assertEqual(Decimal(serialized["total_selling_cost"]), Decimal("1500.00"))
         self.assertEqual(report["selling_cost"], Decimal("1500.00"))
+        self.assertEqual(report["total_attributed_cost"], Decimal("1500.00"))
+        self.assertEqual(report["fully_loaded_batch_profit"], Decimal("13500.00"))
         self.assertEqual(report["management_net_position"], Decimal("13500.00"))
+        portfolio = batch_portfolio_report(Batch.objects.filter(pk=self.batch.pk))
+        self.assertEqual(portfolio["summary"]["total_selling_cost"], Decimal("1500.00"))
+        self.assertEqual(portfolio["summary"]["total_attributed_cost"], Decimal("1500.00"))
+        self.assertEqual(portfolio["summary"]["management_net_position"], Decimal("13500.00"))
         unassigned = next(
             row for row in funding_mix["groups"]
             if row["key"] == "unpaid_or_unassigned"
@@ -334,6 +341,41 @@ class PoultryDashboardTests(TestCase):
         )
         self.client = APIClient()
         self.client.force_authenticate(self.user)
+
+    def test_sale_costs_reduce_dashboard_profit_in_the_sale_period(self):
+        from .services.dashboard import poultry_dashboard
+        sale_date = self.arrival + timedelta(days=8)
+        sale = create_sale_with_lifecycle(
+            batch_id=self.batch.pk, created_by=self.user,
+            **sale_payload(
+                sale_date=sale_date, quantity_sold=2, unit_price=Decimal("7500"),
+                payment_status=PaymentStatus.UNPAID, amount_paid=Decimal("0"),
+                selling_costs=[
+                    {"category": "transport", "amount": Decimal("1200"), "notes": "Delivery"},
+                    {"category": "packaging", "amount": Decimal("300"), "notes": "Crates"},
+                ],
+            ),
+        )
+        day = timezone.localdate(sale_date)
+        filters = {"date_from": day.isoformat(), "date_to": day.isoformat()}
+        report = poultry_dashboard(filters)
+        row = report["batches"][0]
+        self.assertEqual(row["recorded_costs_period"], Decimal("1500.00"))
+        self.assertEqual(row["actual_period_result"], Decimal("13500.00"))
+        self.assertEqual(report["cost_breakdown"]["selling_and_distribution"], Decimal("1500.00"))
+        self.assertEqual(report["series"]["costs_and_profit"][0]["actual_period_result"], Decimal("13500.00"))
+        self.assertEqual(row["amount_collected"], Decimal("0.00"))
+
+        next_day = (day + timedelta(days=1)).isoformat()
+        outside = poultry_dashboard({"date_from": next_day, "date_to": next_day})
+        self.assertEqual(outside["batches"][0]["recorded_costs_period"], Decimal("0.00"))
+
+        # A cancelled legacy sale's costs are excluded alongside its revenue.
+        sale.payment_status = PaymentStatus.CANCELLED
+        sale.save()
+        cancelled = poultry_dashboard(filters)
+        self.assertEqual(cancelled["batches"][0]["recorded_costs_period"], Decimal("0.00"))
+        self.assertEqual(cancelled["batches"][0]["actual_period_result"], Decimal("0.00"))
 
     def test_dashboard_uses_bird_balance_and_excludes_non_bird_sales(self):
         Mortality.objects.create(

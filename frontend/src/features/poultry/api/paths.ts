@@ -29,6 +29,9 @@ export const poultryApiPaths = {
   flockAdjustments: (batchId: number) =>
     `${POULTRY_ROOT}/${batchId}/flock-adjustments`,
 
+  stockTakes: (batchId: number) =>
+    `${POULTRY_ROOT}/${batchId}/stock-takes`,
+
   feedUsage: (batchId: number) =>
     `${POULTRY_ROOT}/${batchId}/feed_usage`,
 
