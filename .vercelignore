@@ -2,6 +2,7 @@
 .env.*
 !.env.example
 .vercel-deploy-upload/
+mobile/
 venv/
 .venv/
 **/.venv/

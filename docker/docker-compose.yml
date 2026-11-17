@@ -6,7 +6,8 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
     container_name: farm_backend
-    command: sh -c "python backend/manage.py migrate && python backend/manage.py finance_preflight && python backend/manage.py runserver 0.0.0.0:7070"
+    restart: unless-stopped
+    command: sh -c "python backend/manage.py wait_for_db && python backend/manage.py migrate && python backend/manage.py finance_preflight && exec python backend/manage.py runserver 0.0.0.0:7070"
     env_file:
       - ../.env
     volumes:
@@ -27,6 +28,7 @@ services:
   db:
     image: postgres:16
     container_name: farm_postgres_db
+    restart: unless-stopped
     env_file:
       - ../.env
     ports:

@@ -179,6 +179,16 @@ Starts:
 
 Frontend still runs separately with `npm run dev` in `frontend/`.
 
+The backend waits for a successful database query before running migrations.
+Both Docker services restart automatically after failures or Docker restarts,
+unless explicitly stopped.
+
+If login fails with `could not translate host name "db"`, start the complete
+stack with `docker compose -f docker/docker-compose.yml up -d`. The `db`
+hostname works only inside the Compose network. A backend running directly on
+Windows must use `POSTGRES_HOST=localhost` and `POSTGRES_PORT=5437` as shown
+above. Keep `db:5432` for the Docker backend.
+
 ---
 
 ## Configuration
